@@ -1,0 +1,28 @@
+[package]
+name = "idsp"
+version = "0.1.0"
+resolver = "2"
+authors = ["Robert Jördens <rj@quartiq.de>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+description = "DSP algorithms for embedded, mostly integer math"
+homepage = "https://github.com/quartiq/idsp"
+repository = "https://github.com/quartiq/idsp.git"
+documentation = "https://docs.rs/idsp"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"], default-features = false }
+num-complex = { version = "0.4.0", features = ["serde"], default-features = false }
+miniconf = { version = "0.1", optional = false }
+
+[dev-dependencies]
+easybench = "1.0"
+rand = "0.8"
+ndarray = "0.15"
+
+[[bench]]
+name = "micro"
+harness = false
+
+[features]
+nightly = []
