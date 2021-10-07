@@ -72,36 +72,48 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
         }
     }
 
-    // /// Configures IIR filter coefficients for proportional-integral behavior
-    // /// with gain limit.
-    // ///
-    // /// # Arguments
-    // ///
-    // /// * `kp` - Proportional gain. Also defines gain sign.
-    // /// * `ki` - Integral gain at Nyquist. Sign taken from `kp`.
-    // /// * `g` - Gain limit.
-    // pub fn set_pi(&mut self, kp: T, ki: T, g: T) -> Result<(), &str> {
-    //     let ki = copysign(ki, kp);
-    //     let g = copysign(g, kp);
-    //     let (a1, b0, b1) = if abs(ki) < T::EPSILON {
-    //         (0., kp, 0.)
-    //     } else {
-    //         let c = if abs(g) < T::EPSILON {
-    //             1.
-    //         } else {
-    //             1. / (1. + ki / g)
-    //         };
-    //         let a1 = 2. * c - 1.;
-    //         let b0 = ki * c + kp;
-    //         let b1 = ki * c - a1 * kp;
-    //         if abs(b0 + b1) < T::EPSILON {
-    //             return Err("low integrator gain and/or gain limit");
-    //         }
-    //         (a1, b0, b1)
-    //     };
-    //     self.ba.copy_from_slice(&[b0, b1, 0., a1, 0.]);
-    //     Ok(())
-    // }
+    /// Configures IIR filter coefficients for proportional-integral behavior
+    /// with gain limit.
+    ///
+    /// # Arguments
+    ///
+    /// * `kp` - Proportional gain. Also defines gain sign.
+    /// * `ki` - Integral gain at Nyquist. Sign taken from `kp`.
+    /// * `g` - Gain limit.
+    pub fn set_pi(&mut self, kp: T, ki: T, g: T) -> Result<(), &str> {
+        let ki = copysign(ki, kp);
+        let g = copysign(g, kp);
+        let (a1, b0, b1) = if abs(ki) < T::epsilon() {
+            (
+                num::NumCast::from(0.0).unwrap(),
+                kp,
+                num::NumCast::from(0.0).unwrap(),
+            )
+        } else {
+            let one: T = num::NumCast::from(1.0).unwrap();
+            let two: T = num::NumCast::from(2.0).unwrap();
+            let c = if abs(g) < T::epsilon() {
+                num::NumCast::from(1.0).unwrap()
+            } else {
+                one / (one + ki / g)
+            };
+            let a1: T = two * c - one;
+            let b0 = ki * c + kp;
+            let b1 = ki * c - a1 * kp;
+            if abs(b0 + b1) < T::epsilon() {
+                return Err("low integrator gain and/or gain limit");
+            }
+            (a1, b0, b1)
+        };
+        self.ba.copy_from_slice(&[
+            b0,
+            b1,
+            num::NumCast::from(0.0).unwrap(),
+            a1,
+            num::NumCast::from(0.0).unwrap(),
+        ]);
+        Ok(())
+    }
 
     /// Compute the overall (DC feed-forward) gain.
     pub fn get_k(&self) -> T {
@@ -109,14 +121,14 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
     }
 
     // /// Compute input-referred (`x`) offset from output (`y`) offset.
-    // pub fn get_x_offset(&self) -> Result<T, &str> {
-    //     let k = self.get_k();
-    //     if abs(k) < T::EPSILON {
-    //         Err("k is zero")
-    //     } else {
-    //         Ok(self.y_offset / k)
-    //     }
-    // }
+    pub fn get_x_offset(&self) -> Result<T, &str> {
+        let k = self.get_k();
+        if abs(k) < T::epsilon() {
+            Err("k is zero")
+        } else {
+            Ok(self.y_offset / k)
+        }
+    }
     /// Convert input (`x`) offset to equivalent output (`y`) offset and apply.
     ///
     /// # Arguments
