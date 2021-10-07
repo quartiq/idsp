@@ -4,7 +4,6 @@ use serde::Deserialize;
 use super::{abs, copysign, macc, max, min};
 // use core::f32;
 use core::iter::Sum;
-use core::ops::{Add, Mul};
 use num::traits::Float;
 
 /// IIR state and coefficients type.
@@ -63,7 +62,7 @@ pub struct IIR<T> {
     pub y_max: T,
 }
 
-impl<'a, T: 'a + Float + Default + Sum<&'a T>> IIR<T> {
+impl<T: Float + Default + Sum<T>> IIR<T> {
     pub fn new(gain: T, y_min: T, y_max: T) -> Self {
         Self {
             ba: [gain, T::default(), T::default(), T::default(), T::default()],
@@ -106,7 +105,7 @@ impl<'a, T: 'a + Float + Default + Sum<&'a T>> IIR<T> {
 
     /// Compute the overall (DC feed-forward) gain.
     pub fn get_k(&self) -> T {
-        self.ba[..3].iter().sum()
+        self.ba[..3].iter().copied().sum()
     }
 
     // /// Compute input-referred (`x`) offset from output (`y`) offset.
