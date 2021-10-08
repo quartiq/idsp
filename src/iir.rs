@@ -2,7 +2,6 @@ use miniconf::MiniconfAtomic;
 use serde::Deserialize;
 
 use super::{abs, copysign, macc, max, min};
-// use core::f32;
 use core::iter::Sum;
 use num::traits::Float;
 
@@ -14,7 +13,7 @@ use num::traits::Float;
 /// To represent the IIR coefficients, this contains the feed-forward
 /// coefficients (b0, b1, b2) followd by the negated feed-back coefficients
 /// (-a1, -a2), all five normalized such that a0 = 1.
-pub type Vec5 = [f32; 5];
+pub type Vec5<T> = [T; 5];
 
 /// IIR configuration.
 ///
@@ -56,7 +55,7 @@ pub type Vec5 = [f32; 5];
 /// representations, for example as described in <https://arxiv.org/abs/1508.06319>
 #[derive(Copy, Clone, Debug, Default, Deserialize)]
 pub struct IIR<T> {
-    pub ba: [T; 5],
+    pub ba: Vec5<T>,
     pub y_offset: T,
     pub y_min: T,
     pub y_max: T,
@@ -144,7 +143,7 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
     /// # Arguments
     /// * `xy` - Current filter state.
     /// * `x0` - New input.
-    pub fn update(&self, xy: &mut [T; 5], x0: T, hold: bool) -> T {
+    pub fn update(&self, xy: &mut Vec5<T>, x0: T, hold: bool) -> T {
         let n = self.ba.len();
         debug_assert!(xy.len() == n);
         // `xy` contains       x0 x1 y0 y1 y2
