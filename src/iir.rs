@@ -1,10 +1,9 @@
-use miniconf::{Miniconf, MiniconfAtomic};
-use serde::de::DeserializeOwned;
+use miniconf::MiniconfAtomic;
 use serde::Deserialize;
 
 use super::{abs, copysign, macc, max, min};
 use core::iter::Sum;
-use num::traits::Float;
+use num::{traits::Float, NumCast};
 
 /// IIR state and coefficients type.
 ///
@@ -56,7 +55,7 @@ pub type Vec5<T> = [T; 5];
 /// new output is computed as `y0 = a1*y1 + a2*y2 + b0*x0 + b1*x1 + b2*x2`.
 /// The IIR coefficients can be mapped to other transfer function
 /// representations, for example as described in <https://arxiv.org/abs/1508.06319>
-#[derive(Copy, Clone, Debug, Default, Deserialize, Miniconf)]
+#[derive(Copy, Clone, Debug, Default, Deserialize, MiniconfAtomic)]
 pub struct IIR<T> {
     pub ba: Vec5<T>,
     pub y_offset: T,
@@ -87,19 +86,19 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
         let g = copysign(g, kp);
         let (a1, b0, b1) = if abs(ki) < T::epsilon() {
             (
-                num::NumCast::from(0.0).unwrap(),
+                NumCast::from(0.0).unwrap(),
                 kp,
-                num::NumCast::from(0.0).unwrap(),
+                NumCast::from(0.0).unwrap(),
             )
         } else {
-            let one: T = num::NumCast::from(1.0).unwrap();
-            let two: T = num::NumCast::from(2.0).unwrap();
+            let one: T = NumCast::from(1.0).unwrap();
+            let two: T = NumCast::from(2.0).unwrap();
             let c = if abs(g) < T::epsilon() {
-                num::NumCast::from(1.0).unwrap()
+                one
             } else {
                 one / (one + ki / g)
             };
-            let a1: T = two * c - one;
+            let a1 = two * c - one;
             let b0 = ki * c + kp;
             let b1 = ki * c - a1 * kp;
             if abs(b0 + b1) < T::epsilon() {
@@ -110,9 +109,9 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
         self.ba.copy_from_slice(&[
             b0,
             b1,
-            num::NumCast::from(0.0).unwrap(),
+            NumCast::from(0.0).unwrap(),
             a1,
-            num::NumCast::from(0.0).unwrap(),
+            NumCast::from(0.0).unwrap(),
         ]);
         Ok(())
     }
@@ -136,8 +135,7 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
     /// # Arguments
     /// * `xo`: Input (`x`) offset.
     pub fn set_x_offset(&mut self, xo: T) {
-        let k = self.get_k();
-        self.y_offset = xo * k;
+        self.y_offset = xo * self.get_k();
     }
 
     /// Feed a new input value into the filter, update the filter state, and
