@@ -42,9 +42,7 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// assert_eq!(Complex::new(i32::MAX, i32::MAX).abs_sqr(), u32::MAX - 3);
     /// ```
     fn abs_sqr(&self) -> u32 {
-        (((self.re as i64) * (self.re as i64)
-            + (self.im as i64) * (self.im as i64))
-            >> 31) as u32
+        (((self.re as i64) * (self.re as i64) + (self.im as i64) * (self.im as i64)) >> 31) as u32
     }
 
     /// log2(power) re full scale approximation
@@ -64,8 +62,7 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// assert_eq!(Complex::new(0, 0).log2(), -64);
     /// ```
     fn log2(&self) -> i32 {
-        let a = (self.re as i64) * (self.re as i64)
-            + (self.im as i64) * (self.im as i64);
+        let a = (self.re as i64) * (self.re as i64) + (self.im as i64) * (self.im as i64);
         -(a.leading_zeros() as i32)
     }
 

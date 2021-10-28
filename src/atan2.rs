@@ -63,9 +63,7 @@ pub fn atan2(y: i32, x: i32) -> i32 {
     // `angle` is signed Q1.31 with 1 << 31 == +- pi
     // Since K < 0.5 and r*(1 - r) <= 0.25 the correction product can use
     // 4 bits for K, and 15 bits for r and 1-r to remain within the u32 range.
-    let mut angle = ((r << 13)
-        + ((K * (r >> 1) * ((1 << 15) - (r >> 1))) >> (FP_K + 1)))
-        as i32;
+    let mut angle = ((r << 13) + ((K * (r >> 1) * ((1 << 15) - (r >> 1))) >> (FP_K + 1))) as i32;
 
     if y_greater {
         angle = (1 << 30) - angle;

@@ -25,21 +25,11 @@ pub fn isclosef(a: f32, b: f32, rtol: f32, atol: f32) -> bool {
     (a - b).abs() <= a.abs().max(b.abs()) * rtol + atol
 }
 
-pub fn complex_isclose(
-    a: Complex<f32>,
-    b: Complex<f32>,
-    rtol: f32,
-    atol: f32,
-) -> bool {
+pub fn complex_isclose(a: Complex<f32>, b: Complex<f32>, rtol: f32, atol: f32) -> bool {
     isclosef(a.re, b.re, rtol, atol) && isclosef(a.im, b.im, rtol, atol)
 }
 
-pub fn complex_allclose(
-    a: &[Complex<f32>],
-    b: &[Complex<f32>],
-    rtol: f32,
-    atol: f32,
-) -> bool {
+pub fn complex_allclose(a: &[Complex<f32>], b: &[Complex<f32>], rtol: f32, atol: f32) -> bool {
     a.iter()
         .zip(b)
         .all(|(&i, &j)| complex_isclose(i, j, rtol, atol))
