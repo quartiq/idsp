@@ -82,17 +82,18 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
     /// * `ki` - Integral gain at Nyquist. Sign taken from `kp`.
     /// * `g` - Gain limit.
     pub fn set_pi(&mut self, kp: T, ki: T, g: T) -> Result<(), &str> {
+        let zero: T = T::default();
+        let one: T = NumCast::from(1.0).unwrap();
+        let two: T = NumCast::from(2.0).unwrap();
         let ki = copysign(ki, kp);
         let g = copysign(g, kp);
         let (a1, b0, b1) = if abs(ki) < T::epsilon() {
             (
-                NumCast::from(0.0).unwrap(),
+                zero,
                 kp,
-                NumCast::from(0.0).unwrap(),
+                zero,
             )
         } else {
-            let one: T = NumCast::from(1.0).unwrap();
-            let two: T = NumCast::from(2.0).unwrap();
             let c = if abs(g) < T::epsilon() {
                 one
             } else {
@@ -109,9 +110,9 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
         self.ba.copy_from_slice(&[
             b0,
             b1,
-            NumCast::from(0.0).unwrap(),
+            zero,
             a1,
-            NumCast::from(0.0).unwrap(),
+            zero,
         ]);
         Ok(())
     }
