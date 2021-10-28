@@ -61,8 +61,8 @@ impl RPLL {
             // Phase using the current frequency estimate
             let p_sig_64 = self.ff as u64 * dx as u64;
             // Add half-up rounding bias and apply gain/attenuation
-            let p_sig = ((p_sig_64 + (1u32 << (shift_frequency - 1)) as u64)
-                >> shift_frequency) as u32;
+            let p_sig =
+                ((p_sig_64 + (1u32 << (shift_frequency - 1)) as u64) >> shift_frequency) as u32;
             // Reference phase (1 << dt2 full turns) with gain/attenuation applied
             let p_ref = 1u32 << (32 + self.dt2 - shift_frequency);
             // Update frequency lock
@@ -137,14 +137,11 @@ mod test {
                 } else {
                     None
                 };
-                let (yi, fi) = self.rpll.update(
-                    timestamp,
-                    self.shift_frequency,
-                    self.shift_phase,
-                );
+                let (yi, fi) = self
+                    .rpll
+                    .update(timestamp, self.shift_frequency, self.shift_phase);
 
-                let y_ref = (self.time.wrapping_sub(self.next) as i64
-                    * (1i64 << 32)
+                let y_ref = (self.time.wrapping_sub(self.next) as i64 * (1i64 << 32)
                     / self.period as i64) as i32;
                 // phase error
                 y.push(yi.wrapping_sub(y_ref) as f32 / 2f32.powi(32));
@@ -153,8 +150,7 @@ mod test {
                 let p_sig = fi as u64 * self.period as u64;
                 // relative frequency error
                 f.push(
-                    p_sig.wrapping_sub(p_ref) as i64 as f32
-                        / 2f32.powi(32 + self.rpll.dt2 as i32),
+                    p_sig.wrapping_sub(p_ref) as i64 as f32 / 2f32.powi(32 + self.rpll.dt2 as i32),
                 );
 
                 // advance time
