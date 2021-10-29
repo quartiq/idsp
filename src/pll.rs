@@ -53,12 +53,7 @@ impl PLL {
     ///
     /// Returns:
     /// A tuple of instantaneous phase and frequency (the current phase increment).
-    pub fn update(
-        &mut self,
-        x: Option<i32>,
-        shift_frequency: u8,
-        shift_phase: u8,
-    ) -> (i32, i32) {
+    pub fn update(&mut self, x: Option<i32>, shift_frequency: u8, shift_phase: u8) -> (i32, i32) {
         debug_assert!((1..=30).contains(&shift_frequency));
         debug_assert!((1..=30).contains(&shift_phase));
         let f = if let Some(x) = x {

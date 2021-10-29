@@ -20,9 +20,7 @@ pub fn copysign<T>(x: T, y: T) -> T
 where
     T: PartialOrd + Default + Neg<Output = T>,
 {
-    if (x >= T::default() && y >= T::default())
-        || (x <= T::default() && y <= T::default())
-    {
+    if (x >= T::default() && y >= T::default()) || (x <= T::default() && y <= T::default()) {
         x
     } else {
         -x
