@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use super::{abs, copysign, macc, max, min};
 use core::iter::Sum;
-use num::{traits::Float, NumCast};
+use num_traits::{Float, NumCast};
 
 /// IIR state and coefficients type.
 ///
