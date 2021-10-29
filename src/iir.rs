@@ -18,8 +18,8 @@ pub type Vec5<T> = [T; 5];
 /// IIR configuration.
 ///
 /// Contains the coeeficients `ba`, the output offset `y_offset`, and the
-/// output limits `y_min` and `y_max`. Data is represented in variable precision 
-/// floating-point. The dataformat is the same for all internal signals, input 
+/// output limits `y_min` and `y_max`. Data is represented in variable precision
+/// floating-point. The dataformat is the same for all internal signals, input
 /// and output.
 ///
 /// This implementation achieves several important properties:
@@ -88,11 +88,7 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
         let ki = copysign(ki, kp);
         let g = copysign(g, kp);
         let (a1, b0, b1) = if abs(ki) < T::epsilon() {
-            (
-                zero,
-                kp,
-                zero,
-            )
+            (zero, kp, zero)
         } else {
             let c = if abs(g) < T::epsilon() {
                 one
@@ -107,13 +103,7 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
             }
             (a1, b0, b1)
         };
-        self.ba.copy_from_slice(&[
-            b0,
-            b1,
-            zero,
-            a1,
-            zero,
-        ]);
+        self.ba.copy_from_slice(&[b0, b1, zero, a1, zero]);
         Ok(())
     }
 
