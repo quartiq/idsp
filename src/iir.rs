@@ -2,7 +2,8 @@ use miniconf::MiniconfAtomic;
 use serde::Deserialize;
 
 use super::{abs, copysign, macc, max, min};
-use core::f32;
+use core::iter::Sum;
+use num_traits::{Float, NumCast};
 
 /// IIR state and coefficients type.
 ///
@@ -12,12 +13,14 @@ use core::f32;
 /// To represent the IIR coefficients, this contains the feed-forward
 /// coefficients (b0, b1, b2) followd by the negated feed-back coefficients
 /// (-a1, -a2), all five normalized such that a0 = 1.
-pub type Vec5 = [f32; 5];
+pub type Vec5<T> = [T; 5];
 
 /// IIR configuration.
 ///
 /// Contains the coeeficients `ba`, the output offset `y_offset`, and the
-/// output limits `y_min` and `y_max`.
+/// output limits `y_min` and `y_max`. Data is represented in variable precision
+/// floating-point. The dataformat is the same for all internal signals, input
+/// and output.
 ///
 /// This implementation achieves several important properties:
 ///
@@ -53,18 +56,18 @@ pub type Vec5 = [f32; 5];
 /// The IIR coefficients can be mapped to other transfer function
 /// representations, for example as described in <https://arxiv.org/abs/1508.06319>
 #[derive(Copy, Clone, Debug, Default, Deserialize, MiniconfAtomic)]
-pub struct IIR {
-    pub ba: Vec5,
-    pub y_offset: f32,
-    pub y_min: f32,
-    pub y_max: f32,
+pub struct IIR<T> {
+    pub ba: Vec5<T>,
+    pub y_offset: T,
+    pub y_min: T,
+    pub y_max: T,
 }
 
-impl IIR {
-    pub const fn new(gain: f32, y_min: f32, y_max: f32) -> Self {
+impl<T: Float + Default + Sum<T>> IIR<T> {
+    pub fn new(gain: T, y_min: T, y_max: T) -> Self {
         Self {
-            ba: [gain, 0., 0., 0., 0.],
-            y_offset: 0.,
+            ba: [gain, T::default(), T::default(), T::default(), T::default()],
+            y_offset: T::default(),
             y_min,
             y_max,
         }
@@ -78,49 +81,51 @@ impl IIR {
     /// * `kp` - Proportional gain. Also defines gain sign.
     /// * `ki` - Integral gain at Nyquist. Sign taken from `kp`.
     /// * `g` - Gain limit.
-    pub fn set_pi(&mut self, kp: f32, ki: f32, g: f32) -> Result<(), &str> {
+    pub fn set_pi(&mut self, kp: T, ki: T, g: T) -> Result<(), &str> {
+        let zero: T = T::default();
+        let one: T = NumCast::from(1.0).unwrap();
+        let two: T = NumCast::from(2.0).unwrap();
         let ki = copysign(ki, kp);
         let g = copysign(g, kp);
-        let (a1, b0, b1) = if abs(ki) < f32::EPSILON {
-            (0., kp, 0.)
+        let (a1, b0, b1) = if abs(ki) < T::epsilon() {
+            (zero, kp, zero)
         } else {
-            let c = if abs(g) < f32::EPSILON {
-                1.
+            let c = if abs(g) < T::epsilon() {
+                one
             } else {
-                1. / (1. + ki / g)
+                one / (one + ki / g)
             };
-            let a1 = 2. * c - 1.;
+            let a1 = two * c - one;
             let b0 = ki * c + kp;
             let b1 = ki * c - a1 * kp;
-            if abs(b0 + b1) < f32::EPSILON {
+            if abs(b0 + b1) < T::epsilon() {
                 return Err("low integrator gain and/or gain limit");
             }
             (a1, b0, b1)
         };
-        self.ba.copy_from_slice(&[b0, b1, 0., a1, 0.]);
+        self.ba.copy_from_slice(&[b0, b1, zero, a1, zero]);
         Ok(())
     }
 
     /// Compute the overall (DC feed-forward) gain.
-    pub fn get_k(&self) -> f32 {
-        self.ba[..3].iter().sum()
+    pub fn get_k(&self) -> T {
+        self.ba[..3].iter().copied().sum()
     }
 
-    /// Compute input-referred (`x`) offset from output (`y`) offset.
-    pub fn get_x_offset(&self) -> Result<f32, &str> {
+    // /// Compute input-referred (`x`) offset from output (`y`) offset.
+    pub fn get_x_offset(&self) -> Result<T, &str> {
         let k = self.get_k();
-        if abs(k) < f32::EPSILON {
+        if abs(k) < T::epsilon() {
             Err("k is zero")
         } else {
             Ok(self.y_offset / k)
         }
     }
-
     /// Convert input (`x`) offset to equivalent output (`y`) offset and apply.
     ///
     /// # Arguments
     /// * `xo`: Input (`x`) offset.
-    pub fn set_x_offset(&mut self, xo: f32) {
+    pub fn set_x_offset(&mut self, xo: T) {
         self.y_offset = xo * self.get_k();
     }
 
@@ -130,7 +135,7 @@ impl IIR {
     /// # Arguments
     /// * `xy` - Current filter state.
     /// * `x0` - New input.
-    pub fn update(&self, xy: &mut Vec5, x0: f32, hold: bool) -> f32 {
+    pub fn update(&self, xy: &mut Vec5<T>, x0: T, hold: bool) -> T {
         let n = self.ba.len();
         debug_assert!(xy.len() == n);
         // `xy` contains       x0 x1 y0 y1 y2
