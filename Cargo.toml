@@ -1,6 +1,6 @@
 [package]
 name = "idsp"
-version = "0.2.0"
+version = "0.3.0"
 resolver = "2"
 authors = ["Robert Jördens <rj@quartiq.de>"]
 edition = "2018"
@@ -24,6 +24,3 @@ ndarray = "0.15"
 [[bench]]
 name = "micro"
 harness = false
-
-[features]
-nightly = []

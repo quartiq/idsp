@@ -29,13 +29,27 @@ jobs:
 
   compile:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.toolchain == 'nightly' }}
     strategy:
       matrix:
-        toolchain: [stable]
+        toolchain: [stable, beta, nightly]
+        features: ['']
     steps:
       - uses: actions/checkout@v2
-
-      - uses: actions-rs/cargo@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v1
+      - name: cargo build
+        uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --release
+          args: --release --features "${{ matrix.features }}"
+      - name: cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+      - name: cargo bench
+        uses: actions-rs/cargo@v1
+        with:
+          command: bench
