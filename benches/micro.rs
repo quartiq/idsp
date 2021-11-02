@@ -61,11 +61,20 @@ fn iir_int_bench() {
     );
 }
 
-fn iir_bench() {
-    let dut = iir::IIR::default();
+fn iir_f32_bench() {
+    let dut = iir::IIR::<f32>::default();
     let mut xy = iir::Vec5::default();
     println!(
-        "int::IIR::update(s, x): {}",
+        "int::IIR::<f32>::update(s, x): {}",
+        bench_env(0.32241, |x| dut.update(&mut xy, *x, true))
+    );
+}
+
+fn iir_f64_bench() {
+    let dut = iir::IIR::<f64>::default();
+    let mut xy = iir::Vec5::default();
+    println!(
+        "int::IIR::<f64>::update(s, x): {}",
         bench_env(0.32241, |x| dut.update(&mut xy, *x, true))
     );
 }
@@ -88,6 +97,7 @@ fn main() {
     rpll_bench();
     pll_bench();
     iir_int_bench();
-    iir_bench();
+    iir_f32_bench();
+    iir_f64_bench();
     lowpass_bench();
 }

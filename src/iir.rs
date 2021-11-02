@@ -1,9 +1,9 @@
 use miniconf::MiniconfAtomic;
 use serde::Deserialize;
 
-use super::{abs, copysign, macc, max, min};
+use super::{abs, copysign, macc};
 use core::iter::Sum;
-use num_traits::{Float, NumCast};
+use num_traits::{clamp, Float, NumCast};
 
 /// IIR state and coefficients type.
 ///
@@ -152,7 +152,7 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
             macc(self.y_offset, xy, &self.ba)
         };
         // Limit y0
-        let y0 = max(self.y_min, min(self.y_max, y0));
+        let y0 = clamp(y0, self.y_min, self.y_max);
         // Store y0            x0 x1 y0 y1 y2
         xy[n / 2] = y0;
         y0

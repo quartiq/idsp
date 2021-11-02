@@ -27,40 +27,6 @@ where
     }
 }
 
-#[cfg(not(feature = "nightly"))]
-pub fn max<T>(x: T, y: T) -> T
-where
-    T: PartialOrd,
-{
-    if x > y {
-        x
-    } else {
-        y
-    }
-}
-
-#[cfg(not(feature = "nightly"))]
-pub fn min<T>(x: T, y: T) -> T
-where
-    T: PartialOrd,
-{
-    if x < y {
-        x
-    } else {
-        y
-    }
-}
-
-#[cfg(feature = "nightly")]
-pub fn max(x: f32, y: f32) -> f32 {
-    core::intrinsics::maxnumf32(x, y)
-}
-
-#[cfg(feature = "nightly")]
-pub fn min(x: f32, y: f32) -> f32 {
-    core::intrinsics::minnumf32(x, y)
-}
-
 // Multiply-accumulate vectors `x` and `a`.
 //
 // A.k.a. dot product.
