@@ -28,6 +28,7 @@ jobs:
           args: --verbose
 
   compile:
+    runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.toolchain == 'nightly' }}
     strategy:
       matrix:
