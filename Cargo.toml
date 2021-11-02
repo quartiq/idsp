@@ -24,6 +24,3 @@ ndarray = "0.15"
 [[bench]]
 name = "micro"
 harness = false
-
-[features]
-nightly = []
