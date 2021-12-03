@@ -1,3 +1,6 @@
+use crate::tools::{unchecked_shl, unchecked_shr};
+use serde::{Deserialize, Serialize};
+
 /// Reciprocal PLL.
 ///
 /// Consumes noisy, quantized timestamps of a reference signal and reconstructs
@@ -5,13 +8,13 @@
 /// 1 << 32 of) that reference.
 /// In other words, `update()` rate ralative to reference frequency,
 /// `u32::MAX` corresponding to both being equal.
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Deserialize, Serialize)]
 pub struct RPLL {
-    dt2: u8, // 1 << dt2 is the counter rate to update() rate ratio
-    x: i32,  // previous timestamp
-    ff: u32, // current frequency estimate from frequency loop
-    f: u32,  // current frequency estimate from both frequency and phase loop
-    y: i32,  // current phase estimate
+    dt2: i32, // 1 << dt2 is the counter rate to update() rate ratio
+    x: i32,   // previous timestamp
+    ff: u32,  // current frequency estimate from frequency loop
+    f: u32,   // current frequency estimate from both frequency and phase loop
+    y: i32,   // current phase estimate
 }
 
 impl RPLL {
@@ -22,7 +25,7 @@ impl RPLL {
     ///
     /// Returns:
     /// Initialized RPLL instance.
-    pub fn new(dt2: u8) -> Self {
+    pub fn new(dt2: i32) -> Self {
         Self {
             dt2,
             ..Default::default()
@@ -46,8 +49,8 @@ impl RPLL {
     pub fn update(
         &mut self,
         input: Option<i32>,
-        shift_frequency: u8,
-        shift_phase: u8,
+        shift_frequency: i32,
+        shift_phase: i32,
     ) -> (i32, u32) {
         debug_assert!(shift_frequency >= self.dt2);
         debug_assert!(shift_phase >= self.dt2);
@@ -68,11 +71,11 @@ impl RPLL {
             // Update frequency lock
             self.ff = self.ff.wrapping_add(p_ref.wrapping_sub(p_sig));
             // Time in counter cycles between timestamp and "now"
-            let dt = (x.wrapping_neg() & ((1 << self.dt2) - 1)) as u32;
+            let dt = (x.wrapping_neg() & (unchecked_shl(1, self.dt2) - 1)) as u32;
             // Reference phase estimate "now"
             let y_ref = (self.f >> self.dt2).wrapping_mul(dt) as i32;
             // Phase error with gain
-            let dy = y_ref.wrapping_sub(self.y) >> (shift_phase - self.dt2);
+            let dy = unchecked_shr(y_ref.wrapping_sub(self.y), shift_phase - self.dt2);
             // Current frequency estimate from frequency lock and phase error
             self.f = self.ff.wrapping_add(dy as u32);
         }
@@ -94,8 +97,8 @@ mod test {
 
     struct Harness {
         rpll: RPLL,
-        shift_frequency: u8,
-        shift_phase: u8,
+        shift_frequency: i32,
+        shift_phase: i32,
         noise: i32,
         period: i32,
         next: i32,
