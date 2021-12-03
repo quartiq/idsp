@@ -53,21 +53,21 @@ pub fn macc_i32(y0: i32, x: &[i32], a: &[i32], shift: u32) -> i32 {
 }
 
 #[cfg(feature = "nightly")]
-pub fn unchecked_shr(x: i32, k: i32) -> i32 {
-    unsafe { x.unchecked_shr(k) }
+pub fn unchecked_shr(x: i32, k: u32) -> i32 {
+    unsafe { x.unchecked_shr(k as _) }
 }
 
 #[cfg(not(feature = "nightly"))]
-pub fn unchecked_shr(x: i32, k: i32) -> i32 {
+pub fn unchecked_shr(x: i32, k: u32) -> i32 {
     x >> k
 }
 
 #[cfg(feature = "nightly")]
-pub fn unchecked_shl(x: i32, k: i32) -> i32 {
-    unsafe { x.unchecked_shl(k) }
+pub fn unchecked_shl(x: i32, k: u32) -> i32 {
+    unsafe { x.unchecked_shl(k as _) }
 }
 
 #[cfg(not(feature = "nightly"))]
-pub fn unchecked_shl(x: i32, k: i32) -> i32 {
+pub fn unchecked_shl(x: i32, k: u32) -> i32 {
     x << k
 }
