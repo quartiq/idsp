@@ -42,6 +42,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.toolchain }}
+          override: true
       - uses: Swatinem/rust-cache@v1
       - name: cargo build
         uses: actions-rs/cargo@v1
