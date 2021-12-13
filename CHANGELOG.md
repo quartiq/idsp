@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-* Deriving `Serialize` for `IIR` and `IIR (int)` to support miniconf updates.
-
 ### Changed
 ### Removed
+
+## [0.4.0] - 2021-12-13
+
+### Added
+* Deriving `Serialize` for `IIR` and `IIR (int)` to support miniconf updates.
 
 ## [0.3.0] - 2021-11-02
 
@@ -27,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Library initially released on crates.io
 
-[Unreleased]: https://github.com/quartiq/idsp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/quartiq/idsp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/quartiq/idsp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/quartiq/idsp/releases/tag/v0.3.0
 [0.2.0]: https://github.com/quartiq/idsp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/quartiq/idsp/releases/tag/v0.1.0
