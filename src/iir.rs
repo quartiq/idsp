@@ -1,5 +1,5 @@
 use miniconf::MiniconfAtomic;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::{abs, copysign, macc};
 use core::iter::Sum;
@@ -55,7 +55,7 @@ pub type Vec5<T> = [T; 5];
 /// new output is computed as `y0 = a1*y1 + a2*y2 + b0*x0 + b1*x1 + b2*x2`.
 /// The IIR coefficients can be mapped to other transfer function
 /// representations, for example as described in <https://arxiv.org/abs/1508.06319>
-#[derive(Copy, Clone, Debug, Default, Deserialize, MiniconfAtomic)]
+#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, MiniconfAtomic)]
 pub struct IIR<T> {
     pub ba: Vec5<T>,
     pub y_offset: T,
