@@ -8,12 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 ### Changed
+### Removed
+
+## [0.5.0] - 2022-01-19
+### Changed
 * The shift parameters (log2 gains, log2 time constants) have all been migrated
   from `u8` to `u32` to be consistent with `core`. This is also in preparation
   for `unchecked_shr()` and `unchecked_shl()`.
 * `PLL::update()` does not return the phase increment but instead the actual
   frequency estimate.
-### Removed
+* Additional zeros in the PLL transfer functions have been placed at Nyquist.
 
 ## [0.4.0] - 2021-12-13
 
@@ -35,7 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Library initially released on crates.io
 
-[Unreleased]: https://github.com/quartiq/idsp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/quartiq/idsp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/quartiq/idsp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/quartiq/idsp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/quartiq/idsp/releases/tag/v0.3.0
 [0.2.0]: https://github.com/quartiq/idsp/releases/tag/v0.2.0
