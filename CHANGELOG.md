@@ -8,9 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 ### Changed
+### Removed
+
+## [0.6.0] - 2022-01-19
+### Changed
 * Let the `wrap` return value of `overlowing_sub()` be a `i32` in analogy to the
   remaining API functions for `i32` and the changes in `idsp v0.5.0`.
-### Removed
 
 ## [0.5.0] - 2022-01-19
 ### Changed
@@ -41,7 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Library initially released on crates.io
 
-[Unreleased]: https://github.com/quartiq/idsp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/quartiq/idsp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/quartiq/idsp/releases/tag/v0.6.0
 [0.5.0]: https://github.com/quartiq/idsp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/quartiq/idsp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/quartiq/idsp/releases/tag/v0.3.0
