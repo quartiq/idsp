@@ -23,7 +23,7 @@ impl<const N: usize> Lowpass<N> {
     ///
     /// # Return
     /// Filtered output y.
-    pub fn update(&mut self, x: i32, k: u8) -> i32 {
+    pub fn update(&mut self, x: i32, k: u32) -> i32 {
         debug_assert!(k & 31 == k);
         // This is an unrolled and optimized first-order IIR loop
         // that works for all possible time constants.

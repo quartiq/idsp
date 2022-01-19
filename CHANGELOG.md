@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 ### Changed
+* The shift parameters (log2 gains, log2 time constants) have all been migrated
+  from `u8` to `u32` to be consistent with `core`. This is also in preparation
+  for `unchecked_shr()` and `unchecked_shl()`.
 ### Removed
 
 ## [0.4.0] - 2021-12-13

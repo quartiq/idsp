@@ -7,11 +7,11 @@
 /// `u32::MAX` corresponding to both being equal.
 #[derive(Copy, Clone, Default)]
 pub struct RPLL {
-    dt2: u8, // 1 << dt2 is the counter rate to update() rate ratio
-    x: i32,  // previous timestamp
-    ff: u32, // current frequency estimate from frequency loop
-    f: u32,  // current frequency estimate from both frequency and phase loop
-    y: i32,  // current phase estimate
+    dt2: u32, // 1 << dt2 is the counter rate to update() rate ratio
+    x: i32,   // previous timestamp
+    ff: u32,  // current frequency estimate from frequency loop
+    f: u32,   // current frequency estimate from both frequency and phase loop
+    y: i32,   // current phase estimate
 }
 
 impl RPLL {
@@ -22,7 +22,7 @@ impl RPLL {
     ///
     /// Returns:
     /// Initialized RPLL instance.
-    pub fn new(dt2: u8) -> Self {
+    pub fn new(dt2: u32) -> Self {
         Self {
             dt2,
             ..Default::default()
@@ -46,8 +46,8 @@ impl RPLL {
     pub fn update(
         &mut self,
         input: Option<i32>,
-        shift_frequency: u8,
-        shift_phase: u8,
+        shift_frequency: u32,
+        shift_phase: u32,
     ) -> (i32, u32) {
         debug_assert!(shift_frequency >= self.dt2);
         debug_assert!(shift_phase >= self.dt2);
@@ -94,8 +94,8 @@ mod test {
 
     struct Harness {
         rpll: RPLL,
-        shift_frequency: u8,
-        shift_phase: u8,
+        shift_frequency: u32,
+        shift_phase: u32,
         noise: i32,
         period: i32,
         next: i32,
