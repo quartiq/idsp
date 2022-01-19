@@ -54,7 +54,7 @@ impl PLL {
     ///   per update. A good value is typically `shift_frequency - 1`.
     ///
     /// Returns:
-    /// A tuple of instantaneous phase and frequency (the current phase increment).
+    /// A tuple of instantaneous phase and frequency.
     pub fn update(&mut self, x: Option<i32>, shift_frequency: u32, shift_phase: u32) -> (i32, i32) {
         debug_assert!((1..=30).contains(&shift_frequency));
         debug_assert!((1..=30).contains(&shift_phase));
