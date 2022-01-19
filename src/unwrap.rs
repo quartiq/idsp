@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 /// A tuple containg the (wrapped) difference `y - x` and the signum of the
 /// overflow.
 #[inline(always)]
-pub fn overflowing_sub(y: i32, x: i32) -> (i32, i8) {
+pub fn overflowing_sub(y: i32, x: i32) -> (i32, i32) {
     let delta = y.wrapping_sub(x);
-    let wrap = (delta >= 0) as i8 - (y >= x) as i8;
+    let wrap = (delta >= 0) as i32 - (y >= x) as i32;
     (delta, wrap)
 }
 
@@ -72,7 +72,7 @@ mod tests {
     #[test]
     fn overflowing_sub_correctness() {
         for (x0, x1, v) in [
-            (0i32, 0i32, 0i8),
+            (0i32, 0i32, 0i32),
             (0, 1, 0),
             (0, -1, 0),
             (1, 0, 0),
