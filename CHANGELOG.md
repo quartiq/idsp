@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 ### Changed
+* Let the `wrap` return value of `overlowing_sub()` be a `i32` in analogy to the
+  remaining API functions for `i32` and the changes in `idsp v0.5.0`.
 ### Removed
 
 ## [0.5.0] - 2022-01-19
