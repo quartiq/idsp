@@ -1,20 +1,25 @@
+use num_traits::ops::wrapping::WrappingAdd;
+
 #[derive(Copy, Clone, Default, PartialEq, Debug)]
-pub struct Accu {
-    state: i32,
-    step: i32,
+pub struct Accu<T> {
+    state: T,
+    step: T,
 }
 
-impl Accu {
-    pub fn new(state: i32, step: i32) -> Self {
+impl<T> Accu<T> {
+    pub fn new(state: T, step: T) -> Self {
         Self { state, step }
     }
 }
 
-impl Iterator for Accu {
-    type Item = i32;
-    fn next(&mut self) -> Option<i32> {
+impl<T> Iterator for Accu<T>
+where
+    T: WrappingAdd + Copy,
+{
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
         let s = self.state;
-        self.state = self.state.wrapping_add(self.step);
+        self.state = s.wrapping_add(&self.step);
         Some(s)
     }
 }
