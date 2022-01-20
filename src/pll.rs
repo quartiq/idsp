@@ -101,7 +101,7 @@ mod tests {
         let mut p = PLL::default();
         let (y, f) = p.update(Some(0x10000), 8, 4);
         assert_eq!(y, 0x87c);
-        assert_eq!(f, 0x80);
+        assert_eq!(f, 0x1078);
     }
 
     #[test]

@@ -64,6 +64,16 @@ impl Unwrapper {
         self.w = self.w.wrapping_add(dw as i32);
         (dx, self.w)
     }
+
+    /// Return the current number of wraps
+    pub fn wraps(&self) -> i32 {
+        self.w
+    }
+
+    /// Return the last known phase
+    pub fn phase(&self) -> i32 {
+        self.x
+    }
 }
 
 #[cfg(test)]

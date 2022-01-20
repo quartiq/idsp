@@ -78,6 +78,16 @@ impl RPLL {
         }
         (self.y, self.f)
     }
+
+    /// Return the current phase estimate
+    pub fn phase(&self) -> i32 {
+        self.y
+    }
+
+    /// Return the current frequency estimate
+    pub fn frequency(&self) -> u32 {
+        self.f
+    }
 }
 
 #[cfg(test)]

@@ -34,6 +34,11 @@ impl<const N: usize> Lowpass<N> {
             *y += dy;
             x = *y - (dy >> 1);
         }
-        x.saturating_add((self.y.len() as i32) << (k - 1).max(0))
+        x.saturating_add((N as i32) << (k - 1).max(0))
+    }
+
+    /// Return the current filter output
+    pub fn output(&self) -> i32 {
+        self.y[N - 1]
     }
 }

@@ -43,11 +43,11 @@ fn rpll_bench() {
 fn pll_bench() {
     let mut dut = PLL::default();
     println!(
-        "PLL::update(t, 12, 12): {}",
+        "PLL::update(Some(t), 12, 12): {}",
         bench_env(Some(0x241), |x| dut.update(*x, 12, 12))
     );
     println!(
-        "PLL::update(t, sf, sp): {}",
+        "PLL::update(Some(t), sf, sp): {}",
         bench_env((Some(0x241), 21, 20), |(x, p, q)| dut.update(*x, *p, *q))
     );
 }
