@@ -63,19 +63,21 @@ impl PLL {
         if let Some(x) = x {
             let df = unchecked_shr(
                 unchecked_shl(1, shift_frequency - 1)
-                .wrapping_add(x)
-                .wrapping_sub(self.x)
-                .wrapping_sub(self.f),
-                shift_frequency);
+                    .wrapping_add(x)
+                    .wrapping_sub(self.x)
+                    .wrapping_sub(self.f),
+                shift_frequency,
+            );
             self.x = x;
             self.f = self.f.wrapping_add(df);
             let f = self.f.wrapping_sub(df >> 1);
             self.y = self.y.wrapping_add(f);
             let dy = unchecked_shr(
                 unchecked_shl(1, shift_phase - 1)
-                .wrapping_add(x)
-                .wrapping_sub(self.y),
-                shift_phase);
+                    .wrapping_add(x)
+                    .wrapping_sub(self.y),
+                shift_phase,
+            );
             self.y = self.y.wrapping_add(dy);
             let y = self.y.wrapping_sub(dy >> 1);
             (y, f.wrapping_add(dy))
