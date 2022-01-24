@@ -5,14 +5,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+### Changed
+### Removed
 
+## [0.7.0] - 2022-01-24
 ### Added
 * Getter methods for `PLL`, `RPLL`, `Lowpass`, `Unwrapper`
 ### Changed
 * `Accu`, `Unwrapper`, `overflowing_sub` are now generic.
 * Revert `to PLL::update()` returning the phase increment as that has less bias
   (while it does have more noise).
-### Removed
 
 ## [0.6.0] - 2022-01-19
 ### Changed
@@ -48,7 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Library initially released on crates.io
 
-[Unreleased]: https://github.com/quartiq/idsp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/quartiq/idsp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/quartiq/idsp/releases/tag/v0.7.0
 [0.6.0]: https://github.com/quartiq/idsp/releases/tag/v0.6.0
 [0.5.0]: https://github.com/quartiq/idsp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/quartiq/idsp/releases/tag/v0.4.0
