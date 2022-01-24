@@ -1,7 +1,7 @@
 use super::tools::macc_i32;
 use core::f64::consts::PI;
 use miniconf::MiniconfAtomic;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Generic vector for integer IIR filter.
 /// This struct is used to hold the x/y input/output data vector or the b/a coefficient
@@ -46,7 +46,7 @@ impl Coeff for Vec5 {
 /// See `dsp::iir::IIR` for general implementation details.
 /// Offset and limiting disabled to suit lowpass applications.
 /// Coefficient scaling fixed and optimized.
-#[derive(Copy, Clone, Default, Debug, MiniconfAtomic, Deserialize)]
+#[derive(Copy, Clone, Default, Debug, MiniconfAtomic, Serialize, Deserialize)]
 pub struct IIR {
     pub ba: Vec5,
     pub y_offset: i32,

@@ -1,3 +1,5 @@
+use core::cmp::PartialOrd;
+use num_traits::{identities::Zero, ops::wrapping::WrappingSub};
 use serde::{Deserialize, Serialize};
 
 /// Subtract `y - x` with signed overflow.
@@ -10,9 +12,12 @@ use serde::{Deserialize, Serialize};
 /// A tuple containg the (wrapped) difference `y - x` and the signum of the
 /// overflow.
 #[inline(always)]
-pub fn overflowing_sub(y: i32, x: i32) -> (i32, i8) {
-    let delta = y.wrapping_sub(x);
-    let wrap = (delta >= 0) as i8 - (y >= x) as i8;
+pub fn overflowing_sub<T>(y: T, x: T) -> (T, i32)
+where
+    T: WrappingSub + Zero + PartialOrd,
+{
+    let delta = y.wrapping_sub(&x);
+    let wrap = (delta >= T::zero()) as i32 - (y >= x) as i32;
     (delta, wrap)
 }
 
@@ -42,14 +47,17 @@ pub fn saturating_scale(lo: i32, hi: i32, shift: u32) -> i32 {
 /// This is unwrapping as in the phase and overflow unwrapping context, not
 /// unwrapping as in the `Result`/`Option` context.
 #[derive(Copy, Clone, Default, Deserialize, Serialize)]
-pub struct Unwrapper {
+pub struct Unwrapper<T> {
     // last input
-    x: i32,
+    x: T,
     // last wraps
     w: i32,
 }
 
-impl Unwrapper {
+impl<T> Unwrapper<T>
+where
+    T: WrappingSub + Zero + PartialOrd + Copy,
+{
     /// Unwrap a new sample from a sequence and update the unwrapper state.
     ///
     /// Args:
@@ -58,11 +66,21 @@ impl Unwrapper {
     /// Returns:
     /// A tuple containing the (wrapped) difference `x - x_old` and the
     /// signed number of wraps accumulated by the new sample.
-    pub fn update(&mut self, x: i32) -> (i32, i32) {
+    pub fn update(&mut self, x: T) -> (T, i32) {
         let (dx, dw) = overflowing_sub(x, self.x);
         self.x = x;
         self.w = self.w.wrapping_add(dw as i32);
         (dx, self.w)
+    }
+
+    /// Return the current number of wraps
+    pub fn wraps(&self) -> i32 {
+        self.w
+    }
+
+    /// Return the last known phase
+    pub fn phase(&self) -> T {
+        self.x
     }
 }
 
@@ -72,7 +90,7 @@ mod tests {
     #[test]
     fn overflowing_sub_correctness() {
         for (x0, x1, v) in [
-            (0i32, 0i32, 0i8),
+            (0i32, 0i32, 0i32),
             (0, 1, 0),
             (0, -1, 0),
             (1, 0, 0),
