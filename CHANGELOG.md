@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+* Getter methods for `PLL`, `RPLL`, `Lowpass`, `Unwrapper`
 ### Changed
+* `Accu`, `Unwrapper`, `overflowing_sub` are now generic.
+* Revert `to PLL::update()` returning the phase increment as that has less bias
+  (while it does have more noise).
 ### Removed
 
 ## [0.6.0] - 2022-01-19
