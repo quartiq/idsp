@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Removed
 
+## [0.7.1] - 2022-01-24
+### Changed
+* Changed back to release 2018
+
 ## [0.7.0] - 2022-01-24
 ### Added
 * Getter methods for `PLL`, `RPLL`, `Lowpass`, `Unwrapper`
@@ -51,7 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Library initially released on crates.io
 
-[Unreleased]: https://github.com/quartiq/idsp/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/quartiq/idsp/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/quartiq/idsp/releases/tag/v0.7.1
 [0.7.0]: https://github.com/quartiq/idsp/releases/tag/v0.7.0
 [0.6.0]: https://github.com/quartiq/idsp/releases/tag/v0.6.0
 [0.5.0]: https://github.com/quartiq/idsp/releases/tag/v0.5.0
