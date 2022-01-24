@@ -2,8 +2,8 @@
 name = "idsp"
 version = "0.7.0"
 resolver = "2"
+edition = "2018"
 authors = ["Robert Jördens <rj@quartiq.de>"]
-edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "DSP algorithms for embedded, mostly integer math"
 homepage = "https://github.com/quartiq/idsp"
