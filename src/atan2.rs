@@ -17,59 +17,51 @@
 /// represents -pi and, equivalently, +pi. i32::MAX represents one
 /// count less than +pi.
 pub fn atan2(y: i32, x: i32) -> i32 {
-    let sign = (x < 0, y < 0);
-
-    let mut y = y.wrapping_abs() as u32;
-    let mut x = x.wrapping_abs() as u32;
-
+    // Map into first octant
+    let sign_x = x < 0;
+    let mut x = if sign_x { x.wrapping_neg() } else { x } as u32;
+    let sign_y = y < 0;
+    let mut y = if sign_y { y.wrapping_neg() } else { y } as u32;
     let y_greater = y > x;
     if y_greater {
-        core::mem::swap(&mut y, &mut x);
+        (x, y) = (y, x);
     }
 
-    let z = (y.leading_zeros() as i32).min(15);
-
+    // Normalize for maximum ratio dynamic range
+    let z = (x.leading_zeros() as i32).min(15);
     x >>= 15 - z;
     if x == 0 {
         return 0;
     }
+
+    // Compute ratio
     let r = (y << z) / x;
     debug_assert!(r <= 1 << 16);
 
-    // Uses the general procedure described in the following
-    // Mathematics stack exchange answer:
-    //
-    // https://math.stackexchange.com/a/1105038/583981
-    //
-    // The atan approximation method has been modified to be cheaper
-    // to compute and to be more compatible with integer
-    // arithmetic. The approximation technique used here is
-    //
-    // pi / 4 * r + C * r * (1 - abs(r))
-    //
-    // which is taken from Rajan 2006: Efficient Approximations for
-    // the Arctangent Function.
-    //
-    // The least max error solution is C = 0.273 (no the 0.285 that
-    // Rajan uses). K = C*4/pi.
-    const K: u32 = (0.3476 * (1 << 15) as f64) as _;
-    let mut angle = ((r << 14) + (K * (r * ((1 << 15) - r) >> 16))) as i32;
+    // This approximation is a very common one. It is mentione in
+    // https://math.stackexchange.com/a/1105038/583981 and
+    // Sreeraman Rajan, Sichun Wang, Robert Inkol, and Alain Joyal:
+    // Efficient Approximations for the Arctangent Function,
+    // IEEE Signal Processing Magazine [108] May 2006
+    // This version is rewritten and optimized for fixed point.
+    // One could do another order of `r + r*(1 - r)*(0.2447 + 0.0663*r)/PI_4`
+    // but that would only bring a factor of 2 smaller max and rms error.
+    const K: u32 = (0.2732 / core::f32::consts::FRAC_PI_4 * (1 << 15) as f32) as _;
+    let mut angle = ((r << 14) + (K * ((r * ((1 << 15) - r)) >> 16))) as i32;
 
+    // Unmap octant
     if y_greater {
         angle = (1 << 30) - angle;
     }
-
-    if sign.0 {
+    if sign_x {
         angle = i32::MAX - angle;
     }
-
-    if sign.1 {
-        // angle = angle.wrapping_neg();
-        // Negation ends up in slightly faster assembly
-        angle = !angle;
+    // Bitflip ends up in slightly faster assembly than negation
+    if sign_y {
+        !angle
+    } else {
+        angle
     }
-
-    angle
 }
 
 #[cfg(test)]
