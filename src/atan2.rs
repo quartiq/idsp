@@ -27,14 +27,13 @@ pub fn atan2(y: i32, x: i32) -> i32 {
         core::mem::swap(&mut y, &mut x);
     }
 
-    let z = (16 - y.leading_zeros() as i32).max(0);
+    let z = (y.leading_zeros() as i32).min(15);
 
-    x >>= z;
+    x >>= 15 - z;
     if x == 0 {
         return 0;
     }
-    y >>= z;
-    let r = (y << 16) / x;
+    let r = (y << z) / x;
     debug_assert!(r <= 1 << 16);
 
     // Uses the general procedure described in the following
@@ -51,19 +50,10 @@ pub fn atan2(y: i32, x: i32) -> i32 {
     // which is taken from Rajan 2006: Efficient Approximations for
     // the Arctangent Function.
     //
-    // The least mean squared error solution is C = 0.279 (no the 0.285 that
+    // The least max error solution is C = 0.273 (no the 0.285 that
     // Rajan uses). K = C*4/pi.
-    // Q5 for K provides sufficient correction accuracy while preserving
-    // as much smoothness of the quadratic correction as possible.
-    const FP_K: usize = 5;
-    const K: u32 = (0.35489 * (1 << FP_K) as f64) as u32;
-    // debug_assert!(K == 11);
-
-    // `r` is unsigned Q16.16 and <= 1
-    // `angle` is signed Q1.31 with 1 << 31 == +- pi
-    // Since K < 0.5 and r*(1 - r) <= 0.25 the correction product can use
-    // 4 bits for K, and 15 bits for r and 1-r to remain within the u32 range.
-    let mut angle = ((r << 13) + ((K * (r >> 1) * ((1 << 15) - (r >> 1))) >> (FP_K + 1))) as i32;
+    const K: u32 = (0.3476 * (1 << 15) as f64) as _;
+    let mut angle = ((r << 14) + (K * (r * ((1 << 15) - r) >> 16))) as i32;
 
     if y_greater {
         angle = (1 << 30) - angle;
@@ -74,9 +64,9 @@ pub fn atan2(y: i32, x: i32) -> i32 {
     }
 
     if sign.1 {
-        angle = angle.wrapping_neg();
+        // angle = angle.wrapping_neg();
         // Negation ends up in slightly faster assembly
-        // angle = !angle;
+        angle = !angle;
     }
 
     angle
@@ -128,8 +118,8 @@ mod tests {
         println!("max abs err: {:.2e}", abs_err);
         println!("rms abs err: {:.2e}", rms_err);
         println!("max rel err: {:.2e}", rel_err);
-        assert!(abs_err < 5e-3);
-        assert!(rms_err < 3e-3);
+        assert!(abs_err < 3.8e-3);
+        assert!(rms_err < 2.7e-3);
         assert!(rel_err < 0.6);
     }
 }
