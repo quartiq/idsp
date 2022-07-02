@@ -1,3 +1,4 @@
+use crate::tools::{unchecked_shl, unchecked_shr};
 use serde::{Deserialize, Serialize};
 
 /// Type-II, sampled phase, discrete time PLL
@@ -60,19 +61,23 @@ impl PLL {
         debug_assert!((1..=30).contains(&shift_frequency));
         debug_assert!((1..=30).contains(&shift_phase));
         if let Some(x) = x {
-            let df = (1i32 << (shift_frequency - 1))
-                .wrapping_add(x)
-                .wrapping_sub(self.x)
-                .wrapping_sub(self.f)
-                >> shift_frequency;
+            let df = unchecked_shr(
+                unchecked_shl(1, shift_frequency - 1)
+                    .wrapping_add(x)
+                    .wrapping_sub(self.x)
+                    .wrapping_sub(self.f),
+                shift_frequency,
+            );
             self.x = x;
             self.f = self.f.wrapping_add(df);
             let f = self.f.wrapping_sub(df >> 1);
             self.y = self.y.wrapping_add(f);
-            let dy = (1i32 << (shift_phase - 1))
-                .wrapping_add(x)
-                .wrapping_sub(self.y)
-                >> shift_phase;
+            let dy = unchecked_shr(
+                unchecked_shl(1, shift_phase - 1)
+                    .wrapping_add(x)
+                    .wrapping_sub(self.y),
+                shift_phase,
+            );
             self.y = self.y.wrapping_add(dy);
             let y = self.y.wrapping_sub(dy >> 1);
             (y, f.wrapping_add(dy))
