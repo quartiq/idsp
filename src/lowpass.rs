@@ -2,7 +2,7 @@
 /// lowpass filter implementation. DC gain is 1.
 ///
 /// Type argument N is the filter order.
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct Lowpass<const N: usize> {
     // IIR state storage
     y: [i32; N],

@@ -1,6 +1,6 @@
 use super::{Complex, ComplexExt, Lowpass, MulScaled};
 
-#[derive(Clone, Default)]
+#[derive(Copy, Clone, Default)]
 pub struct Lockin<const N: usize> {
     state: [Lowpass<N>; 2],
 }
