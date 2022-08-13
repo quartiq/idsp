@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 ### Changed
 * Miniconf dependency bumped to 0.5
+* `atan2` algorithm changed, accuracy improved from 4e-3 to 1e-5 rad max error
 
 ### Removed
 

@@ -1,6 +1,6 @@
 use num_traits::ops::wrapping::WrappingAdd;
 
-#[derive(Copy, Clone, Default, PartialEq, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
 pub struct Accu<T> {
     state: T,
     step: T,
