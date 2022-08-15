@@ -22,7 +22,7 @@ This uses a small (128 element or 512 byte LUT), smart octant (un)mapping, linea
 
 ## atan2
 
-This returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine), The RMS phase error is less than 3e-3, max error is 5e-3, relative phase error decreases further near the octant cuts.
+This returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine), The RMS phase error is less than 5e-6 rad, max error is less than 1.2e-5 rad, i.e. 20.5 bit RMS, 19.1 bit max accuracy.
 
 ## ComplexExt
 
