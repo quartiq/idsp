@@ -1,10 +1,9 @@
 fn divi(mut y: u32, mut x: u32) -> u32 {
     debug_assert!(y <= x);
-    let mut z = y.leading_zeros().min(15);
+    let z = y.leading_zeros().min(15);
     y <<= z;
-    z = 15 - z;
-    x += 1 << z;
-    x >>= z + 1;
+    x += 1 << (15 - z);
+    x >>= 16 - z;
     if x == 0 {
         0
     } else {
@@ -24,10 +23,10 @@ fn atani(x: u32) -> u32 {
     debug_assert!(x <= 0x20001);
     let x = x as i64;
     let x2 = ((x * x) >> 4) as i32 as i64;
-    let mut r = 0i32;
-    for &a in A.iter().rev() {
-        r = ((r as i64 * x2) >> 32) as i32 + a;
-    }
+    let r = A
+        .iter()
+        .rev()
+        .fold(0, |r, a| ((r as i64 * x2) >> 32) as i32 + a);
     ((r as i64 * x) >> 14) as _
 }
 
@@ -48,29 +47,24 @@ fn atani(x: u32) -> u32 {
 /// represents -pi and, equivalently, +pi. i32::MAX represents one
 /// count less than +pi.
 pub fn atan2(mut y: i32, mut x: i32) -> i32 {
-    let k0 = y < 0;
-    if k0 {
+    let mut k = 0i32;
+    let mut s = 1i32;
+    if y < 0 {
         y = y.saturating_neg();
+        s = -1;
     }
-    let k1 = x < 0;
-    if k1 {
+    if x < 0 {
         x = x.saturating_neg();
+        k = k.wrapping_add(s << 31);
+        s *= -1;
     }
-    let k2 = y > x;
-    if k2 {
+    if y > x {
         (y, x) = (x, y);
+        k = k.wrapping_add(s << 30);
+        s *= -1;
     }
-    let mut r = atani(divi(y as _, x as _)) as _;
-    if k2 {
-        r = (1i32 << 30).wrapping_sub(r);
-    }
-    if k1 {
-        r = (2i32 << 30).wrapping_sub(r);
-    }
-    if k0 {
-        r = (4i32 << 30).wrapping_sub(r);
-    }
-    r
+    let r = atani(divi(y as _, x as _));
+    (s * r as i32).wrapping_add(k)
 }
 
 #[cfg(test)]
