@@ -25,10 +25,10 @@ fn atani(x: u32) -> u32 {
     let x = x as i64;
     let x2 = ((x * x) >> 4) as i32 as i64;
     let mut r = 0i32;
-    for &a in A[1..].iter().rev() {
-        r = (((r + a) as i64 * x2) >> 32) as _;
+    for &a in A.iter().rev() {
+        r = ((r as i64 * x2) >> 32) as i32 + a;
     }
-    (((r + A[0]) as i64 * x) >> 14) as _
+    ((r as i64 * x) >> 14) as _
 }
 
 /// 2-argument arctangent function.
