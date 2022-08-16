@@ -55,7 +55,7 @@ pub fn atan2(mut y: i32, mut x: i32) -> i32 {
     }
     if x < 0 {
         x = x.saturating_neg();
-        k = k.wrapping_add(s << 31);
+        k = s << 31;
         s *= -1;
     }
     if y > x {
