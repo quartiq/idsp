@@ -6,9 +6,9 @@
 [![Continuous Integration](https://github.com/quartiq/idsp/actions/workflows/ci.yml/badge.svg)](https://github.com/quartiq/idsp/actions/workflows/ci.yml)
 
 This crate contains some tuned DSP algorithms for general and especially embedded use.
-Many of the algorithms are implemented on integer datatypes for several reasons that become important in certain cases:
+Many of the algorithms are implemented on integer datatypes for reasons that become important in certain cases:
 
-* Speed: even with a hard FP unit integer operations are faster.
+* Speed: even with a hard floating point unit integer operations are faster.
 * Accuracy: single precision FP has a 24 bit mantissa, `i32` has full 32 bit.
 * No rounding errors.
 * Natural wrap around (modulo) at the integer overflow: critical for phase/frequency applications.
@@ -16,13 +16,13 @@ Many of the algorithms are implemented on integer datatypes for several reasons 
 
 One comprehensive user for these algorithms is [Stabilizer](https://github.com/quartiq/stabilizer).
 
-## Cosine/Sine
+## Cosine/Sine `cossin`
 
-This uses a small (128 element or 512 byte LUT), smart octant (un)mapping, linear interpolation and comprehensive analysis of corner cases to achieve a very clean signal (4e-6 RMS error, 9e-6 max error, 108 dB SNR), low spurs, and no bias with about 40 cortex-m instruction per call. It computes both cosine and sine (i.e. the complex signal) at once given a phase input.
+This uses a small (128 element or 512 byte) LUT, smart octant (un)mapping, linear interpolation and comprehensive analysis of corner cases to achieve a very clean signal (4e-6 RMS error, 9e-6 max error, 108 dB SNR typ), low spurs, and no bias with about 40 cortex-m instruction per call. It computes both cosine and sine (i.e. the complex signal) at once given a phase input.
 
-## atan2
+## Two-argument arcus-tangens `atan2`
 
-This returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine), The RMS phase error is less than 5e-6 rad, max error is less than 1.2e-5 rad, i.e. 20.5 bit RMS, 19.1 bit max accuracy.
+This returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine). The RMS phase error is less than 5e-6 rad, max error is less than 1.2e-5 rad, i.e. 20.5 bit RMS, 19.1 bit max accuracy. The bias is minimal.
 
 ## ComplexExt
 
@@ -30,7 +30,7 @@ An extension trait for the `num::Complex` type featuring especially a `std`-like
 
 ## PLL, RPLL
 
-High accuracy, zero-assumption, fully robust, forward and reciprocal PLLs with dynamically adjustable time constant and arbitrary capture range.
+High accuracy, zero-assumption, fully robust, forward and reciprocal PLLs with dynamically adjustable time constant and arbitrary (in the Nyquist sampling sense) capture range.
 
 ## Unwrapper, Accu, saturating_scale
 
