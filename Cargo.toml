@@ -1,6 +1,6 @@
 [package]
 name = "idsp"
-version = "0.8.5"
+version = "0.8.6"
 resolver = "2"
 edition = "2018"
 authors = ["Robert Jördens <rj@quartiq.de>"]
