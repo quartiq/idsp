@@ -42,7 +42,7 @@ pub type Vec5<T> = [T; 5];
 /// * Cascading multiple IIR filters allows stable and robust
 ///   implementation of transfer functions beyond bequadratic terms.
 ///
-/// # Miniconf
+/// # Serialization/Deserialization/Miniconf
 ///
 /// `{"y_offset": y_offset, "y_min": y_min, "y_max": y_max, "ba": [b0, b1, b2, a1, a2]}`
 ///
