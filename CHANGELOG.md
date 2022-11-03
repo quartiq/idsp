@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0](https://github.com/quartiq/idsp/compare/v0.8.6...v0.9.0) 2022-11-03
+
+### Changed
+
+* Removed `miniconf` dependency as with miniconf >= 0.6 `MiniconfAtomic` is implicit.
+
 ## [0.8.6] - 2022-08-16
 
 ### Changed
@@ -82,7 +88,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Library initially released on crates.io
 
-[Unreleased]: https://github.com/quartiq/idsp/compare/v0.8.6...HEAD
 [0.8.6]: https://github.com/quartiq/idsp/releases/tag/v0.8.6
 [0.8.5]: https://github.com/quartiq/idsp/releases/tag/v0.8.5
 [0.8.0]: https://github.com/quartiq/idsp/releases/tag/v0.8.0
