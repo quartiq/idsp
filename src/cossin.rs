@@ -1,5 +1,3 @@
-use core::f64::consts::PI;
-
 include!(concat!(env!("OUT_DIR"), "/cossin_table.rs"));
 
 /// Compute the cosine and sine of an angle.
@@ -13,27 +11,18 @@ include!(concat!(env!("OUT_DIR"), "/cossin_table.rs"));
 /// The cos and sin values of the provided phase as a `(i32, i32)`
 /// tuple. With a 7-bit deep LUT there is 9e-6 max and 4e-6 RMS error
 /// in each quadrature over 20 bit phase.
-pub fn cossin(phase: i32) -> (i32, i32) {
-    // Phase bits excluding the three highest MSB
-    const OCTANT_BITS: usize = 32 - 3;
-
-    // This is a slightly more compact way to compute the four flags for
-    // octant mapping/unmapping used below.
-    let mut octant = (phase as u32) >> OCTANT_BITS;
-    octant ^= octant << 1;
-
-    let mut phase = phase;
-    if octant & 1 != 0 {
+pub fn cossin(mut phase: i32) -> (i32, i32) {
+    let mut octant = phase as u32;
+    if octant & (1 << 29) != 0 {
         // phase = pi/4 - phase
         phase = !phase;
     }
 
-    // Mask off octant bits. This leaves the angle in the range [0, pi/4).
-    phase &= (1 << OCTANT_BITS) - 1;
-
     // 16 + 1 bits for cos/sin and 15 for dphi to saturate the i32 range.
     const ALIGN_MSB: usize = 32 - 16 - 1;
-    phase >>= OCTANT_BITS - COSSIN_DEPTH - ALIGN_MSB;
+
+    // Mask off octant bits. This leaves the angle in the range [0, pi/4).
+    phase = (((phase as u32) << 3) >> (32 - COSSIN_DEPTH - ALIGN_MSB)) as _;
 
     let lookup = COSSIN[(phase >> ALIGN_MSB) as usize];
     phase &= (1 << ALIGN_MSB) - 1;
@@ -47,7 +36,7 @@ pub fn cossin(phase: i32) -> (i32, i32) {
     // phase += (octant & 1) as i32;
 
     // Fixed point pi/4.
-    const PI4: i32 = (PI / 4. * (1 << 16) as f64) as _;
+    const PI4: i32 = (core::f64::consts::FRAC_PI_4 * (1 << 16) as f64) as _;
     // No rounding bias necessary here since we keep enough low bits.
     let dphi = (phase * PI4) >> 16;
 
@@ -63,13 +52,14 @@ pub fn cossin(phase: i32) -> (i32, i32) {
     sin = (sin << ALIGN_MSB) + dsin;
 
     // Unmap using octant bits.
-    if octant & 2 != 0 {
-        core::mem::swap(&mut sin, &mut cos);
+    octant ^= octant >> 1;
+    if octant & (1 << 29) != 0 {
+        (cos, sin) = (sin, cos);
     }
-    if octant & 4 != 0 {
+    if octant & (1 << 30) != 0 {
         cos = -cos;
     }
-    if octant & 8 != 0 {
+    if octant & (1 << 31) != 0 {
         sin = -sin;
     }
 
