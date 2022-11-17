@@ -2,7 +2,7 @@ fn divi(mut y: u32, mut x: u32) -> u32 {
     debug_assert!(y <= x);
     let z = y.leading_zeros().min(15);
     y <<= z;
-    x += 1 << (15 - z);
+    x += (1 << (15 - z)) - 1;
     x >>= 16 - z;
     if x == 0 {
         0
@@ -13,12 +13,12 @@ fn divi(mut y: u32, mut x: u32) -> u32 {
 
 fn atani(x: u32) -> u32 {
     const A: [i32; 6] = [
-        0x517c33d,
-        -0x6c62a79,
-        0xfb7b9fa,
-        -0x256b5f1d,
-        0x426e804f,
-        -0x39d50c54,
+        0x517c43f,
+        -0x6c6a736,
+        0xfc50e8b,
+        -0x25f230d7,
+        0x44a3d098,
+        -0x3d199c8f,
     ];
     debug_assert!(x <= 0x20001);
     let x = x as i64;
@@ -51,11 +51,11 @@ pub fn atan2(mut y: i32, mut x: i32) -> i32 {
     let mut s = 1i32;
     if y < 0 {
         y = y.saturating_neg();
-        s = -1;
+        s *= -1;
     }
     if x < 0 {
         x = x.saturating_neg();
-        k = s << 31;
+        k = k.wrapping_add(s << 31);
         s *= -1;
     }
     if y > x {
@@ -135,7 +135,7 @@ mod tests {
         println!("rms abs err: {:.2e}", rms_err);
         println!("max rel err: {:.2e}", rel_err);
         assert!(abs_err < 1.2e-5);
-        assert!(rms_err < 4.3e-6);
+        assert!(rms_err < 4.2e-6);
         assert!(rel_err < 1e-12);
     }
 }
