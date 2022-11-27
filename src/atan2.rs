@@ -5,29 +5,28 @@ fn divi(mut y: u32, mut x: u32) -> u32 {
     x += (1 << (15 - z)) - 1;
     x >>= 16 - z;
     if x == 0 {
-        0
+        0 // x == y == 0
     } else {
-        2 * (y / x) + 1
+        ((y / x) << 15) + (1 << 14)
     }
 }
 
 fn atani(x: u32) -> u32 {
     const A: [i32; 6] = [
-        0x517c43f,
-        -0x6c6a736,
-        0xfc50e8b,
-        -0x25f230d7,
-        0x44a3d098,
-        -0x3d199c8f,
+        0x0517c2cd,
+        -0x06c6496b,
+        0x0fbdb026,
+        -0x25b32e58,
+        0x43b34e3c,
+        -0x3bc82700,
     ];
-    debug_assert!(x <= 0x20001);
     let x = x as i64;
-    let x2 = ((x * x) >> 4) as i32 as i64;
+    let x2 = ((x * x) >> 32) as i32 as i64;
     let r = A
         .iter()
         .rev()
         .fold(0, |r, a| ((r as i64 * x2) >> 32) as i32 + a);
-    ((r as i64 * x) >> 14) as _
+    ((r as i64 * x) >> 28) as _
 }
 
 /// 2-argument arctangent function.
@@ -47,24 +46,21 @@ fn atani(x: u32) -> u32 {
 /// represents -pi and, equivalently, +pi. i32::MAX represents one
 /// count less than +pi.
 pub fn atan2(mut y: i32, mut x: i32) -> i32 {
-    let mut k = 0i32;
-    let mut s = 1i32;
+    let mut k = 0u32;
     if y < 0 {
         y = y.saturating_neg();
-        s *= -1;
+        k ^= u32::MAX;
     }
     if x < 0 {
         x = x.saturating_neg();
-        k = k.wrapping_add(s << 31);
-        s *= -1;
+        k ^= u32::MAX >> 1;
     }
     if y > x {
         (y, x) = (x, y);
-        k = k.wrapping_add(s << 30);
-        s *= -1;
+        k ^= u32::MAX >> 2;
     }
     let r = atani(divi(y as _, x as _));
-    (s * r as i32).wrapping_add(k)
+    (r ^ k) as _
 }
 
 #[cfg(test)]
