@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * `atan2` code refactored slightly for speed
 
-## [0.9.1](](https://github.com/quartiq/idsp/compare/v0.9.0..v0.9.1) 2022-11-05
+## [0.9.1](https://github.com/quartiq/idsp/compare/v0.9.0..v0.9.1) 2022-11-05
 
 ## [0.9.0](https://github.com/quartiq/idsp/compare/v0.8.6...v0.9.0) 2022-11-03
 
