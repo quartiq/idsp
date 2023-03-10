@@ -1,3 +1,5 @@
+use crate::tools::{unchecked_shl, unchecked_shr};
+
 /// Arbitrary order, high dynamic range, wide coefficient range,
 /// lowpass filter implementation. DC gain is 1.
 ///
@@ -30,11 +32,11 @@ impl<const N: usize> Lowpass<N> {
         // Note T-DF-I and the zeros at Nyquist.
         let mut x = x;
         for y in self.y.iter_mut() {
-            let dy = x.saturating_sub(*y) >> k;
+            let dy = unchecked_shr(x.saturating_sub(*y), k);
             *y += dy;
             x = *y - (dy >> 1);
         }
-        x.saturating_add((N as i32) << (k - 1).max(0))
+        x.saturating_add(unchecked_shl(N as i32, (k - 1).max(0)))
     }
 
     /// Return the current filter output

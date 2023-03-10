@@ -15,6 +15,9 @@ serde = { version = "1.0", features = ["derive"], default-features = false }
 num-complex = { version = "0.4.0", features = ["serde"], default-features = false }
 num-traits = { version = "0.2.14", features = ["libm"], default-features = false}
 
+[features]
+nightly = []
+
 [dev-dependencies]
 easybench = "1.0"
 rand = "0.8"

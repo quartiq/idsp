@@ -1,3 +1,4 @@
+#![cfg_attr(feature = "nightly", feature(unchecked_math))]
 #![cfg_attr(not(test), no_std)]
 
 mod tools;
