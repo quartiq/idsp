@@ -60,10 +60,10 @@ impl Lowpass2 {
     }
 
     pub fn gain(k: i32, g: Option<i32>) -> [i32; 2] {
-        let g = g.unwrap_or((2f32.sqrt() * 2f32.pow(32)) as i32);
+        let g = g.unwrap_or((2f32.sqrt() * 2f32.pow(30)) as i32);
         [
-            ((k as i64 * g as i64) >> 32) as _,
-            ((k as i64 * k as i64) >> 32) as _,
+            ((k as i64 * g as i64) >> 28) as _,
+            ((k as i64 * k as i64) >> 28) as _,
         ]
     }
 }
