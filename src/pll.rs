@@ -1,3 +1,4 @@
+use crate::Lowpass2;
 use serde::{Deserialize, Serialize};
 
 /// Type-II, sampled phase, discrete time PLL
@@ -91,6 +92,35 @@ impl PLL {
     /// Return the current frequency estimate
     pub fn frequency(&self) -> i32 {
         self.f
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct PLL2 {
+    x1: i32,
+    k: [i32; 2],
+    lp: [Lowpass2; 2],
+}
+
+impl PLL2 {
+    pub fn configure(&mut self, k: i32, g: Option<i32>) {
+        self.k = Lowpass2::gain(k, g);
+    }
+
+    pub fn update(&mut self, x: Option<i32>) -> (i32, i32) {
+        if let Some(x) = x {
+            let f = self.lp[0].update(x.wrapping_sub(self.x1), &self.k);
+            self.lp[1].y = self.lp[1].y.wrapping_add(f);
+            let y = self.lp[1].update(x, &self.k);
+            self.x1 = x;
+            ((y >> 32) as _, (f >> 32) as _)
+        } else {
+            self.lp[0].dy = 0;
+            self.lp[1].dy = 0;
+            self.x1 = self.x1.wrapping_add((self.lp[0].y >> 32) as _);
+            self.lp[1].y = self.lp[1].y.wrapping_add(self.lp[0].y);
+            ((self.lp[1].y >> 32) as _, (self.lp[0].y >> 32) as _)
+        }
     }
 }
 

@@ -1,3 +1,5 @@
+use num_traits::{Float, Pow};
+
 /// Arbitrary order, high dynamic range, wide coefficient range,
 /// lowpass filter implementation. DC gain is 1.
 ///
@@ -40,5 +42,28 @@ impl<const N: usize> Lowpass<N> {
     /// Return the current filter output
     pub fn output(&self) -> i32 {
         self.y[N - 1]
+    }
+}
+
+#[derive(Copy, Clone, Default)]
+pub struct Lowpass2 {
+    pub(crate) y: i64,
+    pub(crate) dy: i64,
+}
+
+impl Lowpass2 {
+    pub fn update(&mut self, x: i32, k: &[i32; 2]) -> i64 {
+        self.dy -= (self.dy >> 32) * k[0] as i64;
+        self.dy += (x - (self.y >> 32) as i32) as i64 * k[1] as i64;
+        self.y += self.dy;
+        self.y - (self.dy >> 1)
+    }
+
+    pub fn gain(k: i32, g: Option<i32>) -> [i32; 2] {
+        let g = g.unwrap_or((2f32.sqrt() * 2f32.pow(32)) as i32);
+        [
+            ((k as i64 * g as i64) >> 32) as _,
+            ((k as i64 * k as i64) >> 32) as _,
+        ]
     }
 }
