@@ -46,6 +46,19 @@ impl<const N: usize> Lowpass<N> {
 }
 
 #[derive(Copy, Clone, Default)]
+pub struct Lowpass1 {
+    pub(crate) y: i64,
+}
+
+impl Lowpass1 {
+    pub fn update(&mut self, x: i32, k: u32) -> i64 {
+        let dy = (x - (self.y >> 32) as i32) as i64 * k as i64;
+        self.y += dy;
+        self.y - (dy >> 1)
+    }
+}
+
+#[derive(Copy, Clone, Default)]
 pub struct Lowpass2 {
     pub(crate) y: i64,
     pub(crate) dy: i64,
@@ -59,11 +72,11 @@ impl Lowpass2 {
         self.y - (self.dy >> 1)
     }
 
-    pub fn gain(k: i32, g: Option<i32>) -> [i32; 2] {
-        let g = g.unwrap_or((2f32.sqrt() * 2f32.pow(30)) as i32);
+    pub fn gain(k: u32, g: Option<u32>) -> [i32; 2] {
+        let g = g.unwrap_or((2f64.sqrt() * 2f64.pow(31)) as _);
         [
-            ((k as i64 * g as i64) >> 28) as _,
-            ((k as i64 * k as i64) >> 28) as _,
+            ((k as i64 * g as i64) >> 31) as _,
+            ((k as i64 * k as i64) >> 32) as _,
         ]
     }
 }
