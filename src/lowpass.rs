@@ -51,10 +51,10 @@ pub struct Lowpass1 {
 }
 
 impl Lowpass1 {
-    pub fn update(&mut self, x: i32, k: u32) -> i64 {
+    pub fn update(&mut self, x: i32, k: u32) -> i32 {
         let dy = (x - (self.y >> 32) as i32) as i64 * k as i64;
         self.y += dy;
-        self.y - (dy >> 1)
+        (self.y >> 32) as i32 - ((dy >> 32) as i32 >> 1)
     }
 }
 

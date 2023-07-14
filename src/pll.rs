@@ -111,15 +111,15 @@ impl PLL1 {
         if let Some(x) = x {
             let f = self.lp[0].update(x.wrapping_sub(self.x1), self.k);
             self.x1 = x;
-            self.lp[1].y = self.lp[1].y.wrapping_add(f);
+            self.lp[1].y = self.lp[1].y.wrapping_add((f as i64) << 32);
             let y = self.lp[1].update(x, self.k);
-            ((y >> 32) as _, (f >> 32) as _)
+            (y, f)
         } else {
-            let f = self.lp[0].y;
-            self.x1 = self.x1.wrapping_add((f >> 32) as _);
-            self.lp[1].y = self.lp[1].y.wrapping_add(f);
-            let y = self.lp[1].y;
-            ((y >> 32) as _, (f >> 32) as _)
+            let f = (self.lp[0].y >> 32) as i32;
+            self.x1 = self.x1.wrapping_add(f);
+            self.lp[1].y = self.lp[1].y.wrapping_add((f as i64) << 32);
+            let y = (self.lp[1].y >> 32) as i32;
+            (y, f)
         }
     }
 }

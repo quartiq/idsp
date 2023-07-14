@@ -45,17 +45,10 @@ impl<const N: usize> Lockin1<N> {
 
         // Filter with the IIR lowpass,
         // return IQ (in-phase and quadrature) data.
-        let mut x = mix.re;
-        for l in self.state[0].iter_mut() {
-            x = (l.update(x, k) >> 32) as _;
+        Complex {
+            re: self.state[0].iter_mut().fold(mix.re, |x, f| f.update(x, k)),
+            im: self.state[1].iter_mut().fold(mix.im, |x, f| f.update(x, k)),
         }
-        let re = x;
-        let mut x = mix.im;
-        for l in self.state[1].iter_mut() {
-            x = (l.update(x, k) >> 32) as _;
-        }
-        let im = x;
-        Complex { re, im }
     }
 
     /// Update the lockin with a sample taken at a given phase.
