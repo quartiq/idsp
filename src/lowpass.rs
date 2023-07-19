@@ -54,6 +54,21 @@ impl<const N: usize, T: Default + Copy> Default for Chain<N, T> {
     }
 }
 
+#[derive(Copy, Clone, Default)]
+pub struct Cascade<T, U>(pub(crate) T, U);
+impl<T: Filter, U: Filter> Filter for Cascade<T, U> {
+    type Config = (T::Config, U::Config);
+    fn update(&mut self, x: i32, k: &Self::Config) -> i32 {
+        self.1.update(self.0.update(x, &k.0), &k.1)
+    }
+    fn get(&self) -> i32 {
+        self.1.get()
+    }
+    fn set(&mut self, x: i32) {
+        self.1.set(x)
+    }
+}
+
 /// Arbitrary order, high dynamic range, wide coefficient range,
 /// lowpass filter implementation. DC gain is 1.
 ///
@@ -63,19 +78,21 @@ pub struct Lowpass<const N: usize>(pub(crate) [i64; N]);
 impl<const N: usize> Filter for Lowpass<N> {
     type Config = [i32; N];
     fn update(&mut self, x: i32, k: &Self::Config) -> i32 {
-        let mut dy;
+        let mut d = x.wrapping_sub((self.0[0] >> 32) as i32) as i64 * k[0] as i64;
+        let y;
         if N >= 2 {
-            dy = self.0[1];
-            dy -= (self.0[1] >> 32) * k[1] as i64;
-            dy += x.wrapping_sub((self.0[0] >> 32) as i32) as i64 * k[0] as i64;
-            self.0[1] = dy;
+            d += (self.0[1] >> 32) * k[1] as i64;
+            self.0[1] += d;
+            self.0[0] += self.0[1];
+            y = self.get();
+            self.0[0] += self.0[1];
+            self.0[1] += d;
         } else {
-            dy = x.wrapping_sub((self.0[0] >> 32) as i32) as i64 * k[0] as i64;
+            self.0[0] += d;
+            y = self.get();
+            self.0[0] += d;
         }
-        self.0[0] += dy;
-        let y0 = self.get();
-        self.0[0] += dy;
-        y0
+        y
     }
     fn get(&self) -> i32 {
         (self.0[0] >> 32) as i32
