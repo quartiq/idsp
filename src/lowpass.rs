@@ -78,7 +78,7 @@ pub struct Lowpass<const N: usize>(pub(crate) [i64; N]);
 impl<const N: usize> Filter for Lowpass<N> {
     type Config = [i32; N];
     fn update(&mut self, x: i32, k: &Self::Config) -> i32 {
-        let mut d = x.wrapping_sub((self.0[0] >> 32) as i32) as i64 * k[0] as i64;
+        let mut d = x.saturating_sub((self.0[0] >> 32) as i32) as i64 * k[0] as i64;
         let y;
         if N >= 2 {
             d += (self.0[1] >> 32) * k[1] as i64;
