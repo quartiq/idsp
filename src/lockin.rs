@@ -1,17 +1,17 @@
-use super::{Chain, Complex, ComplexExt, Filter, Lowpass, MulScaled};
+use super::{Complex, ComplexExt, Filter, MulScaled};
 
 #[derive(Copy, Clone, Default)]
-pub struct Lockin<const N: usize, const O: usize> {
-    state: [Chain<N, Lowpass<O>>; 2],
+pub struct Lockin<T> {
+    state: [T; 2],
 }
 
-impl<const N: usize, const O: usize> Lockin<N, O> {
+impl<T: Filter> Lockin<T> {
     /// Update the lockin with a sample taken at a local oscillator IQ value.
     pub fn update_iq(
         &mut self,
         sample: i32,
         lo: Complex<i32>,
-        k: &<Lowpass<O> as Filter>::Config,
+        k: &T::Config,
     ) -> Complex<i32> {
         let mix = lo.mul_scaled(sample);
 
@@ -28,7 +28,7 @@ impl<const N: usize, const O: usize> Lockin<N, O> {
         &mut self,
         sample: i32,
         phase: i32,
-        k: &<Lowpass<O> as Filter>::Config,
+        k: &T::Config,
     ) -> Complex<i32> {
         // Get the LO signal for demodulation and mix the sample;
         self.update_iq(sample, Complex::from_angle(phase), k)
