@@ -85,6 +85,10 @@ impl<const N: usize> Filter for Lowpass<N> {
             self.0[1] += d;
             self.0[0] += self.0[1];
             y = self.get();
+            // This creates the double Nyquist zero,
+            // compensates the gain lost in the signed i32 as i64*(i64 >> 32)
+            // multiplication while keeping the lowest bit significant, and
+            // copes better with wrap-around than the Nyquist averaging.
             self.0[0] += self.0[1];
             self.0[1] += d;
         } else {
