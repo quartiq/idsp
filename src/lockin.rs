@@ -7,12 +7,7 @@ pub struct Lockin<T> {
 
 impl<T: Filter> Lockin<T> {
     /// Update the lockin with a sample taken at a local oscillator IQ value.
-    pub fn update_iq(
-        &mut self,
-        sample: i32,
-        lo: Complex<i32>,
-        k: &T::Config,
-    ) -> Complex<i32> {
+    pub fn update_iq(&mut self, sample: i32, lo: Complex<i32>, k: &T::Config) -> Complex<i32> {
         let mix = lo.mul_scaled(sample);
 
         // Filter with the IIR lowpass,
@@ -24,12 +19,7 @@ impl<T: Filter> Lockin<T> {
     }
 
     /// Update the lockin with a sample taken at a given phase.
-    pub fn update(
-        &mut self,
-        sample: i32,
-        phase: i32,
-        k: &T::Config,
-    ) -> Complex<i32> {
+    pub fn update(&mut self, sample: i32, phase: i32, k: &T::Config) -> Complex<i32> {
         // Get the LO signal for demodulation and mix the sample;
         self.update_iq(sample, Complex::from_angle(phase), k)
     }
