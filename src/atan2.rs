@@ -15,10 +15,10 @@ fn atani(x: u32) -> u32 {
     const A: [i32; 6] = [
         0x0517c2cd,
         -0x06c6496b,
-        0x0fbdb026,
-        -0x25b32e58,
-        0x43b34e3c,
-        -0x3bc82700,
+        0x0fbdb021,
+        -0x25b32e0a,
+        0x43b34c81,
+        -0x3bc823dd,
     ];
     let x = x as i64;
     let x2 = ((x * x) >> 32) as i32 as i64;
