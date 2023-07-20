@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+* `filter` mod added to allow being generic about "filters". This is currently
+  `i32` only and pretty simple but it allows filter composition, chaining,
+  repetition, and handles parameters/configuration.
+* `pll` reworked to use FMA instead of shifts. These are faster on the target
+  architecture and crucially important to increase dynamic range and bias.
+  PLL now works fine even for very small feedback gains and maintains accuracy.
+* `lowpass` reworked to use the new `Filter` trait. Also reworked to use FMA
+  instead of shifts for greatly improved performance at low corner frequencies.
+  Second order lowpass added.
+
 ## [0.9.2](https://github.com/quartiq/idsp/compare/v0.9.1..v0.9.2) - 2022-11-27
 
 ### Changed
