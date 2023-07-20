@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* `filter` mod added to allow being generic about "filters". This is currently
-  `i32` only and pretty simple but it allows filter composition, chaining,
-  repetition, and handles parameters/configuration.
+* `filter` mod added to allow being generic about the `Filter` trait.
+  This is currently `i32 -> i32` filtering (SISO, no batches) only and
+  pretty simple but it allows filter composition, chaining, repetition,
+  and handles parameters/configuration.
 * `pll` reworked to use FMA instead of shifts. These are faster on the target
   architecture and crucially important to increase dynamic range and bias.
   PLL now works fine even for very small feedback gains and maintains accuracy.
