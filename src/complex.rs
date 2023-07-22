@@ -107,8 +107,8 @@ impl MulScaled<Complex<i32>> for Complex<i32> {
         let c = other.re as i64;
         let d = other.im as i64;
         Complex {
-            re: ((a * c - b * d + (1 << 30)) >> 31) as i32,
-            im: ((b * c + a * d + (1 << 30)) >> 31) as i32,
+            re: ((a * c - b * d) >> 31) as i32,
+            im: ((b * c + a * d) >> 31) as i32,
         }
     }
 }
@@ -116,8 +116,8 @@ impl MulScaled<Complex<i32>> for Complex<i32> {
 impl MulScaled<i32> for Complex<i32> {
     fn mul_scaled(self, other: i32) -> Self {
         Complex {
-            re: ((other as i64 * self.re as i64 + (1 << 30)) >> 31) as i32,
-            im: ((other as i64 * self.im as i64 + (1 << 30)) >> 31) as i32,
+            re: ((other as i64 * self.re as i64) >> 31) as i32,
+            im: ((other as i64 * self.im as i64) >> 31) as i32,
         }
     }
 }
