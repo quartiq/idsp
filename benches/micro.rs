@@ -2,7 +2,7 @@ use core::f32::consts::PI;
 
 use easybench::bench_env;
 
-use idsp::{atan2, cossin, iir, iir_int, Lowpass, PLL, RPLL};
+use idsp::{atan2, cossin, iir, iir_int, Filter, Lowpass, PLL, RPLL};
 
 fn atan2_bench() {
     let xi = (10 << 16) as i32;
@@ -44,11 +44,11 @@ fn pll_bench() {
     let mut dut = PLL::default();
     println!(
         "PLL::update(Some(t), 12, 12): {}",
-        bench_env(Some(0x241), |x| dut.update(*x, 12, 12))
+        bench_env(Some(0x241), |x| dut.update(*x, 12))
     );
     println!(
         "PLL::update(Some(t), sf, sp): {}",
-        bench_env((Some(0x241), 21, 20), |(x, p, q)| dut.update(*x, *p, *q))
+        bench_env((Some(0x241), 21), |(x, p)| dut.update(*x, *p))
     );
 }
 
@@ -80,14 +80,14 @@ fn iir_f64_bench() {
 }
 
 fn lowpass_bench() {
-    let mut dut = Lowpass::<4>::default();
+    let mut dut = Lowpass::<1>::default();
     println!(
-        "Lowpass::<4>::update(x, k): {}",
-        bench_env((0x32421, 14), |(x, k)| dut.update(*x, *k))
+        "Lowpass::<1>::update(x, k): {}",
+        bench_env((0x32421, 14), |(x, k)| dut.update(*x, &[*k]))
     );
     println!(
-        "Lowpass::<4>::update(x, 14): {}",
-        bench_env(0x32421, |x| dut.update(*x, 14))
+        "Lowpass::<1>::update(x, 14): {}",
+        bench_env(0x32421, |x| dut.update(*x, &[14]))
     );
 }
 
