@@ -69,7 +69,7 @@ where
     pub fn update(&mut self, x: T) -> (T, i32) {
         let (dx, dw) = overflowing_sub(x, self.x);
         self.x = x;
-        self.w = self.w.wrapping_add(dw as i32);
+        self.w = self.w.wrapping_add(dw);
         (dx, self.w)
     }
 
