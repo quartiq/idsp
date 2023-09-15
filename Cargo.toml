@@ -2,7 +2,7 @@
 name = "idsp"
 version = "0.10.0"
 resolver = "2"
-edition = "2018"
+edition = "2021"
 authors = ["Robert Jördens <rj@quartiq.de>"]
 license = "MIT OR Apache-2.0"
 description = "DSP algorithms for embedded, mostly integer math"
@@ -19,6 +19,7 @@ num-traits = { version = "0.2.14", features = ["libm"], default-features = false
 easybench = "1.0"
 rand = "0.8"
 ndarray = "0.15"
+rustfft = "6.1.0"
 
 [[bench]]
 name = "micro"
