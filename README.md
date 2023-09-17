@@ -42,4 +42,8 @@ Tools to handle, track, and unwrap phase signals or generate them.
 
 ## Lowpass, Lockin
 
-Fast, infinitely cascadable, first-order lowpass and the corresponding integration into a lockin amplifier algorithm.
+Fast, infinitely cascadable, first- and second-order lowpass and the corresponding integration into a lockin amplifier algorithm.
+
+## FIR filters
+
+Fast `f32` symmetric FIR filters, optimized half-band filters, half-band filter decimators and integators and cascades.
