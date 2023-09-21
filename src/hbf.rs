@@ -531,7 +531,7 @@ mod test {
         let x = h.process_block(None, &mut x);
         assert_eq!(x, [0.75, 1.0, 1.0, 1.0]);
 
-        let mut h = HbfDec::<3, 9>::new(&HBF_TAPS.3);
+        let mut h = HbfDec::<{ HBF_TAPS.3.len() }, 9>::new(&HBF_TAPS.3);
         let mut x: Vec<_> = (0..8).map(|i| i as f32).collect();
         assert_eq!((2, x.len()), h.block_size());
         let x = h.process_block(None, &mut x);
@@ -549,6 +549,19 @@ mod test {
         let mut x: Vec<_> = (0..2 << h.depth()).map(|i| i as f32).collect();
         let x = h.process_block(None, &mut x);
         println!("{:?}", x);
+    }
+
+    #[test]
+    fn response_length_dec() {
+        let mut h = HbfDecCascade::default();
+        h.set_depth(4);
+        let mut y: Vec<f32> = (0..1 << 10).map(|_| rand::random()).collect();
+        h.process_block(None, &mut y);
+        let mut y = vec![0.0; 1 << 10];
+        let z = h.process_block(None, &mut y);
+        let n = h.response_length();
+        assert!(z[n - 1] != 0.0);
+        assert_eq!(z[n], 0.0);
     }
 
     #[test]
@@ -588,21 +601,21 @@ mod test {
         assert!(p_stop < -98.4);
     }
 
-    /// small 32 batch size, single stage, 3 mul (11 tap) decimator
-    /// 3.5 insn per input sample, > 1 GS/s on Skylake
+    /// small 32 block size, single stage, 3 mul (11 tap) decimator
+    /// 3.5 insn per input item, > 1 GS/s per core on Skylake
     #[test]
     #[ignore]
     fn insn_dec() {
         const N: usize = HBF_TAPS.3.len();
         let mut h = HbfDec::<N, { 2 * N - 1 + (1 << 4) }>::new(&HBF_TAPS.3);
         let mut x = [9.0; 1 << 5];
-        for _ in 0..1 << 26 {
+        for _ in 0..1 << 25 {
             h.process_block(None, &mut x);
         }
     }
 
     /// 1k batch size, single stage, 15 mul (59 tap) decimator
-    /// 5 insn per input sample, > 1 GS/s on Skylake
+    /// 4.9 insn: > 1 GS/s
     #[test]
     #[ignore]
     fn insn_dec2() {
@@ -616,8 +629,8 @@ mod test {
         }
     }
 
-    /// large batch size full decimator cascade (depth 4, 1024 sampled per batch)
-    /// 4.1 insns per input sample, > 1 GS/s per core
+    /// full block size full decimator cascade (depth 4, 1024 items per input block)
+    /// 4.1 insn: > 1 GS/s
     #[test]
     #[ignore]
     fn insn_casc() {
