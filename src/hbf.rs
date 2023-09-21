@@ -253,6 +253,7 @@ impl<'a, const M: usize, const N: usize> Filter for HbfInt<'a, M, N> {
 
 /// Standard/optimal half-band filter cascade taps
 ///
+/// * obtained with `signal.remez(4*n - 1, bands=(0, .5-df/2, .5+df/2, 1), desired=(1, 0), fs=2, grid_density=512)`
 /// * more than 98 dB stop band attenuation
 /// * 0.4 pass band (relative to lowest sample rate)
 /// * less than 0.001 dB ripple
@@ -262,7 +263,7 @@ impl<'a, const M: usize, const N: usize> Filter for HbfInt<'a, M, N> {
 /// * use taps 0..n for 2**n interpolation/decimation
 #[allow(clippy::excessive_precision, clippy::type_complexity)]
 pub const HBF_TAPS: ([f32; 15], [f32; 6], [f32; 3], [f32; 3], [f32; 2]) = (
-    // 15 coefficients (effective number of DSP taps 4*15-1 = 59), transition band width .2 fs
+    // n=15 coefficients (effective number of DSP taps 4*15-1 = 59), transition band width df=.2 fs
     [
         7.02144012e-05,
         -2.43279582e-04,
@@ -614,7 +615,7 @@ mod test {
         }
     }
 
-    /// 1k batch size, single stage, 15 mul (59 tap) decimator
+    /// 1k block size, single stage, 15 mul (59 tap) decimator
     /// 4.9 insn: > 1 GS/s
     #[test]
     #[ignore]
@@ -641,4 +642,35 @@ mod test {
             h.process_block(None, &mut x);
         }
     }
+
+    // // sdr crate, setup like insn_dec2()
+    // // 187 insn
+    // #[test]
+    // #[ignore]
+    // fn insn_sdr() {
+    //     use sdr::fir;
+    //     const N: usize = HBF_TAPS.0.len();
+    //     const M: usize = 1 << 10;
+    //     let mut taps = [0.0f64; { 4 * N - 1 }];
+    //     let (old, new) = taps.split_at_mut(2 * N - 1);
+    //     for (tap, (old, new)) in HBF_TAPS.0.iter().zip(
+    //         old.iter_mut()
+    //             .step_by(2)
+    //             .zip(new.iter_mut().rev().step_by(2)),
+    //     ) {
+    //         *old = (*tap * 0.5).into();
+    //         *new = *old;
+    //     }
+    //     taps[2 * N - 1] = 0.5;
+    //     let mut h = fir::FIR::new(&taps, 2, 1);
+    //     let x = [9.0; M];
+    //     // let mut h1 = HbfDec::<N, { 2 * N - 1 + M }>::new(&HBF_TAPS.0);
+    //     // let mut y1 = [0.0; M / 2];
+    //     for _ in 0..1 << 16 {
+    //         let _y = h.process(&x);
+    //         // h1.process_block(Some(&x), &mut y1);
+    //         // assert_eq!(y1.len(), y.len());
+    //         // assert!(y1.iter().zip(y.iter()).all(|(y1, y)| (y1 - y).abs() < 1e-6));
+    //     }
+    // }
 }
