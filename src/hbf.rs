@@ -253,8 +253,8 @@ impl<'a, const M: usize, const N: usize> Filter for HbfInt<'a, M, N> {
 
 /// Standard/optimal half-band filter cascade taps
 ///
-/// * obtained with `signal.remez(4*n - 1, bands=(0, .5-df/2, .5+df/2, 1), desired=(1, 0), fs=2, grid_density=512)`
-/// * more than 98 dB stop band attenuation
+/// * obtained with `2*signal.remez(4*n - 1, bands=(0, .5-df/2, .5+df/2, 1), desired=(1, 0), fs=2, grid_density=512)[:2*n:2]`
+/// * more than 98 dB stop band attenuation (>16 bit)
 /// * 0.4 pass band (relative to lowest sample rate)
 /// * less than 0.001 dB ripple
 /// * linear phase/flat group delay
@@ -671,6 +671,33 @@ mod test {
     //         // h1.process_block(Some(&x), &mut y1);
     //         // assert_eq!(y1.len(), y.len());
     //         // assert!(y1.iter().zip(y.iter()).all(|(y1, y)| (y1 - y).abs() < 1e-6));
+    //     }
+    // }
+
+    // // // futuredsp crate, setup like insn_dec2()
+    // // // 315 insn
+    // #[test]
+    // #[ignore]
+    // fn insn_futuredsp() {
+    //     use futuredsp::{fir::PolyphaseResamplingFirKernel, UnaryKernel};
+    //     const N: usize = HBF_TAPS.0.len();
+    //     const M: usize = 1 << 10;
+    //     let mut taps = [0.0f32; { 4 * N - 1 }];
+    //     let (old, new) = taps.split_at_mut(2 * N - 1);
+    //     for (tap, (old, new)) in HBF_TAPS.0.iter().zip(
+    //         old.iter_mut()
+    //             .step_by(2)
+    //             .zip(new.iter_mut().rev().step_by(2)),
+    //     ) {
+    //         *old = *tap * 0.5;
+    //         *new = *old;
+    //     }
+    //     taps[2 * N - 1] = 0.5;
+    //     let x = [9.0f32; M];
+    //     let mut y = [0.0f32; M];
+    //     let fir = PolyphaseResamplingFirKernel::<_, _, _, _>::new(1, 2, taps);
+    //     for _ in 0..1 << 14 {
+    //         fir.work(&x, &mut y);
     //     }
     // }
 }
