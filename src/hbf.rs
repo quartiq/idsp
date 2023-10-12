@@ -262,7 +262,7 @@ impl<'a, const M: usize, const N: usize> Filter for HbfInt<'a, M, N> {
 /// * lowest rate filter is at 0 index
 /// * use taps 0..n for 2**n interpolation/decimation
 #[allow(clippy::excessive_precision, clippy::type_complexity)]
-pub const HBF_TAPS: ([f32; 15], [f32; 6], [f32; 3], [f32; 3], [f32; 2]) = (
+pub const HBF_TAPS_98: ([f32; 15], [f32; 6], [f32; 3], [f32; 3], [f32; 2]) = (
     // n=15 coefficients (effective number of DSP taps 4*15-1 = 59), transition band width df=.2 fs
     [
         7.02144012e-05,
@@ -296,6 +296,51 @@ pub const HBF_TAPS: ([f32; 15], [f32; 6], [f32; 3], [f32; 3], [f32; 2]) = (
     [0.01227974, -0.09930782, 0.58702834],
     // 2, .94
     [-0.06291796, 0.5629161],
+);
+
+/// * 142 dB stopband, 2 µdB passband ripple
+/// * otherwise like [`HBF_TAPS_98`].
+#[allow(clippy::excessive_precision, clippy::type_complexity)]
+pub const HBF_TAPS: ([f32; 23], [f32; 9], [f32; 5], [f32; 4], [f32; 3]) = (
+    [
+        7.60373837e-07,
+        -3.77493552e-06,
+        1.26458399e-05,
+        -3.43187930e-05,
+        8.10686834e-05,
+        -1.72971355e-04,
+        3.40844883e-04,
+        -6.29522605e-04,
+        1.10128790e-03,
+        -1.83933240e-03,
+        2.95124855e-03,
+        -4.57290886e-03,
+        6.87374081e-03,
+        -1.00656245e-02,
+        1.44199822e-02,
+        -2.03025080e-02,
+        2.82462314e-02,
+        -3.91128510e-02,
+        5.44795655e-02,
+        -7.77002648e-02,
+        1.17523454e-01,
+        -2.06185386e-01,
+        6.34588718e-01,
+    ],
+    [
+        3.1679781e-05,
+        -2.9264795e-04,
+        1.4675094e-03,
+        -5.2429750e-03,
+        1.4925614e-02,
+        -3.6277302e-02,
+        8.0285855e-02,
+        -1.8006371e-01,
+        6.2516606e-01,
+    ],
+    [0.00074929, -0.00757137, 0.03836045, -0.13964427, 0.6081059],
+    [-0.00260656, 0.02473609, -0.12106937, 0.59893984],
+    [0.01184965, -0.0980472, 0.58619756],
 );
 
 /// Passband width in units of lowest sample rate
