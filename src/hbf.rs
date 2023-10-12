@@ -298,7 +298,7 @@ pub const HBF_TAPS_98: ([f32; 15], [f32; 6], [f32; 3], [f32; 3], [f32; 2]) = (
     [-0.06291796, 0.5629161],
 );
 
-/// * 142 dB stopband, 2 µdB passband ripple
+/// * 137 dB stopband, 2 µdB passband ripple
 /// * otherwise like [`HBF_TAPS_98`].
 #[allow(clippy::excessive_precision, clippy::type_complexity)]
 pub const HBF_TAPS: ([f32; 23], [f32; 9], [f32; 5], [f32; 4], [f32; 3]) = (
@@ -328,19 +328,30 @@ pub const HBF_TAPS: ([f32; 23], [f32; 9], [f32; 5], [f32; 4], [f32; 3]) = (
         6.34588718e-01,
     ],
     [
-        3.1679781e-05,
-        -2.9264795e-04,
-        1.4675094e-03,
-        -5.2429750e-03,
-        1.4925614e-02,
-        -3.6277302e-02,
-        8.0285855e-02,
-        -1.8006371e-01,
-        6.2516606e-01,
+        3.16797814e-05,
+        -2.92647950e-04,
+        1.46750943e-03,
+        -5.24297496e-03,
+        1.49256140e-02,
+        -3.62773016e-02,
+        8.02858546e-02,
+        -1.80063710e-01,
+        6.25166059e-01,
     ],
-    [0.00074929, -0.00757137, 0.03836045, -0.13964427, 0.6081059],
-    [-0.00260656, 0.02473609, -0.12106937, 0.59893984],
-    [0.01184965, -0.0980472, 0.58619756],
+    [
+        7.49291794e-04,
+        -7.57137313e-03,
+        3.83604467e-02,
+        -1.39644265e-01,
+        6.08105898e-01,
+    ],
+    [
+        -2.60655954e-03,
+        2.47360896e-02,
+        -1.21069372e-01,
+        5.98939836e-01,
+    ],
+    [1.18496474e-02, -9.80471969e-02, 5.86197555e-01],
 );
 
 /// Passband width in units of lowest sample rate
@@ -577,7 +588,7 @@ mod test {
         let x = h.process_block(None, &mut x);
         assert_eq!(x, [0.75, 1.0, 1.0, 1.0]);
 
-        let mut h = HbfDec::<{ HBF_TAPS.3.len() }, 9>::new(&HBF_TAPS.3);
+        let mut h = HbfDec::<{ HBF_TAPS.3.len() }, 11>::new(&HBF_TAPS.3);
         let mut x: Vec<_> = (0..8).map(|i| i as f32).collect();
         assert_eq!((2, x.len()), h.block_size());
         let x = h.process_block(None, &mut x);
@@ -639,12 +650,12 @@ mod test {
         let p_pass = p[..(f * HBF_PASSBAND).floor() as _]
             .iter()
             .fold(0.0, |m, p| p.abs().max(m));
-        assert!(p_pass < 0.00035);
+        assert!(p_pass < 2e-6);
         // stop band attenuation
         let p_stop = p[(f * (1.0 - HBF_PASSBAND)).ceil() as _..p.len() / 2]
             .iter()
             .fold(-200.0, |m, p| p.max(m));
-        assert!(p_stop < -98.4);
+        assert!(p_stop < -137.0, "{}", p_stop);
     }
 
     /// small 32 block size, single stage, 3 mul (11 tap) decimator
