@@ -37,6 +37,10 @@ use serde::{Deserialize, Serialize};
 pub struct PLL {
     // last input phase
     x: i32,
+    // last output phase
+    y0: i32,
+    // last output frequency
+    f0: i32,
     // filtered frequency
     f: i64,
     // filtered output phase
@@ -53,35 +57,35 @@ impl PLL {
     ///
     /// Returns:
     /// A tuple of instantaneous phase and frequency estimates.
-    pub fn update(&mut self, x: Option<i32>, k: i32) -> (i32, i32) {
+    pub fn update(&mut self, x: Option<i32>, k: i32) {
         if let Some(x) = x {
             let dx = x.wrapping_sub(self.x);
             self.x = x;
             let df = dx.wrapping_sub((self.f >> 32) as i32) as i64 * k as i64;
             self.f = self.f.wrapping_add(df);
-            let f = (self.f >> 32) as i32;
             self.y = self.y.wrapping_add(self.f);
             self.f = self.f.wrapping_add(df);
             let dy = x.wrapping_sub((self.y >> 32) as i32) as i64 * k as i64;
             self.y = self.y.wrapping_add(dy);
             let y = (self.y >> 32) as i32;
             self.y = self.y.wrapping_add(dy);
-            (y, f)
+            self.f0 = y.wrapping_sub(self.y0);
+            self.y0 = y;
         } else {
             self.y = self.y.wrapping_add(self.f);
-            self.x = self.x.wrapping_add((self.f >> 32) as i32);
-            ((self.y >> 32) as _, (self.f >> 32) as _)
+            self.x = self.x.wrapping_add(self.f0);
+            self.y0 = self.y0.wrapping_add(self.f0);
         }
     }
 
     /// Return the current phase estimate
     pub fn phase(&self) -> i32 {
-        (self.y >> 32) as _
+        self.y0
     }
 
     /// Return the current frequency estimate
     pub fn frequency(&self) -> i32 {
-        (self.f >> 32) as _
+        self.f0
     }
 }
 
@@ -92,9 +96,9 @@ mod tests {
     fn mini() {
         let mut p = PLL::default();
         let k = 1 << 24;
-        let (y, f) = p.update(Some(0x10000), k);
-        assert_eq!(y, 0x1ff);
-        assert_eq!(f, 0x100);
+        p.update(Some(0x10000), k);
+        assert_eq!(p.phase(), 0x1ff);
+        assert_eq!(p.frequency(), 0x1ff);
     }
 
     #[test]
@@ -106,12 +110,12 @@ mod tests {
         let mut x = 0i32;
         for i in 0..n {
             x = x.wrapping_add(f0);
-            let (y, f) = p.update(Some(x), k);
+            p.update(Some(x), k);
             if i > n / 4 {
-                assert_eq!(f.wrapping_sub(f0).abs() <= 1, true);
+                assert_eq!(p.frequency().wrapping_sub(f0).abs() <= 1, true);
             }
             if i > n / 2 {
-                assert_eq!(y.wrapping_sub(x).abs() <= 1, true);
+                assert_eq!(p.phase().wrapping_sub(x).abs() <= 1, true);
             }
         }
     }
