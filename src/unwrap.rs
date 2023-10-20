@@ -64,13 +64,12 @@ where
     /// * `x`: New sample
     ///
     /// Returns:
-    /// A tuple containing the (wrapped) difference `x - x_old` and the
-    /// signed number of wraps accumulated by the new sample.
-    pub fn update(&mut self, x: T) -> (T, i32) {
+    /// The (wrapped) difference `x - x_old`
+    pub fn update(&mut self, x: T) -> T {
         let (dx, dw) = overflowing_sub(x, self.x);
         self.x = x;
         self.w = self.w.wrapping_add(dw);
-        (dx, self.w)
+        dx
     }
 
     /// Return the current number of wraps
