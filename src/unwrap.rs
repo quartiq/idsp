@@ -47,39 +47,28 @@ pub fn saturating_scale(lo: i32, hi: i32, shift: u32) -> i32 {
 /// This is unwrapping as in the phase and overflow unwrapping context, not
 /// unwrapping as in the `Result`/`Option` context.
 #[derive(Copy, Clone, Default, Deserialize, Serialize)]
-pub struct Unwrapper<T> {
-    // last input
-    x: T,
-    // last wraps
-    w: i32,
+pub struct Unwrapper {
+    /// current output
+    y: i64,
 }
 
-impl<T> Unwrapper<T>
-where
-    T: WrappingSub + Zero + PartialOrd + Copy,
-{
-    /// Unwrap a new sample from a sequence and update the unwrapper state.
+impl Unwrapper {
+    /// Feed a new sample..
     ///
     /// Args:
     /// * `x`: New sample
     ///
     /// Returns:
     /// The (wrapped) difference `x - x_old`
-    pub fn update(&mut self, x: T) -> T {
-        let (dx, dw) = overflowing_sub(x, self.x);
-        self.x = x;
-        self.w = self.w.wrapping_add(dw);
+    pub fn update(&mut self, x: i32) -> i32 {
+        let dx = x.wrapping_sub(self.y as _);
+        self.y = self.y.wrapping_add(dx as _);
         dx
     }
 
-    /// Return the current number of wraps
-    pub fn wraps(&self) -> i32 {
-        self.w
-    }
-
-    /// Return the last known phase
-    pub fn phase(&self) -> T {
-        self.x
+    /// Current output including wraps
+    pub fn y(&self) -> i64 {
+        self.y
     }
 }
 
