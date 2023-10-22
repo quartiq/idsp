@@ -66,6 +66,16 @@ impl Unwrapper {
         dx
     }
 
+    /// The current number of wraps
+    pub fn wraps(&self) -> i32 {
+        ((self.y >> 32) as i32).wrapping_add(((self.y >> 31) & 1) as _)
+    }
+
+    /// The current phase
+    pub fn phase(&self) -> i32 {
+        self.y as i32
+    }
+
     /// Current output including wraps
     pub fn y(&self) -> i64 {
         self.y
