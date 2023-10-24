@@ -1,5 +1,13 @@
-use core::cmp::PartialOrd;
-use num_traits::{identities::Zero, ops::wrapping::WrappingSub};
+use core::{
+    cmp::PartialOrd,
+    ops::{BitAnd, Shr},
+};
+use num_traits::{
+    cast::AsPrimitive,
+    identities::Zero,
+    ops::wrapping::{WrappingAdd, WrappingSub},
+    Signed,
+};
 use serde::{Deserialize, Serialize};
 
 /// Subtract `y - x` with signed overflow.
@@ -47,12 +55,15 @@ pub fn saturating_scale(lo: i32, hi: i32, shift: u32) -> i32 {
 /// This is unwrapping as in the phase and overflow unwrapping context, not
 /// unwrapping as in the `Result`/`Option` context.
 #[derive(Copy, Clone, Default, Deserialize, Serialize)]
-pub struct Unwrapper {
+pub struct Unwrapper<Q> {
     /// current output
-    y: i64,
+    y: Q,
 }
 
-impl Unwrapper {
+impl<Q> Unwrapper<Q>
+where
+    Q: 'static + WrappingAdd + Copy,
+{
     /// Feed a new sample..
     ///
     /// Args:
@@ -60,24 +71,39 @@ impl Unwrapper {
     ///
     /// Returns:
     /// The (wrapped) difference `x - x_old`
-    pub fn update(&mut self, x: i32) -> i32 {
-        let dx = x.wrapping_sub(self.y as _);
-        self.y = self.y.wrapping_add(dx as _);
+    pub fn update<P>(&mut self, x: P) -> P
+    where
+        P: 'static + WrappingSub + Copy + AsPrimitive<Q>,
+        Q: AsPrimitive<P>,
+    {
+        let dx = x.wrapping_sub(&self.y.as_());
+        self.y = self.y.wrapping_add(&dx.as_());
         dx
     }
 
     /// The current number of wraps
-    pub fn wraps(&self) -> i32 {
-        ((self.y >> 32) as i32).wrapping_add(((self.y >> 31) & 1) as _)
+    pub fn wraps<P, const S: u32>(&self) -> P
+    where
+        Q: AsPrimitive<P> + Shr<u32, Output = Q>,
+        bool: AsPrimitive<P>,
+        P: 'static + Copy + WrappingAdd + Signed + BitAnd<i32, Output = P>,
+    {
+        (self.y >> S)
+            .as_()
+            .wrapping_add(&((self.y >> (S - 1)).as_() & 1))
     }
 
     /// The current phase
-    pub fn phase(&self) -> i32 {
-        self.y as i32
+    pub fn phase<P>(&self) -> P
+    where
+        P: 'static + Copy,
+        Q: AsPrimitive<P>,
+    {
+        self.y.as_()
     }
 
     /// Current output including wraps
-    pub fn y(&self) -> i64 {
+    pub fn y(&self) -> Q {
         self.y
     }
 }
