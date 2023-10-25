@@ -85,8 +85,7 @@ where
     pub fn wraps<P, const S: u32>(&self) -> P
     where
         Q: AsPrimitive<P> + Shr<u32, Output = Q>,
-        bool: AsPrimitive<P>,
-        P: 'static + Copy + WrappingAdd + Signed + BitAnd<i32, Output = P>,
+        P: 'static + Copy + WrappingAdd + Signed + BitAnd<u32, Output = P>,
     {
         (self.y >> S)
             .as_()
