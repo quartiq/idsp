@@ -1,10 +1,11 @@
 use core::ops::{Add, Mul, Neg};
+use num_traits::Zero;
 
 pub fn abs<T>(x: T) -> T
 where
-    T: PartialOrd + Default + Neg<Output = T>,
+    T: PartialOrd + Zero + Neg<Output = T>,
 {
-    if x >= T::default() {
+    if x >= T::zero() {
         x
     } else {
         -x
@@ -18,9 +19,9 @@ where
 
 pub fn copysign<T>(x: T, y: T) -> T
 where
-    T: PartialOrd + Default + Neg<Output = T>,
+    T: PartialOrd + Zero + Neg<Output = T>,
 {
-    if (x >= T::default() && y >= T::default()) || (x <= T::default() && y <= T::default()) {
+    if (x >= T::zero() && y >= T::zero()) || (x <= T::zero() && y <= T::zero()) {
         x
     } else {
         -x

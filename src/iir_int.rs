@@ -75,7 +75,7 @@ impl IIR {
         // Store x0            x0 x1 x2 y1 y2
         xy[0] = x0;
         // Compute y0 by multiply-accumulate
-        let y0 = macc_i32(self.y_offset, xy, &self.ba, IIR::SHIFT);
+        let y0 = macc_i32(self.y_offset, xy, &self.ba, Self::SHIFT);
         // Limit y0
         let y0 = y0.max(self.y_min).min(self.y_max);
         // Store y0            x0 x1 y0 y1 y2

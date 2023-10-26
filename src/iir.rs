@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{abs, copysign, macc};
 use core::iter::Sum;
-use num_traits::{clamp, Float, NumCast};
+use num_traits::{clamp, Float, One, Zero};
 
 /// IIR state and coefficients type.
 ///
@@ -62,11 +62,13 @@ pub struct IIR<T> {
     pub y_max: T,
 }
 
-impl<T: Float + Default + Sum<T>> IIR<T> {
+impl<T: Float + Zero + One + Sum<T>> IIR<T> {
     pub fn new(gain: T, y_min: T, y_max: T) -> Self {
+        let mut ba = [T::zero(); 5];
+        ba[0] = gain;
         Self {
-            ba: [gain, T::default(), T::default(), T::default(), T::default()],
-            y_offset: T::default(),
+            ba,
+            y_offset: T::zero(),
             y_min,
             y_max,
         }
@@ -81,20 +83,17 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
     /// * `ki` - Integral gain at Nyquist. Sign taken from `kp`.
     /// * `g` - Gain limit.
     pub fn set_pi(&mut self, kp: T, ki: T, g: T) -> Result<(), &str> {
-        let zero: T = T::default();
-        let one: T = NumCast::from(1.0).unwrap();
-        let two: T = NumCast::from(2.0).unwrap();
         let ki = copysign(ki, kp);
         let g = copysign(g, kp);
         let (a1, b0, b1) = if abs(ki) < T::epsilon() {
-            (zero, kp, zero)
+            (T::zero(), kp, T::zero())
         } else {
             let c = if abs(g) < T::epsilon() {
-                one
+                T::one()
             } else {
-                one / (one + ki / g)
+                T::one() / (T::one() + ki / g)
             };
-            let a1 = two * c - one;
+            let a1 = (T::one() + T::one()) * c - T::one();
             let b0 = ki * c + kp;
             let b1 = ki * c - a1 * kp;
             if abs(b0 + b1) < T::epsilon() {
@@ -102,7 +101,7 @@ impl<T: Float + Default + Sum<T>> IIR<T> {
             }
             (a1, b0, b1)
         };
-        self.ba.copy_from_slice(&[b0, b1, zero, a1, zero]);
+        self.ba.copy_from_slice(&[b0, b1, T::zero(), a1, T::zero()]);
         Ok(())
     }
 
