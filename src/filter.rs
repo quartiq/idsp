@@ -17,7 +17,7 @@ pub trait Filter {
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct Nyquist(pub(crate) i32);
+pub struct Nyquist(i32);
 impl Filter for Nyquist {
     type Config = ();
     fn update(&mut self, x: i32, _k: &Self::Config) -> i32 {
@@ -35,8 +35,8 @@ impl Filter for Nyquist {
 }
 
 #[derive(Copy, Clone)]
-pub struct Chain<const N: usize, T>(pub(crate) [T; N]);
-impl<const N: usize, T: Filter> Filter for Chain<N, T> {
+pub struct Repeat<const N: usize, T>([T; N]);
+impl<const N: usize, T: Filter> Filter for Repeat<N, T> {
     type Config = T::Config;
     fn update(&mut self, x: i32, k: &Self::Config) -> i32 {
         self.0.iter_mut().fold(x, |x, stage| stage.update(x, k))
@@ -48,14 +48,14 @@ impl<const N: usize, T: Filter> Filter for Chain<N, T> {
         self.0.iter_mut().for_each(|stage| stage.set(x));
     }
 }
-impl<const N: usize, T: Default + Copy> Default for Chain<N, T> {
+impl<const N: usize, T: Default + Copy> Default for Repeat<N, T> {
     fn default() -> Self {
         Self([T::default(); N])
     }
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct Cascade<T, U>(pub(crate) T, U);
+pub struct Cascade<T, U>(T, U);
 impl<T: Filter, U: Filter> Filter for Cascade<T, U> {
     type Config = (T::Config, U::Config);
     fn update(&mut self, x: i32, k: &Self::Config) -> i32 {
