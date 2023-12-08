@@ -5,7 +5,7 @@ include!(concat!(env!("OUT_DIR"), "/cossin_table.rs"));
 /// <https://github.com/m-labs/misoc/blob/master/misoc/cores/cossin.py>
 ///
 /// # Arguments
-/// * `phase` - 32-bit phase.
+/// * `phase` - 32-bit phase where i32::MIN is -pi and i32::MAX is pi
 ///
 /// # Returns
 /// The cos and sin values of the provided phase as a `(i32, i32)`
