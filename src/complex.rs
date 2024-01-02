@@ -20,8 +20,8 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// ```
     /// use idsp::{Complex, ComplexExt};
     /// Complex::<i32>::from_angle(0);
-    /// Complex::<i32>::from_angle(1 << 30);  // pi/2
-    /// Complex::<i32>::from_angle(-1 << 30);  // -pi/2
+    /// Complex::<i32>::from_angle(1 << 30); // pi/2
+    /// Complex::<i32>::from_angle(-1 << 30); // -pi/2
     /// ```
     fn from_angle(angle: i32) -> Self {
         let (c, s) = cossin(angle);

@@ -62,20 +62,20 @@ fn iir_int_bench() {
 }
 
 fn iir_f32_bench() {
-    let dut = iir::IIR::<f32>::default();
-    let mut xy = iir::Vec5::default();
+    let dut = iir::Biquad::<f32>::default();
+    let mut xy = [0.0; 5];
     println!(
         "int::IIR::<f32>::update(s, x): {}",
-        bench_env(0.32241, |x| dut.update(&mut xy, *x, true))
+        bench_env(0.32241, |x| dut.update(&mut xy, *x))
     );
 }
 
 fn iir_f64_bench() {
-    let dut = iir::IIR::<f64>::default();
-    let mut xy = iir::Vec5::default();
+    let dut = iir::Biquad::<f64>::default();
+    let mut xy = [0.0; 5];
     println!(
         "int::IIR::<f64>::update(s, x): {}",
-        bench_env(0.32241, |x| dut.update(&mut xy, *x, true))
+        bench_env(0.32241, |x| dut.update(&mut xy, *x))
     );
 }
 
