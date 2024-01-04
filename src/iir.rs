@@ -121,7 +121,7 @@ impl<T: Float> Biquad<T> {
     ///
     /// See [`Biquad::min()`].
     pub fn set_min(&mut self, min: T) {
-        self.max = min;
+        self.min = min;
     }
 
     /// Upper output limit
