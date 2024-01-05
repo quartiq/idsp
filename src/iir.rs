@@ -47,7 +47,7 @@ use num_traits::{clamp, Float};
 ///   implementation of transfer functions beyond bequadratic terms.
 ///
 /// See also <https://hackmd.io/IACbwcOTSt6Adj3_F9bKuw>.
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 pub struct Biquad<T> {
     ba: [T; 5],
     u: T,
@@ -74,6 +74,61 @@ impl<T: Float> From<[T; 5]> for Biquad<T> {
         }
     }
 }
+
+/// A unit gain filter
+///
+/// ```
+/// # use idsp::iir::*;
+/// let x0 = 3.0;
+/// let y0 = Biquad::from(identity()).update(&mut [0.0; 5], x0);
+/// assert_eq!(y0, x0);
+/// ```
+pub fn identity<T: Float>() -> [T; 5] {
+    proportional(T::one())
+}
+
+/// A filter with the given proportional gain at all frequencies
+///
+/// ```
+/// # use idsp::iir::*;
+/// let x0 = 2.0;
+/// let k = 5.0;
+/// let y0 = Biquad::from(proportional(k)).update(&mut [0.0; 5], x0);
+/// assert_eq!(y0, x0 * k);
+/// ```
+pub fn proportional<T: Float>(k: T) -> [T; 5] {
+    let mut ba = [T::zero(); 5];
+    ba[0] = k;
+    ba
+}
+
+/// A "hold" filter that ingests input and maintains output
+///
+/// ```
+/// # use idsp::iir::*;
+/// let mut xy = core::array::from_fn(|i| i as _);
+/// let x0 = 7.0;
+/// let y0 = Biquad::from(hold()).update(&mut xy, x0);
+/// assert_eq!(y0, 2.0);
+/// assert_eq!(xy, [x0, 0.0, y0, y0, 3.0]);
+/// ```
+pub fn hold<T: Float>() -> [T; 5] {
+    let mut ba = [T::zero(); 5];
+    ba[3] = T::one();
+    ba
+}
+
+// TODO
+// lowpass1
+// highpass1
+// butterworth
+// elliptic
+// chebychev1/2
+// bessel
+// invert // high-to-low/low-to-high
+// notch
+// PI-notch
+// SOS cascades thereoff
 
 impl<T: Float> Biquad<T> {
     /// Filter coefficients
@@ -140,77 +195,11 @@ impl<T: Float> Biquad<T> {
         self.max = max;
     }
 
-    /// A unit gain filter
-    ///
-    /// ```
-    /// # use idsp::iir::*;
-    /// let x0 = 3.0;
-    /// let y0 = Biquad::identity().update(&mut [0.0; 5], x0);
-    /// assert_eq!(y0, x0);
-    /// ```
-    pub fn identity() -> Self {
-        Self::proportional(T::one())
-    }
-
-    /// A filter with the given proportional gain at all frequencies
-    ///
-    /// ```
-    /// # use idsp::iir::*;
-    /// let x0 = 2.0;
-    /// let k = 5.0;
-    /// let y0 = Biquad::proportional(k).update(&mut [0.0; 5], x0);
-    /// assert_eq!(y0, x0 * k);
-    /// ```
-    pub fn proportional(k: T) -> Self {
-        let mut s = Self::default();
-        s.ba[0] = k;
-        s
-    }
-
-    /// A "hold" filter that ingests input and maintains output
-    ///
-    /// ```
-    /// # use idsp::iir::*;
-    /// let mut xy = core::array::from_fn(|i| i as _);
-    /// let x0 = 7.0;
-    /// let y0 = Biquad::hold().update(&mut xy, x0);
-    /// assert_eq!(y0, 2.0);
-    /// assert_eq!(xy, [x0, 0.0, y0, y0, 3.0]);
-    /// ```
-    pub fn hold() -> Self {
-        let mut s = Self::default();
-        s.ba[3] = T::one();
-        s
-    }
-
-    // TODO
-    // lowpass1
-    // highpass1
-    // butterworth
-    // elliptic
-    // chebychev1/2
-    // bessel
-    // invert // high-to-low/low-to-high
-    // notch
-    // PI-notch
-    // SOS cascades thereoff
-
-    /// Return a builder for a "PID" controller
-    ///
-    /// ```
-    /// # use idsp::iir::*;
-    /// let i = Biquad::<f32>::pid().build().unwrap();
-    /// assert_eq!(i, Biquad::default());
-    /// ```
-    pub fn pid() -> PidBuilder<T> {
-        PidBuilder::default()
-    }
-
     /// Compute the overall (DC/proportional feed-forward) gain.
     ///
     /// ```
     /// # use idsp::iir::*;
-    /// assert_eq!(Biquad::proportional(3.0).forward_gain(), 3.0);
+    /// assert_eq!(Biquad::from(proportional(3.0)).forward_gain(), 3.0);
     /// ```
     ///
     /// # Returns
@@ -222,13 +211,14 @@ impl<T: Float> Biquad<T> {
     /// Compute input-referred (`x`) offset.
     /// ```
     /// # use idsp::iir::*;
-    /// let mut i = Biquad::proportional(3.0);
+    /// let mut i = Biquad::from(proportional(3.0));
     /// i.set_input_offset(2.0);
     /// assert_eq!(i.input_offset(), 2.0);
     /// ```
     pub fn input_offset(&self) -> T {
         self.u / self.forward_gain()
     }
+
     /// Convert input (`x`) offset to equivalent summing junction offset (`u`) and apply.
     ///
     /// In the case of a "PID" controller the response behavior of the controller
@@ -239,9 +229,8 @@ impl<T: Float> Biquad<T> {
     ///
     /// ```
     /// # use idsp::iir::*;
-    /// let mut i = Biquad::proportional(3.0);
+    /// let mut i = Biquad::from(proportional(3.0));
     /// i.set_input_offset(2.0);
-    /// assert_eq!(i.input_offset(), 2.0);
     /// let x0 = 0.5;
     /// let y0 = i.update(&mut [0.0; 5], x0);
     /// assert_eq!(y0, (x0 + i.input_offset()) * i.forward_gain());
@@ -260,7 +249,7 @@ impl<T: Float> Biquad<T> {
     /// # use idsp::iir::*;
     /// let mut xy = core::array::from_fn(|i| i as _);
     /// let x0 = 3.0;
-    /// let y0 = Biquad::identity().update(&mut xy, x0);
+    /// let y0 = Biquad::from(identity()).update(&mut xy, x0);
     /// assert_eq!(y0, x0);
     /// assert_eq!(xy, [x0, 0.0, y0, 2.0, 3.0]);
     /// ```
@@ -298,7 +287,7 @@ impl<T: Float> Biquad<T> {
 ///
 /// ```
 /// # use idsp::iir::*;
-/// let b = Biquad::pid()
+/// let b: Biquad<f32> = PidBuilder::default()
 ///     .period(1e-3)
 ///     .gain(PidAction::Ki, 1e-3)
 ///     .gain(PidAction::Kp, 1.0)
@@ -306,7 +295,8 @@ impl<T: Float> Biquad<T> {
 ///     .limit(PidAction::Ki, 1e3)
 ///     .limit(PidAction::Kd, 1e1)
 ///     .build()
-///     .unwrap();
+///     .unwrap()
+///     .into();
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PidBuilder<T> {
@@ -377,14 +367,15 @@ impl<T: Float> PidBuilder<T> {
     /// # use idsp::iir::*;
     /// let tau = 1e-3;
     /// let ki = 1e-4;
-    /// let i = Biquad::pid()
+    /// let i: Biquad<f32> = PidBuilder::default()
     ///     .period(tau)
     ///     .gain(PidAction::Ki, ki)
     ///     .build()
-    ///     .unwrap();
+    ///     .unwrap()
+    ///     .into();
     /// let x0 = 5.0;
     /// let y0 = i.update(&mut [0.0; 5], x0);
-    /// assert_eq!(y0, x0 * ki / tau);
+    /// assert!((y0 / (x0 * ki / tau) - 1.0).abs() < 2.0 * f32::EPSILON);
     /// ```
     ///
     /// # Arguments
@@ -403,11 +394,12 @@ impl<T: Float> PidBuilder<T> {
     /// ```
     /// # use idsp::iir::*;
     /// let ki_limit = 1e3;
-    /// let i = Biquad::pid()
+    /// let i: Biquad<f32> = PidBuilder::default()
     ///     .gain(PidAction::Ki, 8.0)
     ///     .limit(PidAction::Ki, ki_limit)
     ///     .build()
-    ///     .unwrap();
+    ///     .unwrap()
+    ///     .into();
     /// let mut xy = [0.0; 5];
     /// let x0 = 5.0;
     /// for _ in 0..1000 {
@@ -436,13 +428,14 @@ impl<T: Float> PidBuilder<T> {
     ///
     /// ```
     /// # use idsp::iir::*;
-    /// let i = Biquad::<f32>::pid()
+    /// let i: Biquad<f32> = PidBuilder::default()
     ///     .gain(PidAction::Kp, 3.0)
     ///     .build()
-    ///     .unwrap();
-    /// assert_eq!(i, Biquad::proportional(3.0));
+    ///     .unwrap()
+    ///     .into();
+    /// assert_eq!(i, Biquad::from(proportional(3.0)));
     /// ```
-    pub fn build(self) -> Result<Biquad<T>, PidError> {
+    pub fn build(self) -> Result<[T; 5], PidError> {
         const KP: usize = PidAction::Kp as usize;
 
         // Determine highest denominator (feedback, `a`) order
@@ -495,10 +488,7 @@ impl<T: Float> PidBuilder<T> {
             *baj = *baj * a0;
         }
 
-        Ok(Biquad {
-            ba: [b[0], b[1], b[2], -a[1], -a[2]],
-            ..Default::default()
-        })
+        Ok([b[0], b[1], b[2], -a[1], -a[2]])
     }
 }
 
@@ -508,15 +498,16 @@ mod test {
 
     #[test]
     fn pid() {
-        let b = Biquad::pid()
-            .period(1.0f32)
+        let b: Biquad<f32> = PidBuilder::default()
+            .period(1.0)
             .gain(PidAction::Ki, 1e-3)
             .gain(PidAction::Kp, 1.0)
             .gain(PidAction::Kd, 1e2)
             .limit(PidAction::Ki, 1e3)
             .limit(PidAction::Kd, 1e1)
             .build()
-            .unwrap();
+            .unwrap()
+            .into();
         let want = [
             9.18190826,
             -18.27272561,
@@ -537,11 +528,12 @@ mod test {
     fn units() {
         let ki = 5e-2;
         let tau = 3e-3;
-        let b = Biquad::pid()
+        let b: Biquad<f32> = PidBuilder::default()
             .period(tau)
             .gain(PidAction::Ki, ki)
             .build()
-            .unwrap();
+            .unwrap()
+            .into();
         let mut xy = [0.0; 5];
         for i in 1..10 {
             let y_have = b.update(&mut xy, 1.0);
