@@ -53,8 +53,8 @@ fn pll_bench() {
 }
 
 fn iir_int_bench() {
-    let dut = iir_int::IIR::default();
-    let mut xy = iir_int::Vec5::default();
+    let dut = iir_int::Biquad::default();
+    let mut xy = [0; 5];
     println!(
         "int_iir::IIR::update(s, x): {}",
         bench_env(0x2832, |x| dut.update(&mut xy, *x))
