@@ -2,7 +2,7 @@ use core::f32::consts::PI;
 
 use easybench::bench_env;
 
-use idsp::{atan2, cossin, iir, iir_int, Filter, Lowpass, PLL, RPLL};
+use idsp::{atan2, cossin, iir, Filter, Lowpass, PLL, RPLL};
 
 fn atan2_bench() {
     let xi = (10 << 16) as i32;
@@ -53,7 +53,7 @@ fn pll_bench() {
 }
 
 fn iir_int_bench() {
-    let dut = iir_int::Biquad::default();
+    let dut = iir::Biquad::default();
     let mut xy = [0; 5];
     println!(
         "int_iir::IIR::update(s, x): {}",

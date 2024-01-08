@@ -36,9 +36,12 @@ High accuracy, zero-assumption, fully robust, forward and reciprocal PLLs with d
 
 Tools to handle, track, and unwrap phase signals or generate them.
 
-## iir_int, iir
+## iir
 
-`i32` and `f32` biquad IIR filters with robust and clean clipping and offset (anti-windup, no derivative kick, dynamically adjustable gains).
+Fixed point (`i8`, `i16`, `i32`, `i64`) and floating point (`f32`, `f64`) biquad IIR filters.
+Robust and clean clipping and offset (anti-windup, no derivative kick, dynamically adjustable gains) suitable for PID controller applications.
+Direct Form 1 and Direct Form 2 Transposed supported.
+Coefficient sharing for multiple channels.
 
 ## Lowpass, Lockin
 

@@ -10,12 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * `hbf` FIRs, symmetric FIRs, half band filters, HBF decimators and interpolators
-* `iir::PidBuilder` a builder for PID coefficients
-* `iir::Biquad::{hold, proportional, identity}`
+* `iir::Pid`, `iir:Filter` a builder for PID coefficients and the collection of standard Biquad filters
+* `iir::Biquad::{HOLD, proportional, identity}`
+* `iir`: support for other integers (i8, i16, i128)
+* `iir::Biquad`: support for reduced DF1 state and DF2T state
 
 ### Removed
 
 * `iir::Vec5` type alias has been removed.
+* `iir_int`: integrated into `iir`.
 
 ### Changed
 
