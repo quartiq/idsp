@@ -24,6 +24,8 @@ pub use rpll::*;
 mod unwrap;
 pub use unwrap::*;
 pub mod hbf;
+mod num;
+pub use num::*;
 
 #[cfg(test)]
 pub mod testing;
