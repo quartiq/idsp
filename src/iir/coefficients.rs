@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
 enum Shape<T> {
+    /// Inverse W
     InverseQ(T),
+    /// Relative bandwidth in octaves
     Bandwidth(T),
     Slope(T),
 }
@@ -75,7 +77,7 @@ where
     }
 
     pub fn shelf_db(self, k_db: T) -> Self {
-        self.gain(10.0.as_().powf(k_db / 20.0.as_()))
+        self.shelf(10.0.as_().powf(k_db / 20.0.as_()))
     }
 
     pub fn inverse_q(mut self, qi: T) -> Self {
@@ -87,14 +89,13 @@ where
         self.inverse_q(T::one() / q)
     }
 
-    /// Set [`Filter::frequency()`] first.
-    /// In octaves.
+    /// Relative bandwidth in octaves.
     pub fn bandwidth(mut self, bw: T) -> Self {
         self.shape = Shape::Bandwidth(bw);
         self
     }
 
-    /// Set [`Filter::gain()`] first.
+    /// Shelf slope.
     pub fn shelf_slope(mut self, s: T) -> Self {
         self.shape = Shape::Slope(s);
         self
@@ -112,20 +113,26 @@ where
         }
     }
 
-    fn alpha(&self) -> T {
-        0.5.as_() * self.w0.sin() * self.qi()
+    fn fcos_alpha(&self) -> (T, T) {
+        let (fsin, fcos) = self.w0.sin_cos();
+        (fcos, 0.5.as_() * fsin * self.qi())
     }
 
-    /// Lowpass biquad filter.
+    /// Low pass filter
+    ///
+    /// Builds second order biquad low pass filter coefficients.
     ///
     /// ```
     /// use idsp::iir::*;
     /// let ba = Filter::default().critical_frequency(0.1).lowpass();
-    /// println!("{ba:?}");
+    /// let iir = Biquad::<i32>::from(&ba);
+    /// let mut xy = [0; 4];
+    /// let x = vec![3, -4, 5, 7, -3, 2];
+    /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
+    /// assert_eq!(y, [0, 0, 0, 1, 2, 2]);
     /// ```
     pub fn lowpass(self) -> [T; 6] {
-        let fcos = self.w0.cos();
-        let alpha = self.alpha();
+        let (fcos, alpha) = self.fcos_alpha();
         let b = self.gain * 0.5.as_() * (T::one() - fcos);
         [
             b,
@@ -137,9 +144,21 @@ where
         ]
     }
 
+    /// High pass filter
+    ///
+    /// Builds second order biquad high pass filter coefficients.
+    ///
+    /// ```
+    /// use idsp::iir::*;
+    /// let ba = Filter::default().critical_frequency(0.1).highpass();
+    /// let iir = Biquad::<i32>::from(&ba);
+    /// let mut xy = [0; 4];
+    /// let x = vec![3, -4, 5, 7, -3, 2];
+    /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
+    /// assert_eq!(y, [2, -4, 5, 3, -6, 1]);
+    /// ```
     pub fn highpass(self) -> [T; 6] {
-        let fcos = self.w0.cos();
-        let alpha = self.alpha();
+        let (fcos, alpha) = self.fcos_alpha();
         let b = self.gain * 0.5.as_() * (T::one() + fcos);
         [
             b,
@@ -151,14 +170,24 @@ where
         ]
     }
 
+    /// Band pass
+    ///
+    /// ```
+    /// use idsp::iir::*;
+    /// let ba = Filter::default()
+    ///     .frequency(1000.0, 48e3)
+    ///     .q(5.0)
+    ///     .gain_db(3.0)
+    ///     .bandpass();
+    /// println!("{ba:?}");
+    /// ```
     pub fn bandpass(self) -> [T; 6] {
-        let fcos = self.w0.cos();
-        let alpha = self.alpha();
+        let (fcos, alpha) = self.fcos_alpha();
         let b = self.gain * alpha;
         [
             b,
             T::zero(),
-            b,
+            -b,
             T::one() + alpha,
             -(fcos + fcos),
             T::one() - alpha,
@@ -166,8 +195,7 @@ where
     }
 
     pub fn notch(self) -> [T; 6] {
-        let fcos = self.w0.cos();
-        let alpha = self.alpha();
+        let (fcos, alpha) = self.fcos_alpha();
         [
             self.gain,
             -(fcos + fcos) * self.gain,
@@ -179,8 +207,7 @@ where
     }
 
     pub fn allpass(self) -> [T; 6] {
-        let fcos = self.w0.cos();
-        let alpha = self.alpha();
+        let (fcos, alpha) = self.fcos_alpha();
         [
             (T::one() - alpha) * self.gain,
             -(fcos + fcos) * self.gain,
@@ -192,8 +219,7 @@ where
     }
 
     pub fn peaking(self) -> [T; 6] {
-        let fcos = self.w0.cos();
-        let alpha = self.alpha();
+        let (fcos, alpha) = self.fcos_alpha();
         [
             (T::one() + alpha * self.shelf) * self.gain,
             -(fcos + fcos) * self.gain,
@@ -204,11 +230,22 @@ where
         ]
     }
 
+    /// Low shelf
+    ///
+    /// ```
+    /// use idsp::iir::*;
+    /// let ba = Filter::default()
+    ///     .frequency(1000.0, 48e3)
+    ///     .shelf_slope(2.0)
+    ///     .shelf_db(20.0)
+    ///     .lowshelf();
+    /// println!("{ba:?}");
+    /// ```
     pub fn lowshelf(self) -> [T; 6] {
-        let fcos = self.w0.cos();
+        let (fcos, alpha) = self.fcos_alpha();
+        let tsa = 2.0.as_() * self.shelf.sqrt() * alpha;
         let sp1 = self.shelf + T::one();
         let sm1 = self.shelf - T::one();
-        let tsa = 2.0.as_() * self.shelf.sqrt() * self.alpha();
         [
             self.shelf * self.gain * (sp1 - sm1 * fcos + tsa),
             2.0.as_() * self.shelf * self.gain * (sm1 - sp1 * fcos),
@@ -220,10 +257,10 @@ where
     }
 
     pub fn highshelf(self) -> [T; 6] {
-        let fcos = self.w0.cos();
+        let (fcos, alpha) = self.fcos_alpha();
+        let tsa = 2.0.as_() * self.shelf.sqrt() * alpha;
         let sp1 = self.shelf + T::one();
         let sm1 = self.shelf - T::one();
-        let tsa = 2.0.as_() * self.shelf.sqrt() * self.alpha();
         [
             self.shelf * self.gain * (sp1 + sm1 * fcos + tsa),
             (-2.0).as_() * self.shelf * self.gain * (sm1 + sp1 * fcos),
@@ -236,13 +273,14 @@ where
 
     // TODO
     // PI-notch
-    //
-    // SOS cascades:
-    // butterworth
-    // elliptic
-    // chebychev1/2
-    // bessel
 }
+
+// TODO
+// SOS cascades:
+// butterworth
+// elliptic
+// chebychev1/2
+// bessel
 
 #[cfg(test)]
 mod test {
@@ -256,7 +294,7 @@ mod test {
     #[test]
     fn lowpass_gen() {
         let ba = Biquad::<i32>::from(
-            Filter::default()
+            &Filter::default()
                 .critical_frequency(2e-9f64)
                 .gain(2e7)
                 .lowpass(),
@@ -305,11 +343,15 @@ mod test {
     fn check_coeffs(ba: &[f64; 6], fg: &[(f64, Tol)]) {
         println!("{ba:?}");
 
-        let bai = Biquad::<i32>::from(*ba).into();
+        for (f, g) in fg {
+            check(*f, *g, ba);
+        }
+
+        // Quantize
+        let bai = (&Biquad::<i32>::from(ba)).into();
         println!("{bai:?}");
 
         for (f, g) in fg {
-            check(*f, *g, ba);
             check(*f, *g, &bai);
         }
     }
@@ -340,6 +382,23 @@ mod test {
                 (1e-3, Tol::GainBelowDb(-40.0)),
                 (0.1, Tol::GainDb(-5.0, 0.1)),
                 (4e-1, Tol::GainDb(-2.0, 0.01)),
+            ],
+        );
+    }
+
+    #[test]
+    fn notch() {
+        check_coeffs(
+            &Filter::default()
+                .critical_frequency(0.02)
+                .bandwidth(2.0)
+                .notch(),
+            &[
+                (1e-4, Tol::GainDb(0.0, 0.01)),
+                (0.01, Tol::GainDb(-3.0, 0.1)),
+                (0.02, Tol::GainBelowDb(-80.0)),
+                (0.04, Tol::GainDb(-3.0, 0.1)),
+                (4e-1, Tol::GainDb(0.0, 0.01)),
             ],
         );
     }

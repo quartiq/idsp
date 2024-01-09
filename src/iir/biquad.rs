@@ -104,12 +104,12 @@ impl<T: FilterNum> From<[T; 5]> for Biquad<T> {
     }
 }
 
-impl<T, C> From<[C; 6]> for Biquad<T>
+impl<T, C> From<&[C; 6]> for Biquad<T>
 where
     T: FilterNum + AsPrimitive<C>,
     C: Float + AsPrimitive<T>,
 {
-    fn from(ba: [C; 6]) -> Self {
+    fn from(ba: &[C; 6]) -> Self {
         let ia0 = C::one() / ba[3];
         Self::from([
             T::quantize(ba[0] * ia0),
@@ -122,12 +122,12 @@ where
     }
 }
 
-impl<T, C> From<Biquad<T>> for [C; 6]
+impl<T, C> From<&Biquad<T>> for [C; 6]
 where
     T: FilterNum + AsPrimitive<C>,
     C: 'static + Copy,
 {
-    fn from(value: Biquad<T>) -> Self {
+    fn from(value: &Biquad<T>) -> Self {
         let ba = value.ba();
         [
             ba[0].as_(),
