@@ -87,14 +87,14 @@ where
         self.inverse_q(T::one() / q)
     }
 
-    /// Set [`FilterBuilder::frequency()`] first.
+    /// Set [`Filter::frequency()`] first.
     /// In octaves.
     pub fn bandwidth(mut self, bw: T) -> Self {
         self.shape = Shape::Bandwidth(bw);
         self
     }
 
-    /// Set [`FilterBuilder::gain()`] first.
+    /// Set [`Filter::gain()`] first.
     pub fn shelf_slope(mut self, s: T) -> Self {
         self.shape = Shape::Slope(s);
         self
@@ -282,14 +282,12 @@ mod test {
     enum Tol {
         GainDb(f64, f64),
         GainBelowDb(f64),
-        GainAboveDb(f64),
     }
     impl Tol {
         fn check(&self, h: Complex64) -> bool {
             let g = 10.0 * h.norm_sqr().log10();
             match self {
                 Self::GainDb(want, tol) => (g - want).abs() <= *tol,
-                Self::GainAboveDb(want) => g >= *want,
                 Self::GainBelowDb(want) => g <= *want,
             }
         }
@@ -304,45 +302,45 @@ mod test {
         );
     }
 
-    #[test]
-    fn lowpass() {
-        let ba = Filter::default()
-            .critical_frequency(0.01)
-            .gain_db(20.0)
-            .lowpass();
+    fn check_coeffs(ba: &[f64; 6], fg: &[(f64, Tol)]) {
         println!("{ba:?}");
 
-        let bai = Biquad::<i32>::from(ba).into();
+        let bai = Biquad::<i32>::from(*ba).into();
         println!("{bai:?}");
 
-        for (f, g) in [
-            (1e-3, Tol::GainDb(20.0, 0.01)),
-            (0.01, Tol::GainDb(17.0, 0.1)),
-            (4e-1, Tol::GainBelowDb(-40.0)),
-        ] {
-            check(f, g, &ba);
-            check(f, g, &bai);
+        for (f, g) in fg {
+            check(*f, *g, ba);
+            check(*f, *g, &bai);
         }
     }
 
     #[test]
+    fn lowpass() {
+        check_coeffs(
+            &Filter::default()
+                .critical_frequency(0.01)
+                .gain_db(20.0)
+                .lowpass(),
+            &[
+                (1e-3, Tol::GainDb(20.0, 0.01)),
+                (0.01, Tol::GainDb(17.0, 0.1)),
+                (4e-1, Tol::GainBelowDb(-40.0)),
+            ],
+        );
+    }
+
+    #[test]
     fn highpass() {
-        let ba = Filter::default()
-            .critical_frequency(0.1)
-            .gain_db(-2.0)
-            .highpass();
-        println!("{ba:?}");
-
-        let bai = Biquad::<i32>::from(ba).into();
-        println!("{bai:?}");
-
-        for (f, g) in [
-            (1e-3, Tol::GainBelowDb(-40.0)),
-            (0.1, Tol::GainDb(-5.0, 0.1)),
-            (4e-1, Tol::GainDb(-2.0, 0.01)),
-        ] {
-            check(f, g, &ba);
-            check(f, g, &bai);
-        }
+        check_coeffs(
+            &Filter::default()
+                .critical_frequency(0.1)
+                .gain_db(-2.0)
+                .highpass(),
+            &[
+                (1e-3, Tol::GainBelowDb(-40.0)),
+                (0.1, Tol::GainDb(-5.0, 0.1)),
+                (4e-1, Tol::GainDb(-2.0, 0.01)),
+            ],
+        );
     }
 }

@@ -13,8 +13,7 @@ pub trait FilterNum:
     + Add<Self, Output = Self>
     + Sum<Self>
 where
-    // + AsPrimitive<Self::ACCU>,
-    Self: 'static,
+    Self: 'static + AsPrimitive<Self::ACCU>,
 {
     /// Multiplicative identity
     const ONE: Self;
@@ -26,7 +25,8 @@ where
     const MIN: Self;
     /// Highest value
     const MAX: Self;
-    // type ACCU: AsPrimitive<Self>;
+    /// Accumulator type
+    type ACCU: AsPrimitive<Self>;
     /// Multiply-accumulate `self + sum(x*a)`
     ///
     /// Proper scaling and potentially using a wide accumulator.
@@ -36,9 +36,7 @@ where
     /// Division (scaled)
     fn div(self, other: Self) -> Self;
     /// Clamp `self` such that `min <= self <= max`.
-    ///
-    /// # Panic
-    /// May panics in debug mode if `max < min`.
+    /// Undefined result if `max < min`.
     fn clamp(self, min: Self, max: Self) -> Self;
     /// Scale and quantize a floating point value.
     fn quantize<C>(value: C) -> Self
@@ -55,12 +53,20 @@ macro_rules! impl_float {
             const ZERO: Self = 0.0;
             const MIN: Self = Self::NEG_INFINITY;
             const MAX: Self = Self::INFINITY;
+            type ACCU = $T;
             fn macc(self, xa: impl Iterator<Item = (Self, Self)>) -> Self {
-                xa.fold(self, |y, (a, x)| a.mul_add(x, y))
-                // xa.fold(self, |y, (a, x)| y + a * x)
+                // a.mul_add(x, y) is std/libm only
+                xa.fold(self, |u, (a, x)| u + a * x)
             }
             fn clamp(self, min: Self, max: Self) -> Self {
-                <$T>::clamp(self, min, max)
+                // <$T>::clamp() is slow and checks
+                if self < min {
+                    min
+                } else if self > max {
+                    max
+                } else {
+                    self
+                }
             }
             fn div(self, other: Self) -> Self {
                 self / other
@@ -86,11 +92,19 @@ macro_rules! impl_int {
             // Need to avoid `$T::MIN*$T::MIN` overflow.
             const MIN: Self = -<$T>::MAX;
             const MAX: Self = <$T>::MAX;
+            type ACCU = $A;
             fn macc(self, xa: impl Iterator<Item = (Self, Self)>) -> Self {
-                self + (xa.fold(1 << ($Q - 1), |y, (a, x)| y + a as $A * x as $A) >> $Q) as Self
+                self + (xa.fold(1 << ($Q - 1), |u, (a, x)| u + a as $A * x as $A) >> $Q) as Self
             }
             fn clamp(self, min: Self, max: Self) -> Self {
-                Ord::clamp(self, min, max)
+                // Ord::clamp() is slow and checks
+                if self < min {
+                    min
+                } else if self > max {
+                    max
+                } else {
+                    self
+                }
             }
             fn div(self, other: Self) -> Self {
                 (((self as $A) << $Q) / other as $A) as Self

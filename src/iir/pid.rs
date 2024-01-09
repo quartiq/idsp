@@ -22,7 +22,7 @@ use crate::FilterNum;
 ///     .unwrap()
 ///     .into();
 /// ```
-#[derive(Debug, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Pid<T> {
     period: T,
     gains: [T; 5],
@@ -49,7 +49,7 @@ pub enum PidError {
 
 /// PID action
 ///
-/// This enumerates the five possible PID style actions of a [`Biquad`]
+/// This enumerates the five possible PID style actions of a [`crate::iir::Biquad`]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Action {
     /// Double integrating, -40 dB per decade
@@ -98,7 +98,7 @@ impl<T: Float + Sum<T>> Pid<T> {
     ///     .unwrap()
     ///     .into();
     /// let x0 = 5.0;
-    /// let y0 = i.update(&mut [0.0; 5], x0);
+    /// let y0 = i.update(&mut [0.0; 4], x0);
     /// assert!((y0 / (x0 * ki / tau) - 1.0).abs() < 2.0 * f32::EPSILON);
     /// ```
     ///
@@ -124,7 +124,7 @@ impl<T: Float + Sum<T>> Pid<T> {
     ///     .build()
     ///     .unwrap()
     ///     .into();
-    /// let mut xy = [0.0; 5];
+    /// let mut xy = [0.0; 4];
     /// let x0 = 5.0;
     /// for _ in 0..1000 {
     ///     i.update(&mut xy, x0);
@@ -266,7 +266,7 @@ mod test {
             .build()
             .unwrap()
             .into();
-        let mut xy = [0.0; 5];
+        let mut xy = [0.0; 4];
         for i in 1..10 {
             let y_have = b.update(&mut xy, 1.0);
             let y_want = (i as f32) * (ki / tau);

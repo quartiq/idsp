@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * `hbf` FIRs, symmetric FIRs, half band filters, HBF decimators and interpolators
 * `iir::Pid`, `iir:Filter` a builder for PID coefficients and the collection of standard Biquad filters
-* `iir::Biquad::{HOLD, proportional, identity}`
+* `iir::Biquad::{HOLD, IDENTITY, proportional}`
+* `iir::Biquad` getter/setter
 * `iir`: support for other integers (i8, i16, i128)
 * `iir::Biquad`: support for reduced DF1 state and DF2T state
 

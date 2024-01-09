@@ -25,16 +25,16 @@ use crate::FilterNum;
 ///
 /// # Coefficients and state
 ///
-/// `[T; 5]` is both the IIR state and coefficients type.
+/// `[T; 5]` is the coefficients type.
 ///
 /// To represent the IIR state (input and output memory) during [`Biquad::update()`]
-/// this contains the three inputs `[x0, x1, x2]` and the two outputs `[y1, y2]`
+/// this contains the two previous inputs and output `[x1, x2, y1, y2]`
 /// concatenated. Lower indices correspond to more recent samples.
 /// To represent the IIR coefficients, this contains the feed-forward
 /// coefficients `[b0, b1, b2]` followd by the negated feed-back coefficients
 /// `[a1, a2]`, all five normalized such that `a0 = 1`.
 /// Note that between filter [`Biquad::update()`] the `xy` state contains
-/// `[x0, x1, y0, y1, y2]`.
+/// `[x0, x1, y0, y1]`.
 ///
 /// The IIR coefficients can be mapped to other transfer function
 /// representations, for example as described in <https://arxiv.org/abs/1508.06319>
@@ -148,8 +148,8 @@ impl<T: FilterNum> Biquad<T> {
     /// let mut xy = core::array::from_fn(|i| i as _);
     /// let x0 = 7.0;
     /// let y0 = Biquad::HOLD.update(&mut xy, x0);
-    /// assert_eq!(y0, -2.0);
-    /// assert_eq!(xy, [x0, 0.0, -y0, -y0, 3.0]);
+    /// assert_eq!(y0, 2.0);
+    /// assert_eq!(xy, [x0, 0.0, y0, y0]);
     /// ```
     pub const HOLD: Self = Self {
         ba: [T::ZERO, T::ZERO, T::ZERO, T::NEG_ONE, T::ZERO],
@@ -163,7 +163,7 @@ impl<T: FilterNum> Biquad<T> {
     /// ```
     /// # use idsp::iir::*;
     /// let x0 = 3.0;
-    /// let y0 = Biquad::IDENTITY.update(&mut [0.0; 5], x0);
+    /// let y0 = Biquad::IDENTITY.update(&mut [0.0; 4], x0);
     /// assert_eq!(y0, x0);
     /// ```
     pub const IDENTITY: Self = Self::proportional(T::ONE);
@@ -174,7 +174,7 @@ impl<T: FilterNum> Biquad<T> {
     /// # use idsp::iir::*;
     /// let x0 = 2.0;
     /// let k = 5.0;
-    /// let y0 = Biquad::proportional(k).update(&mut [0.0; 5], x0);
+    /// let y0 = Biquad::proportional(k).update(&mut [0.0; 4], x0);
     /// assert_eq!(y0, x0 * k);
     /// ```
     pub const fn proportional(k: T) -> Self {
@@ -235,7 +235,7 @@ impl<T: FilterNum> Biquad<T> {
     /// # use idsp::iir::*;
     /// let mut i = Biquad::default();
     /// i.set_u(5);
-    /// assert_eq!(i.update(&mut [0; 5], 0), 5);
+    /// assert_eq!(i.update(&mut [0; 4], 0), 5);
     /// ```
     pub fn set_u(&mut self, u: T) {
         self.u = u;
@@ -268,7 +268,7 @@ impl<T: FilterNum> Biquad<T> {
     /// # use idsp::iir::*;
     /// let mut i = Biquad::default();
     /// i.set_min(7);
-    /// assert_eq!(i.update(&mut [0; 5], 0), 7);
+    /// assert_eq!(i.update(&mut [0; 4], 0), 7);
     /// ```
     pub fn set_min(&mut self, min: T) {
         self.min = min;
@@ -296,7 +296,7 @@ impl<T: FilterNum> Biquad<T> {
     /// # use idsp::iir::*;
     /// let mut i = Biquad::default();
     /// i.set_max(-7);
-    /// assert_eq!(i.update(&mut [0; 5], 0), -7);
+    /// assert_eq!(i.update(&mut [0; 4], 0), -7);
     /// ```
     pub fn set_max(&mut self, max: T) {
         self.max = max;
@@ -332,7 +332,7 @@ impl<T: FilterNum> Biquad<T> {
     ///
     /// In the case of a "PID" controller the response behavior of the controller
     /// to the offset is "stabilizing", and not "tracking": its frequency response
-    /// is exclusively according to the lowest non-zero [`Action`] gain.
+    /// is exclusively according to the lowest non-zero [`crate::iir::Action`] gain.
     /// There is no high order ("faster") response as would be the case for a "tracking"
     /// controller.
     ///
@@ -341,7 +341,7 @@ impl<T: FilterNum> Biquad<T> {
     /// let mut i = Biquad::proportional(3.0);
     /// i.set_input_offset(2.0);
     /// let x0 = 0.5;
-    /// let y0 = i.update(&mut [0.0; 5], x0);
+    /// let y0 = i.update(&mut [0.0; 4], x0);
     /// assert_eq!(y0, (x0 + i.input_offset()) * i.forward_gain());
     /// ```
     ///
@@ -370,83 +370,35 @@ impl<T: FilterNum> Biquad<T> {
     /// let x0 = 3.0;
     /// let y0 = Biquad::IDENTITY.update(&mut xy, x0);
     /// assert_eq!(y0, x0);
-    /// assert_eq!(xy, [x0, 0.0, -y0, 2.0, 3.0]);
+    /// assert_eq!(xy, [x0, 0.0, y0, 2.0]);
     /// ```
     ///
     /// # Arguments
     /// * `xy` - Current filter state.
-    ///   On entry: `[x1, x2, -y1, -y2, -y3]`
-    ///   On exit:  `[x0, x1, -y0, -y1, -y2]`
+    ///   On entry: `[x1, x2, y1, y2]`
+    ///   On exit:  `[x0, x1, y0, y1]`
     /// * `x0` - New input.
     ///
     /// # Returns
-    /// The new output `y0 = clamp(b0*x0 + b1*x1 + b2*x2 - a1*y1 - a2*y2 + u, min, max)`
-    ///
-    /// # Panics
-    /// Panics in debug mode if `!(self.min <= self.max)`.
-    pub fn update(&self, xy: &mut [T; 5], x0: T) -> T {
-        // `xy` contains    x0 x1 -y0 -y1 -y2
-        // Increment time   x1 x2 -y1 -y2 -y3
-        // Shift            x1 x1  x2 -y1 -y2
-        xy.copy_within(0..4, 1);
-        // Store x0         x0 x1  x2 -y1 -y2
-        xy[0] = x0;
-        // Compute y0
+    /// The new output `y0 = clamp(b0*x0 + b1*x1 + b2*x2 - a1*y1 - a2*y2 + u, min, max)`    
+    pub fn update_df1(&self, xy: &mut [T; 4], x0: T) -> T {
         let y0 = self
             .u
-            .macc(xy.iter().copied().zip(self.ba.iter().copied()))
+            .macc([x0, xy[0], xy[1], -xy[2], -xy[3]].into_iter().zip(self.ba))
             .clamp(self.min, self.max);
-        // Store -y0        x0 x1 -y0 -y1 -y2
-        xy[2] = -y0;
+        xy[1] = xy[0];
+        xy[0] = x0;
+        xy[3] = xy[2];
+        xy[2] = y0;
         y0
     }
 
-    /// Direct Form 1 Update
+    /// Direct Form 1 update
     ///
-    /// Ingest a new input value into the filter, update the filter state, and
-    /// return the new output. Only the state `xy` is modified.
-    ///
-    /// ```
-    /// # use idsp::iir::*;
-    /// let mut xy = core::array::from_fn(|i| i as _);
-    /// let x0 = 3.0;
-    /// let y0 = Biquad::IDENTITY.update_df1(&mut xy, x0);
-    /// assert_eq!(y0, x0);
-    /// assert_eq!(xy, [x0, 0.0, -y0, 2.0]);
-    /// ```
-    ///
-    /// # Arguments
-    /// * `xy` - Current filter state.
-    ///   On entry: `[x1, x2, -y1, -y2]`
-    ///   On exit:  `[x0, x1, -y0, -y1]`
-    /// * `x0` - New input.
-    ///
-    /// # Returns
-    /// The new output `y0 = clamp(b0*x0 + b1*x1 + b2*x2 - a1*y1 - a2*y2 + u, min, max)`
-    ///
-    /// # Panics
-    /// Panics in debug mode if `!(self.min <= self.max)`.
-    pub fn update_df1(&self, xy: &mut [T; 4], x0: T) -> T {
-        // `xy` contains    x0 x1 -y0 -y1
-        // Increment time   x1 x2 -y1 -y2
-        // Compute y0
-        let y0 = self
-            .u
-            .macc(
-                core::iter::once(x0)
-                    .chain(xy.iter().copied())
-                    .zip(self.ba.iter().copied()),
-            )
-            .clamp(self.min, self.max);
-        // Shift            x1 x1 -y1 -y2
-        xy[1] = xy[0];
-        // Store x0         x0 x1 -y1 -y2
-        xy[0] = x0;
-        // Shift            x0 x1 -y0 -y1
-        xy[3] = xy[2];
-        // Store -y0        x0 x1 -y0 -y1
-        xy[2] = -y0;
-        y0
+    /// See [`Biquad::update_df1()`].
+    #[inline]
+    pub fn update(&self, xy: &mut [T; 4], x0: T) -> T {
+        self.update_df1(xy, x0)
     }
 
     /// Ingest new input and perform a Direct Form 2 Transposed update.
@@ -468,9 +420,6 @@ impl<T: FilterNum> Biquad<T> {
     ///
     /// # Returns
     /// The new output `y0 = clamp(b0*x0 + b1*x1 + b2*x2 - a1*y1 - a2*y2 + u, min, max)`
-    ///
-    /// # Panics
-    /// Panics in debug mode if `!(self.min <= self.max)`.
     pub fn update_df2t(&self, u: &mut [T; 2], x0: T) -> T {
         let y0 = (u[0] + self.ba[0].mul(x0)).clamp(self.min, self.max);
         u[0] = u[1] + self.ba[1].mul(x0) - self.ba[3].mul(y0);
