@@ -1,17 +1,12 @@
 use core::{
     iter::Sum,
-    ops::{Add, Neg, Sub},
+    ops::{Add, Mul, Neg},
 };
 use num_traits::{AsPrimitive, Float};
 
 /// Helper trait unifying fixed point and floating point coefficients/samples
 pub trait FilterNum:
-    Copy
-    + PartialEq
-    + Neg<Output = Self>
-    + Sub<Self, Output = Self>
-    + Add<Self, Output = Self>
-    + Sum<Self>
+    Copy + PartialEq + Neg<Output = Self> + Add<Self, Output = Self> + Sum<Self>
 where
     Self: 'static + AsPrimitive<Self::ACCU>,
 {
@@ -26,7 +21,9 @@ where
     /// Highest value
     const MAX: Self;
     /// Accumulator type
-    type ACCU: AsPrimitive<Self>;
+    type ACCU: AsPrimitive<Self>
+        + Add<Self::ACCU, Output = Self::ACCU>
+        + Mul<Self::ACCU, Output = Self::ACCU>;
     /// Multiply-accumulate `self + sum(x*a)`
     ///
     /// Proper scaling and potentially using a wide accumulator.

@@ -384,7 +384,11 @@ impl<T: FilterNum> Biquad<T> {
     pub fn update_df1(&self, xy: &mut [T; 4], x0: T) -> T {
         let y0 = self
             .u
-            .macc([x0, xy[0], xy[1], -xy[2], -xy[3]].into_iter().zip(self.ba))
+            .macc(
+                [x0, xy[0], xy[1], -xy[2], -xy[3]]
+                    .into_iter()
+                    .zip(self.ba.iter().copied()),
+            )
             .clamp(self.min, self.max);
         xy[1] = xy[0];
         xy[0] = x0;
@@ -422,8 +426,8 @@ impl<T: FilterNum> Biquad<T> {
     /// The new output `y0 = clamp(b0*x0 + b1*x1 + b2*x2 - a1*y1 - a2*y2 + u, min, max)`
     pub fn update_df2t(&self, u: &mut [T; 2], x0: T) -> T {
         let y0 = (u[0] + self.ba[0].mul(x0)).clamp(self.min, self.max);
-        u[0] = u[1] + self.ba[1].mul(x0) - self.ba[3].mul(y0);
-        u[1] = self.u + self.ba[2].mul(x0) - self.ba[4].mul(y0);
+        u[0] = u[1] + self.ba[1].mul(x0) + self.ba[3].mul(-y0);
+        u[1] = self.u + self.ba[2].mul(x0) + self.ba[4].mul(-y0);
         y0
     }
 }
