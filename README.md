@@ -30,7 +30,7 @@ An extension trait for the `num::Complex` type featuring especially a `std`-like
 
 ## PLL, RPLL
 
-High accuracy, zero-assumption, fully robust, forward and reciprocal PLLs with dynamically adjustable time constant and arbitrary (in the Nyquist sampling sense) capture range.
+High accuracy, zero-assumption, fully robust, forward and reciprocal PLLs with dynamically adjustable time constant and arbitrary (in the Nyquist sampling sense) capture range, and noise shaping.
 
 ## Unwrapper, Accu, saturating_scale
 
