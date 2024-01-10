@@ -145,7 +145,7 @@ impl<T: FilterNum> Biquad<T> {
     ///
     /// ```
     /// # use idsp::iir::*;
-    /// let mut xy = core::array::from_fn(|i| i as _);
+    /// let mut xy = [0.0, 1.0, 2.0, 3.0];
     /// let x0 = 7.0;
     /// let y0 = Biquad::HOLD.update(&mut xy, x0);
     /// assert_eq!(y0, 2.0);
@@ -364,70 +364,102 @@ impl<T: FilterNum> Biquad<T> {
     /// Ingest a new input value into the filter, update the filter state, and
     /// return the new output. Only the state `xy` is modified.
     ///
+    /// ## `N=4` Direct Form 1
+    ///
+    /// `xy` contains:
+    /// * On entry: `[x1, x2, y1, y2]`
+    /// * On exit:  `[x0, x1, y0, y1]`
+    ///
     /// ```
     /// # use idsp::iir::*;
-    /// let mut xy = core::array::from_fn(|i| i as _);
-    /// let x0 = 3.0;
+    /// let mut xy = [0.0, 1.0, 2.0, 3.0];
+    /// let x0 = 4.0;
     /// let y0 = Biquad::IDENTITY.update(&mut xy, x0);
     /// assert_eq!(y0, x0);
     /// assert_eq!(xy, [x0, 0.0, y0, 2.0]);
     /// ```
     ///
-    /// # Arguments
-    /// * `xy` - Current filter state.
-    ///   On entry: `[x1, x2, y1, y2]`
-    ///   On exit:  `[x0, x1, y0, y1]`
-    /// * `x0` - New input.
+    /// ## `N=5` Direct Form 1 with first order noise shaping
     ///
-    /// # Returns
-    /// The new output `y0 = clamp(b0*x0 + b1*x1 + b2*x2 - a1*y1 - a2*y2 + u, min, max)`    
-    pub fn update_df1(&self, xy: &mut [T; 4], x0: T) -> T {
-        let y0 = self
-            .u
-            .macc(
-                [x0, xy[0], xy[1], -xy[2], -xy[3]]
-                    .into_iter()
-                    .zip(self.ba.iter().copied()),
-            )
-            .clamp(self.min, self.max);
-        xy[1] = xy[0];
-        xy[0] = x0;
-        xy[3] = xy[2];
-        xy[2] = y0;
-        y0
-    }
-
-    /// Direct Form 1 update
+    /// `xy` contains:
+    /// * On entry: `[x1, x2, y1, y2, e1]`
+    /// * On exit:  `[x0, x1, y0, y1, e0]`
     ///
-    /// See [`Biquad::update_df1()`].
-    #[inline]
-    pub fn update(&self, xy: &mut [T; 4], x0: T) -> T {
-        self.update_df1(xy, x0)
-    }
-
-    /// Ingest new input and perform a Direct Form 2 Transposed update.
+    /// Note: This isn't useful for floating point.
+    ///
+    /// ## `N=2` Direct Form 2 transposed
+    ///
+    /// Note: Don't use this for fixed point. Quantization happens at each state store operation.
+    /// Ideally the state would be `T::ACCU` but then for fixed point it would use equal amount
+    /// of storage compared to DF1 for little to no gain in performance and none in functionality.
+    /// There are also no guard bits.
+    ///
+    /// `xy` contains:
+    /// * On entry: `[b1*x1 + b2*x2 - a1*y1 - a2*y2, b2*x1 - a2*y1]`
+    /// * On exit:  `[b1*x0 + b2*x1 - a1*y0 - a2*y1, b2*x0 - a2*y0]`
     ///
     /// ```
     /// # use idsp::iir::*;
-    /// let mut xy = core::array::from_fn(|i| i as _);
+    /// let mut xy = [0.0, 1.0];
     /// let x0 = 3.0;
-    /// let y0 = Biquad::IDENTITY.update_df2t(&mut xy, x0);
+    /// let y0 = Biquad::IDENTITY.update(&mut xy, x0);
     /// assert_eq!(y0, x0);
     /// assert_eq!(xy, [1.0, 0.0]);
     /// ```
     ///
     /// # Arguments
-    /// * `s` - Current filter state.
-    ///   On entry: `[b1*x1 + b2*x2 - a1*y1 - a2*y2, b2*x1 - a2*y1]`
-    ///   On exit:  `[b1*x0 + b2*x1 - a1*y0 - a2*y1, b2*x0 - a2*y0]`
+    /// * `xy` - Current filter state.
     /// * `x0` - New input.
     ///
     /// # Returns
     /// The new output `y0 = clamp(b0*x0 + b1*x1 + b2*x2 - a1*y1 - a2*y2 + u, min, max)`
-    pub fn update_df2t(&self, u: &mut [T; 2], x0: T) -> T {
-        let y0 = (u[0] + self.ba[0].mul(x0)).clamp(self.min, self.max);
-        u[0] = u[1] + self.ba[1].mul(x0) + self.ba[3].mul(-y0);
-        u[1] = self.u + self.ba[2].mul(x0) + self.ba[4].mul(-y0);
-        y0
+    pub fn update<const N: usize>(&self, xy: &mut [T; N], x0: T) -> T {
+        match N {
+            // DF1
+            4 => {
+                let (y0, _) = T::macc(
+                    self.ba
+                        .iter()
+                        .copied()
+                        .zip([x0, xy[0], xy[1], -xy[2], -xy[3]]),
+                    self.u,
+                    T::ZERO,
+                    self.min,
+                    self.max,
+                );
+                xy[1] = xy[0];
+                xy[0] = x0;
+                xy[3] = xy[2];
+                xy[2] = y0;
+                y0
+            }
+            // DF1 with noise shaping for fixed point
+            5 => {
+                let (y0, e0) = T::macc(
+                    self.ba
+                        .iter()
+                        .copied()
+                        .zip([x0, xy[0], xy[1], -xy[2], -xy[3]]),
+                    self.u,
+                    xy[4],
+                    self.min,
+                    self.max,
+                );
+                xy[4] = e0;
+                xy[1] = xy[0];
+                xy[0] = x0;
+                xy[3] = xy[2];
+                xy[2] = y0;
+                y0
+            }
+            // DF2T for floating point
+            2 => {
+                let y0 = (xy[0] + self.ba[0].mul(x0)).clip(self.min, self.max);
+                xy[0] = xy[1] + self.ba[1].mul(x0) + self.ba[3].mul(-y0);
+                xy[1] = self.u + self.ba[2].mul(x0) + self.ba[4].mul(-y0);
+                y0
+            }
+            _ => unimplemented!(),
+        }
     }
 }

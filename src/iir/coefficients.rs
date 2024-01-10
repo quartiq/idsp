@@ -124,12 +124,15 @@ where
     ///
     /// ```
     /// use idsp::iir::*;
-    /// let ba = Filter::default().critical_frequency(0.1).lowpass();
+    /// let ba = Filter::default()
+    ///     .critical_frequency(0.1)
+    ///     .gain(1000.0)
+    ///     .lowpass();
     /// let iir = Biquad::<i32>::from(&ba);
     /// let mut xy = [0; 4];
     /// let x = vec![3, -4, 5, 7, -3, 2];
     /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
-    /// assert_eq!(y, [0, 0, 0, 1, 2, 2]);
+    /// assert_eq!(y, [5, 3, 9, 25, 42, 49]);
     /// ```
     pub fn lowpass(self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
@@ -150,12 +153,15 @@ where
     ///
     /// ```
     /// use idsp::iir::*;
-    /// let ba = Filter::default().critical_frequency(0.1).highpass();
+    /// let ba = Filter::default()
+    ///     .critical_frequency(0.1)
+    ///     .gain(1000.0)
+    ///     .highpass();
     /// let iir = Biquad::<i32>::from(&ba);
     /// let mut xy = [0; 4];
     /// let x = vec![3, -4, 5, 7, -3, 2];
     /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
-    /// assert_eq!(y, [2, -4, 5, 3, -6, 1]);
+    /// assert_eq!(y, [5, -9, 11, 12, -1, 17]);
     /// ```
     pub fn highpass(self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
