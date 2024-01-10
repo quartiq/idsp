@@ -247,14 +247,12 @@ impl<T: FilterNum> Biquad<T> {
     /// The value is inclusive.
     /// The clamping also cleanly affects the feedback terms.
     ///
-    /// Note: For fixed point filters `Biquad<T>`, `T::MIN` should not be passed
-    /// to `min()` since the `y` samples stored in
-    /// the filter state are negated. Instead use `-T::MAX` as the lowest
-    /// possible limit.
+    /// For fixed point types, during the comparison,
+    /// the lowest two bits of value and limit are truncated.
     ///
     /// ```
     /// # use idsp::iir::*;
-    /// assert_eq!(Biquad::<i32>::default().min(), -i32::MAX);
+    /// assert_eq!(Biquad::<i32>::default().min(), i32::MIN);
     /// ```
     pub fn min(&self) -> T {
         self.min
@@ -267,8 +265,8 @@ impl<T: FilterNum> Biquad<T> {
     /// ```
     /// # use idsp::iir::*;
     /// let mut i = Biquad::default();
-    /// i.set_min(7);
-    /// assert_eq!(i.update(&mut [0; 4], 0), 7);
+    /// i.set_min(4);
+    /// assert_eq!(i.update(&mut [0; 4], 0), 4);
     /// ```
     pub fn set_min(&mut self, min: T) {
         self.min = min;
@@ -279,6 +277,11 @@ impl<T: FilterNum> Biquad<T> {
     /// Guaranteed maximum output value.
     /// The value is inclusive.
     /// The clamping also cleanly affects the feedback terms.
+    ///
+    /// For fixed point types, during the comparison,
+    /// the lowest two bits of value and limit are truncated.
+    /// The behavior is as if those two bits were 0 in the case
+    /// of `min` and one in the case of `max`.
     ///
     /// ```
     /// # use idsp::iir::*;
@@ -295,8 +298,8 @@ impl<T: FilterNum> Biquad<T> {
     /// ```
     /// # use idsp::iir::*;
     /// let mut i = Biquad::default();
-    /// i.set_max(-7);
-    /// assert_eq!(i.update(&mut [0; 4], 0), -7);
+    /// i.set_max(-5);
+    /// assert_eq!(i.update(&mut [0; 4], 0), -5);
     /// ```
     pub fn set_max(&mut self, max: T) {
         self.max = max;
@@ -312,7 +315,7 @@ impl<T: FilterNum> Biquad<T> {
     /// # Returns
     /// The sum of the `b` feed-forward coefficients.
     pub fn forward_gain(&self) -> T {
-        self.ba.iter().take(3).copied().sum()
+        self.ba[0] + self.ba[1] + self.ba[2]
     }
 
     /// Compute input-referred (`x`) offset.
@@ -325,7 +328,7 @@ impl<T: FilterNum> Biquad<T> {
     /// assert_eq!(i.input_offset(), i32::ONE);
     /// ```
     pub fn input_offset(&self) -> T {
-        self.u.div(self.forward_gain())
+        self.u.div_scaled(self.forward_gain())
     }
 
     /// Convert input (`x`) offset to equivalent summing junction offset (`u`) and apply.
@@ -356,7 +359,7 @@ impl<T: FilterNum> Biquad<T> {
     /// # Arguments
     /// * `offset`: Input (`x`) offset.
     pub fn set_input_offset(&mut self, offset: T) {
-        self.u = offset.mul(self.forward_gain());
+        self.u = offset.mul_scaled(self.forward_gain());
     }
 
     /// Direct Form 1 Update
@@ -417,16 +420,12 @@ impl<T: FilterNum> Biquad<T> {
         match N {
             // DF1
             4 => {
-                let (y0, _) = T::macc(
-                    self.ba
-                        .iter()
-                        .copied()
-                        .zip([x0, xy[0], xy[1], -xy[2], -xy[3]]),
-                    self.u,
-                    T::ZERO,
-                    self.min,
-                    self.max,
-                );
+                let s = self.ba[0].as_() * x0.as_()
+                    + self.ba[1].as_() * xy[0].as_()
+                    + self.ba[2].as_() * xy[1].as_()
+                    - self.ba[3].as_() * xy[2].as_()
+                    - self.ba[4].as_() * xy[3].as_();
+                let (y0, _) = self.u.macc(s, self.min, self.max, T::ZERO);
                 xy[1] = xy[0];
                 xy[0] = x0;
                 xy[3] = xy[2];
@@ -435,16 +434,12 @@ impl<T: FilterNum> Biquad<T> {
             }
             // DF1 with noise shaping for fixed point
             5 => {
-                let (y0, e0) = T::macc(
-                    self.ba
-                        .iter()
-                        .copied()
-                        .zip([x0, xy[0], xy[1], -xy[2], -xy[3]]),
-                    self.u,
-                    xy[4],
-                    self.min,
-                    self.max,
-                );
+                let s = self.ba[0].as_() * x0.as_()
+                    + self.ba[1].as_() * xy[0].as_()
+                    + self.ba[2].as_() * xy[1].as_()
+                    - self.ba[3].as_() * xy[2].as_()
+                    - self.ba[4].as_() * xy[3].as_();
+                let (y0, e0) = self.u.macc(s, self.min, self.max, xy[4]);
                 xy[4] = e0;
                 xy[1] = xy[0];
                 xy[0] = x0;
@@ -454,9 +449,9 @@ impl<T: FilterNum> Biquad<T> {
             }
             // DF2T for floating point
             2 => {
-                let y0 = (xy[0] + self.ba[0].mul(x0)).clip(self.min, self.max);
-                xy[0] = xy[1] + self.ba[1].mul(x0) + self.ba[3].mul(-y0);
-                xy[1] = self.u + self.ba[2].mul(x0) + self.ba[4].mul(-y0);
+                let y0 = (xy[0] + self.ba[0].mul_scaled(x0)).clip(self.min, self.max);
+                xy[0] = xy[1] + self.ba[1].mul_scaled(x0) - self.ba[3].mul_scaled(y0);
+                xy[1] = self.u + self.ba[2].mul_scaled(x0) - self.ba[4].mul_scaled(y0);
                 y0
             }
             _ => unimplemented!(),

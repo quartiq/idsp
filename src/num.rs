@@ -1,13 +1,9 @@
-use core::{
-    iter::Sum,
-    ops::{Add, Mul, Neg},
-};
-use num_traits::{AsPrimitive, Float};
+use num_traits::{AsPrimitive, Float, Num};
 
 /// Helper trait unifying fixed point and floating point coefficients/samples
-pub trait FilterNum:
-    'static + Copy + Neg<Output = Self> + Add<Self, Output = Self> + Sum<Self> + AsPrimitive<Self::ACCU>
-{
+pub trait FilterNum: 'static + Copy + Num + AsPrimitive<Self::ACCU> {
+    /// Scale
+    const SHIFT: u32;
     /// Multiplicative identity
     const ONE: Self;
     /// Negative multiplicative identity, equal to `-Self::ONE`.
@@ -19,29 +15,20 @@ pub trait FilterNum:
     /// Highest value
     const MAX: Self;
     /// Accumulator type
-    type ACCU: AsPrimitive<Self>
-        + Add<Self::ACCU, Output = Self::ACCU>
-        + Mul<Self::ACCU, Output = Self::ACCU>
-        + Sum<Self::ACCU>;
+    type ACCU: AsPrimitive<Self> + Num;
 
     /// Proper scaling and potentially using a wide accumulator.
     /// Clamp `self` such that `min <= self <= max`.
     /// Undefined result if `max < min`.
-    fn macc(
-        xa: impl Iterator<Item = (Self, Self)>,
-        u: Self,
-        e1: Self,
-        min: Self,
-        max: Self,
-    ) -> (Self, Self);
+    fn macc(self, s: Self::ACCU, min: Self, max: Self, e1: Self) -> (Self, Self);
 
     fn clip(self, min: Self, max: Self) -> Self;
 
     /// Multiplication (scaled)
-    fn mul(self, other: Self) -> Self;
+    fn mul_scaled(self, other: Self) -> Self;
 
     /// Division (scaled)
-    fn div(self, other: Self) -> Self;
+    fn div_scaled(self, other: Self) -> Self;
 
     /// Scale and quantize a floating point value.
     fn quantize<C>(value: C) -> Self
@@ -53,6 +40,7 @@ pub trait FilterNum:
 macro_rules! impl_float {
     ($T:ty) => {
         impl FilterNum for $T {
+            const SHIFT: u32 = 0;
             const ONE: Self = 1.0;
             const NEG_ONE: Self = -1.0;
             const ZERO: Self = 0.0;
@@ -60,14 +48,8 @@ macro_rules! impl_float {
             const MAX: Self = <$T>::INFINITY;
             type ACCU = Self;
 
-            fn macc(
-                xa: impl Iterator<Item = (Self, Self)>,
-                u: Self,
-                _e1: Self,
-                min: Self,
-                max: Self,
-            ) -> (Self, Self) {
-                (xa.fold(u, |u, (x, a)| u + x * a).clip(min, max), 0.0)
+            fn macc(self, s: Self::ACCU, min: Self, max: Self, _e1: Self) -> (Self, Self) {
+                ((self + s).clip(min, max), 0.0)
             }
 
             fn clip(self, min: Self, max: Self) -> Self {
@@ -83,11 +65,11 @@ macro_rules! impl_float {
                 }
             }
 
-            fn div(self, other: Self) -> Self {
+            fn div_scaled(self, other: Self) -> Self {
                 self / other
             }
 
-            fn mul(self, other: Self) -> Self {
+            fn mul_scaled(self, other: Self) -> Self {
                 self * other
             }
 
@@ -103,40 +85,34 @@ impl_float!(f64);
 macro_rules! impl_int {
     ($T:ty, $U:ty, $A:ty, $Q:literal) => {
         impl FilterNum for $T {
+            const SHIFT: u32 = $Q;
             const ONE: Self = 1 << $Q;
             const NEG_ONE: Self = -1 << $Q;
             const ZERO: Self = 0;
-            // Need to avoid `$T::MIN*$T::MIN` overflow.
-            const MIN: Self = -<$T>::MAX;
+            const MIN: Self = <$T>::MIN;
             const MAX: Self = <$T>::MAX;
             type ACCU = $A;
 
-            fn macc(
-                xa: impl Iterator<Item = (Self, Self)>,
-                u: Self,
-                e1: Self,
-                min: Self,
-                max: Self,
-            ) -> (Self, Self) {
+            fn macc(self, mut s: Self::ACCU, min: Self, max: Self, e1: Self) -> (Self, Self) {
                 const S: usize = core::mem::size_of::<$T>() * 8;
                 // Guard bits
                 const G: usize = S - $Q;
                 // Combine offset (u << $Q) with previous quantization error e1
-                let s0 = (((u >> G) as $A) << S) | (((u << $Q) | e1) as $U as $A);
-                let s = xa.fold(s0, |s, (x, a)| s + x as $A * a as $A);
-                let sh = (s >> S) as $T;
+                s += (((self >> G) as $A) << S) | (((self << $Q) | e1) as $U as $A);
                 // Ord::clamp() is slow and checks
                 // This clamping truncates the lowest G bits of the value and the limits.
-                let y = if sh < min >> G {
+                debug_assert_eq!(min & ((1 << G) - 1), 0);
+                debug_assert_eq!(max & ((1 << G) - 1), (1 << G) - 1);
+                let y0 = if (s >> S) as $T < (min >> G) {
                     min
-                } else if sh > max >> G {
+                } else if (s >> S) as $T > (max >> G) {
                     max
                 } else {
                     (s >> $Q) as $T
                 };
                 // Quantization error
-                let e = (s & ((1 << $Q) - 1)) as $T;
-                (y, e)
+                let e0 = s as $T & ((1 << $Q) - 1);
+                (y0, e0)
             }
 
             fn clip(self, min: Self, max: Self) -> Self {
@@ -150,11 +126,11 @@ macro_rules! impl_int {
                 }
             }
 
-            fn div(self, other: Self) -> Self {
+            fn div_scaled(self, other: Self) -> Self {
                 (((self as $A) << $Q) / other as $A) as $T
             }
 
-            fn mul(self, other: Self) -> Self {
+            fn mul_scaled(self, other: Self) -> Self {
                 (((1 << ($Q - 1)) + self as $A * other as $A) >> $Q) as $T
             }
 

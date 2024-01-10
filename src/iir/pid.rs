@@ -1,5 +1,3 @@
-use core::iter::Sum;
-
 use num_traits::{AsPrimitive, Float};
 use serde::{Deserialize, Serialize};
 
@@ -64,7 +62,7 @@ pub enum Action {
     Kdd = 4,
 }
 
-impl<T: Float + Sum<T>> Pid<T> {
+impl<T: Float> Pid<T> {
     /// Sample period
     ///
     /// # Arguments
@@ -175,9 +173,9 @@ impl<T: Float + Sum<T>> Pid<T> {
 
         // Derivative/integration kernels
         let kernels = [
-            [C::ONE, C::ZERO, C::ZERO],
-            [C::ONE, C::NEG_ONE, C::ZERO],
-            [C::ONE, C::NEG_ONE + C::NEG_ONE, C::ONE],
+            [T::one(), T::zero(), T::zero()],
+            [T::one(), -T::one(), T::zero()],
+            [T::one(), -(T::one() + T::one()), T::one()],
         ];
 
         // Scale gains, compute limits, quantize
@@ -194,14 +192,14 @@ impl<T: Float + Sum<T>> Pid<T> {
             gli[1] = if i == KP { T::one() } else { gli[0] / *lli };
             zi = zi * self.period;
         }
-        let a0i = T::one() / gl.iter().map(|gli| gli[1]).sum();
+        let a0i = T::one() / (gl[0][1] + gl[1][1] + gl[2][1]);
 
         // Coefficients
         let mut ba = [[C::ZERO; 2]; 3];
         for (gli, ki) in gl.iter().zip(kernels.iter()) {
             let (g, l) = (C::quantize(gli[0] * a0i), C::quantize(gli[1] * a0i));
             for (j, baj) in ba.iter_mut().enumerate() {
-                *baj = [baj[0] + ki[j].mul(g), baj[1] + ki[j].mul(l)];
+                *baj = [baj[0] + ki[j].as_() * g, baj[1] + ki[j].as_() * l];
             }
         }
 
