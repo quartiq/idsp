@@ -102,7 +102,7 @@ where
     /// Used only for `peaking`, `highshelf`, `lowshelf` filters.
     ///
     /// # Arguments
-    /// * `a`: Linear shelf gain. Defaults to `0.0`.
+    /// * `a`: Linear shelf gain. Defaults to `1.0`.
     pub fn shelf(&mut self, a: T) -> &mut Self {
         self.shelf = a;
         self
@@ -115,7 +115,7 @@ where
     /// # Arguments
     /// * `a_db`: Linear shelf gain. Defaults to `0.0`.
     pub fn shelf_db(&mut self, a_db: T) -> &mut Self {
-        self.shelf(10.0.as_().powf(a_db / 40.0.as_()))
+        self.shelf(10.0.as_().powf(a_db / 20.0.as_()))
     }
 
     /// Set inverse Q parameter of the filter
@@ -168,6 +168,7 @@ where
         self
     }
 
+    /// Get inverse Q
     fn qi(&self) -> T {
         match self.shape {
             Shape::InverseQ(qi) => qi,
@@ -180,6 +181,7 @@ where
         }
     }
 
+    /// Get (cos(w0), alpha=sin(w0)/(2*q))
     fn fcos_alpha(&self) -> (T, T) {
         let (fsin, fcos) = self.w0.sin_cos();
         (fcos, 0.5.as_() * fsin * self.qi())
@@ -304,14 +306,15 @@ where
     /// Has `gain*shelf_gain` at critical frequency and `gain` elsewhere.
     pub fn peaking(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
+        let s = self.shelf.sqrt();
         let f2 = (-2.0).as_() * fcos;
         [
-            (T::one() + alpha * self.shelf) * self.gain,
+            (T::one() + alpha * s) * self.gain,
             f2 * self.gain,
-            (T::one() - alpha * self.shelf) * self.gain,
-            T::one() + alpha / self.shelf,
+            (T::one() - alpha * s) * self.gain,
+            T::one() + alpha / s,
             f2,
-            T::one() - alpha / self.shelf,
+            T::one() - alpha / s,
         ]
     }
 
@@ -330,13 +333,14 @@ where
     /// ```
     pub fn lowshelf(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
-        let tsa = 2.0.as_() * self.shelf.sqrt() * alpha;
-        let sp1 = self.shelf + T::one();
-        let sm1 = self.shelf - T::one();
+        let s = self.shelf.sqrt();
+        let tsa = 2.0.as_() * s.sqrt() * alpha;
+        let sp1 = s + T::one();
+        let sm1 = s - T::one();
         [
-            self.shelf * self.gain * (sp1 - sm1 * fcos + tsa),
-            2.0.as_() * self.shelf * self.gain * (sm1 - sp1 * fcos),
-            self.shelf * self.gain * (sp1 - sm1 * fcos - tsa),
+            s * self.gain * (sp1 - sm1 * fcos + tsa),
+            2.0.as_() * s * self.gain * (sm1 - sp1 * fcos),
+            s * self.gain * (sp1 - sm1 * fcos - tsa),
             sp1 + sm1 * fcos + tsa,
             (-2.0).as_() * (sm1 + sp1 * fcos),
             sp1 + sm1 * fcos - tsa,
@@ -348,13 +352,14 @@ where
     /// Approaches `gain*shelf_gain` above critical frequency and `gain` below.
     pub fn highshelf(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
-        let tsa = 2.0.as_() * self.shelf.sqrt() * alpha;
-        let sp1 = self.shelf + T::one();
-        let sm1 = self.shelf - T::one();
+        let s = self.shelf.sqrt();
+        let tsa = 2.0.as_() * s.sqrt() * alpha;
+        let sp1 = s + T::one();
+        let sm1 = s - T::one();
         [
-            self.shelf * self.gain * (sp1 + sm1 * fcos + tsa),
-            (-2.0).as_() * self.shelf * self.gain * (sm1 + sp1 * fcos),
-            self.shelf * self.gain * (sp1 + sm1 * fcos - tsa),
+            s * self.gain * (sp1 + sm1 * fcos + tsa),
+            (-2.0).as_() * s * self.gain * (sm1 + sp1 * fcos),
+            s * self.gain * (sp1 + sm1 * fcos - tsa),
             sp1 - sm1 * fcos + tsa,
             2.0.as_() * (sm1 - sp1 * fcos),
             sp1 - sm1 * fcos - tsa,
@@ -366,7 +371,7 @@ where
     /// Notch, integrating below, flat `shelf_gain` above
     pub fn iho(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
-        let a = (T::one() + fcos) / (10.0.sqrt().as_() * self.shelf);
+        let a = (T::one() + fcos) / self.shelf;
         [
             2.0.as_() * self.gain * (T::one() + alpha),
             (-4.0).as_() * self.gain * fcos,
@@ -565,14 +570,14 @@ mod test {
         check_coeffs(
             &Filter::default()
                 .critical_frequency(0.02)
-                .gain_db(-20.0)
-                .shelf_db(10.0)
+                .gain_db(-10.0)
+                .shelf_db(-20.0)
                 .highshelf(),
             &[
-                (1e-6, Tol::GainDb(-20.0, 0.01)),
-                (1e-4, Tol::GainDb(-20.0, 0.01)),
-                (0.02, Tol::GainDb(-15.0, 0.01)),
-                (4e-1, Tol::GainDb(-10.0, 0.01)),
+                (1e-6, Tol::GainDb(-10.0, 0.01)),
+                (1e-4, Tol::GainDb(-10.0, 0.01)),
+                (0.02, Tol::GainDb(-20.0, 0.01)),
+                (4e-1, Tol::GainDb(-30.0, 0.01)),
             ],
         );
     }
@@ -583,12 +588,12 @@ mod test {
             &Filter::default()
                 .critical_frequency(0.02)
                 .gain_db(-10.0)
-                .shelf_db(30.0)
+                .shelf_db(-20.0)
                 .lowshelf(),
             &[
-                (1e-6, Tol::GainDb(20.0, 0.01)),
-                (1e-4, Tol::GainDb(20.0, 0.01)),
-                (0.02, Tol::GainDb(5.0, 0.01)),
+                (1e-6, Tol::GainDb(-30.0, 0.01)),
+                (1e-4, Tol::GainDb(-30.0, 0.01)),
+                (0.02, Tol::GainDb(-20.0, 0.01)),
                 (4e-1, Tol::GainDb(-10.0, 0.01)),
             ],
         );
@@ -600,13 +605,13 @@ mod test {
             &Filter::default()
                 .critical_frequency(0.01)
                 .gain_db(-20.0)
-                .shelf_db(20.0)
+                .shelf_db(10.0)
                 .q(10.)
                 .iho(),
             &[
                 (1e-5, Tol::GainDb(40.0, 0.01)),
-                (0.01, Tol::GainDb(-40.0, 0.05)),
-                (4.99e-1, Tol::GainDb(0.0, 0.01)),
+                (0.01, Tol::GainBelowDb(-40.0)),
+                (4.99e-1, Tol::GainDb(-10.0, 0.01)),
             ],
         );
     }
