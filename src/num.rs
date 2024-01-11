@@ -48,31 +48,28 @@ macro_rules! impl_float {
             const MAX: Self = <$T>::INFINITY;
             type ACCU = Self;
 
+            #[inline]
             fn macc(self, s: Self::ACCU, min: Self, max: Self, _e1: Self) -> (Self, Self) {
                 ((self + s).clip(min, max), 0.0)
             }
 
+            #[inline]
             fn clip(self, min: Self, max: Self) -> Self {
                 // <$T>::clamp() is slow and checks
-                // this calls fminf/fmaxf
-                // self.max(min).min(max)
-                if self < min {
-                    min
-                } else if self > max {
-                    max
-                } else {
-                    self
-                }
+                self.max(min).min(max)
             }
 
+            #[inline]
             fn div_scaled(self, other: Self) -> Self {
                 self / other
             }
 
+            #[inline]
             fn mul_scaled(self, other: Self) -> Self {
                 self * other
             }
 
+            #[inline]
             fn quantize<C: Float + AsPrimitive<Self>>(value: C) -> Self {
                 value.as_()
             }
@@ -93,6 +90,7 @@ macro_rules! impl_int {
             const MAX: Self = <$T>::MAX;
             type ACCU = $A;
 
+            #[inline]
             fn macc(self, mut s: Self::ACCU, min: Self, max: Self, e1: Self) -> (Self, Self) {
                 const S: usize = core::mem::size_of::<$T>() * 8;
                 // Guard bits
@@ -115,6 +113,7 @@ macro_rules! impl_int {
                 (y0, e0)
             }
 
+            #[inline]
             fn clip(self, min: Self, max: Self) -> Self {
                 // Ord::clamp() is slow and checks
                 if self < min {
@@ -126,14 +125,17 @@ macro_rules! impl_int {
                 }
             }
 
+            #[inline]
             fn div_scaled(self, other: Self) -> Self {
                 (((self as $A) << $Q) / other as $A) as $T
             }
 
+            #[inline]
             fn mul_scaled(self, other: Self) -> Self {
                 (((1 << ($Q - 1)) + self as $A * other as $A) >> $Q) as $T
             }
 
+            #[inline]
             fn quantize<C>(value: C) -> Self
             where
                 Self: AsPrimitive<C>,
