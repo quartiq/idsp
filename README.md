@@ -50,3 +50,8 @@ Fast, infinitely cascadable, first- and second-order lowpass and the correspondi
 ## FIR filters
 
 Fast `f32` symmetric FIR filters, optimized half-band filters, half-band filter decimators and integators and cascades.
+
+## SVF filter
+
+Simple IIR state variable filter simultaneously providing highpass, lowpass,
+bandpass, and notch filtering of a signal.

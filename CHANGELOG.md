@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `iir::Biquad` getter/setter
 * `iir`: support for other integers (i8, i16, i128)
 * `iir::Biquad`: support for reduced DF1 state and DF2T state
+* `svf`: state variable filter
 
 ### Removed
 
