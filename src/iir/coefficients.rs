@@ -3,10 +3,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
 enum Shape<T> {
-    /// Inverse W
+    /// Inverse Q, sqrt(2) for critical
     InverseQ(T),
     /// Relative bandwidth in octaves
     Bandwidth(T),
+    /// Slope steepnes, 1 for critical
     Slope(T),
 }
 
@@ -56,7 +57,7 @@ where
     ///   in the same units as `sample_frequency`
     /// * `sample_frequency`: The sample frequency in the same units as `critical_frequency`.
     ///   E.g. both in SI Hertz or `rad/s`.
-    pub fn frequency(self, critical_frequency: T, sample_frequency: T) -> Self {
+    pub fn frequency(&mut self, critical_frequency: T, sample_frequency: T) -> &mut Self {
         self.critical_frequency(critical_frequency / sample_frequency)
     }
 
@@ -65,7 +66,7 @@ where
     /// # Arguments
     /// * `f0`: Relative critical frequency in units of the sample frequency.
     ///   Must be `0 <= f0 <= 0.5`.
-    pub fn critical_frequency(self, f0: T) -> Self {
+    pub fn critical_frequency(&mut self, f0: T) -> &mut Self {
         self.angular_critical_frequency(T::TAU() * f0)
     }
 
@@ -74,7 +75,7 @@ where
     /// # Arguments
     /// * `w0`: Relative critical angular frequency.
     ///   Must be `0 <= w0 <= π`. Defaults to `0.0`.
-    pub fn angular_critical_frequency(mut self, w0: T) -> Self {
+    pub fn angular_critical_frequency(&mut self, w0: T) -> &mut Self {
         self.w0 = w0;
         self
     }
@@ -83,7 +84,7 @@ where
     ///
     /// # Arguments
     /// * `k`: Linear reference gain. Defaults to `1.0`.
-    pub fn gain(mut self, k: T) -> Self {
+    pub fn gain(&mut self, k: T) -> &mut Self {
         self.gain = k;
         self
     }
@@ -92,7 +93,7 @@ where
     ///
     /// # Arguments
     /// * `k_db`: Reference gain in dB. Defaults to `0.0`.
-    pub fn gain_db(self, k_db: T) -> Self {
+    pub fn gain_db(&mut self, k_db: T) -> &mut Self {
         self.gain(10.0.as_().powf(k_db / 20.0.as_()))
     }
 
@@ -102,7 +103,7 @@ where
     ///
     /// # Arguments
     /// * `a`: Linear shelf gain. Defaults to `0.0`.
-    pub fn shelf(mut self, a: T) -> Self {
+    pub fn shelf(&mut self, a: T) -> &mut Self {
         self.shelf = a;
         self
     }
@@ -113,7 +114,7 @@ where
     ///
     /// # Arguments
     /// * `a_db`: Linear shelf gain. Defaults to `0.0`.
-    pub fn shelf_db(self, a_db: T) -> Self {
+    pub fn shelf_db(&mut self, a_db: T) -> &mut Self {
         self.shelf(10.0.as_().powf(a_db / 40.0.as_()))
     }
 
@@ -124,7 +125,7 @@ where
     ///
     /// # Arguments
     /// * `qi`: Inverse Q parameter.
-    pub fn inverse_q(mut self, qi: T) -> Self {
+    pub fn inverse_q(&mut self, qi: T) -> &mut Self {
         self.shape = Shape::InverseQ(qi);
         self
     }
@@ -139,7 +140,7 @@ where
     ///
     /// # Arguments
     /// * `q`: Q parameter.
-    pub fn q(self, q: T) -> Self {
+    pub fn q(&mut self, q: T) -> &mut Self {
         self.inverse_q(T::one() / q)
     }
 
@@ -150,7 +151,7 @@ where
     ///
     /// # Arguments
     /// * `bw`: Bandwidth in octaves
-    pub fn bandwidth(mut self, bw: T) -> Self {
+    pub fn bandwidth(&mut self, bw: T) -> &mut Self {
         self.shape = Shape::Bandwidth(bw);
         self
     }
@@ -162,7 +163,7 @@ where
     ///
     /// # Arguments
     /// * `s`: Shelf slope. A slope of `1.0` is maximally steep without overshoot.
-    pub fn shelf_slope(mut self, s: T) -> Self {
+    pub fn shelf_slope(&mut self, s: T) -> &mut Self {
         self.shape = Shape::Slope(s);
         self
     }
@@ -200,7 +201,7 @@ where
     /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
     /// assert_eq!(y, [5, 3, 9, 25, 42, 49]);
     /// ```
-    pub fn lowpass(self) -> [T; 6] {
+    pub fn lowpass(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
         let b = self.gain * 0.5.as_() * (T::one() - fcos);
         [
@@ -229,7 +230,7 @@ where
     /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
     /// assert_eq!(y, [5, -9, 11, 12, -1, 17]);
     /// ```
-    pub fn highpass(self) -> [T; 6] {
+    pub fn highpass(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
         let b = self.gain * 0.5.as_() * (T::one() + fcos);
         [
@@ -253,7 +254,7 @@ where
     ///     .bandpass();
     /// println!("{ba:?}");
     /// ```
-    pub fn bandpass(self) -> [T; 6] {
+    pub fn bandpass(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
         let b = self.gain * alpha;
         [
@@ -269,7 +270,7 @@ where
     /// A notch filter
     ///
     /// Has zero gain at the critical frequency.
-    pub fn notch(self) -> [T; 6] {
+    pub fn notch(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
         let f2 = (-2.0).as_() * fcos;
         [
@@ -285,7 +286,7 @@ where
     /// An allpass filter
     ///
     /// Has constant `gain` at all frequency but a variable phase shift.
-    pub fn allpass(self) -> [T; 6] {
+    pub fn allpass(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
         let f2 = (-2.0).as_() * fcos;
         [
@@ -301,7 +302,7 @@ where
     /// A peaking/dip filter
     ///
     /// Has `gain*shelf_gain` at critical frequency and `gain` elsewhere.
-    pub fn peaking(self) -> [T; 6] {
+    pub fn peaking(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
         let f2 = (-2.0).as_() * fcos;
         [
@@ -327,7 +328,7 @@ where
     ///     .lowshelf();
     /// println!("{ba:?}");
     /// ```
-    pub fn lowshelf(self) -> [T; 6] {
+    pub fn lowshelf(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
         let tsa = 2.0.as_() * self.shelf.sqrt() * alpha;
         let sp1 = self.shelf + T::one();
@@ -345,7 +346,7 @@ where
     /// Low shelf
     ///
     /// Approaches `gain*shelf_gain` above critical frequency and `gain` below.
-    pub fn highshelf(self) -> [T; 6] {
+    pub fn highshelf(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
         let tsa = 2.0.as_() * self.shelf.sqrt() * alpha;
         let sp1 = self.shelf + T::one();
@@ -363,7 +364,7 @@ where
     /// I/HO
     ///
     /// Notch, integrating below, flat `shelf_gain` above
-    pub fn iho(self) -> [T; 6] {
+    pub fn iho(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
         let a = (T::one() + fcos) / (10.0.sqrt().as_() * self.shelf);
         [

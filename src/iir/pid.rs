@@ -67,7 +67,7 @@ impl<T: Float> Pid<T> {
     ///
     /// # Arguments
     /// * `period`: Sample period in some units, e.g. SI seconds
-    pub fn period(mut self, period: T) -> Self {
+    pub fn period(&mut self, period: T) -> &mut Self {
         self.period = period;
         self
     }
@@ -103,7 +103,7 @@ impl<T: Float> Pid<T> {
     /// # Arguments
     /// * `action`: Action to control
     /// * `gain`: Gain value
-    pub fn gain(mut self, action: Action, gain: T) -> Self {
+    pub fn gain(&mut self, action: Action, gain: T) -> &mut Self {
         self.gains[action as usize] = gain;
         self
     }
@@ -134,7 +134,7 @@ impl<T: Float> Pid<T> {
     /// # Arguments
     /// * `action`: Action to limit in gain
     /// * `limit`: Gain limit
-    pub fn limit(mut self, action: Action, limit: T) -> Self {
+    pub fn limit(&mut self, action: Action, limit: T) -> &mut Self {
         self.limits[action as usize] = limit;
         self
     }
@@ -155,8 +155,8 @@ impl<T: Float> Pid<T> {
     /// ```
     ///
     /// # Panic
-    /// Will panic in debug mode on coefficient overflow.
-    pub fn build<C: FilterNum + AsPrimitive<T>>(self) -> Result<[C; 5], PidError>
+    /// Will panic in debug mode on fixed point coefficient overflow.
+    pub fn build<C: FilterNum + AsPrimitive<T>>(&self) -> Result<[C; 5], PidError>
     where
         T: AsPrimitive<C>,
     {
