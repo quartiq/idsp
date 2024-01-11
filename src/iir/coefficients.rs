@@ -371,14 +371,15 @@ where
     /// Notch, integrating below, flat `shelf_gain` above
     pub fn iho(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
-        let a = (T::one() + fcos) / self.shelf;
+        let fsin = 0.5.as_() * self.w0.sin();
+        let a = (T::one() + fcos) / (2.0.as_() * self.shelf);
         [
-            2.0.as_() * self.gain * (T::one() + alpha),
-            (-4.0).as_() * self.gain * fcos,
-            2.0.as_() * self.gain * (T::one() - alpha),
-            a + self.w0.sin(),
+            self.gain * (T::one() + alpha),
+            (-2.0).as_() * self.gain * fcos,
+            self.gain * (T::one() - alpha),
+            a + fsin,
             (-2.0).as_() * a,
-            a - self.w0.sin(),
+            a - fsin,
         ]
     }
 }
@@ -400,14 +401,23 @@ mod test {
     use crate::iir::*;
 
     #[test]
-    fn lowpass_gen() {
+    #[ignore]
+    fn lowpass_noise_shaping() {
         let ba = Biquad::<i32>::from(
             &Filter::default()
-                .critical_frequency(2e-9f64)
-                .gain(2e7)
+                .critical_frequency(1e-5f64)
+                .gain(1e3)
                 .lowpass(),
         );
         println!("{:?}", ba);
+        let mut xy = [0; 5];
+        for _ in 0..(1 << 24) {
+            ba.update(&mut xy, 1);
+        }
+        for _ in 0..10 {
+            ba.update(&mut xy, 1);
+            println!("{xy:?}");
+        }
     }
 
     fn polyval(p: &[f64], x: Complex64) -> Complex64 {
@@ -439,7 +449,7 @@ mod test {
         }
     }
 
-    fn check(f: f64, g: Tol, ba: &[f64; 6]) {
+    fn check_freqz(f: f64, g: Tol, ba: &[f64; 6]) {
         let h = freqz(&ba[..3], &ba[3..], f);
         let hp = h.to_polar();
         assert!(
@@ -448,25 +458,25 @@ mod test {
         );
     }
 
-    fn check_coeffs(ba: &[f64; 6], fg: &[(f64, Tol)]) {
+    fn check_transfer(ba: &[f64; 6], fg: &[(f64, Tol)]) {
         println!("{ba:?}");
 
         for (f, g) in fg {
-            check(*f, *g, ba);
+            check_freqz(*f, *g, ba);
         }
 
-        // Quantize
+        // Quantize and back
         let bai = (&Biquad::<i32>::from(ba)).into();
         println!("{bai:?}");
 
         for (f, g) in fg {
-            check(*f, *g, &bai);
+            check_freqz(*f, *g, &bai);
         }
     }
 
     #[test]
     fn lowpass() {
-        check_coeffs(
+        check_transfer(
             &Filter::default()
                 .critical_frequency(0.01)
                 .gain_db(20.0)
@@ -481,7 +491,7 @@ mod test {
 
     #[test]
     fn highpass() {
-        check_coeffs(
+        check_transfer(
             &Filter::default()
                 .critical_frequency(0.1)
                 .gain_db(-2.0)
@@ -496,7 +506,7 @@ mod test {
 
     #[test]
     fn bandpass() {
-        check_coeffs(
+        check_transfer(
             &Filter::default()
                 .critical_frequency(0.02)
                 .bandwidth(2.0)
@@ -514,7 +524,7 @@ mod test {
 
     #[test]
     fn allpass() {
-        check_coeffs(
+        check_transfer(
             &Filter::default()
                 .critical_frequency(0.02)
                 .gain_db(-10.0)
@@ -531,7 +541,7 @@ mod test {
 
     #[test]
     fn notch() {
-        check_coeffs(
+        check_transfer(
             &Filter::default()
                 .critical_frequency(0.02)
                 .bandwidth(2.0)
@@ -548,7 +558,7 @@ mod test {
 
     #[test]
     fn peaking() {
-        check_coeffs(
+        check_transfer(
             &Filter::default()
                 .critical_frequency(0.02)
                 .bandwidth(2.0)
@@ -567,7 +577,7 @@ mod test {
 
     #[test]
     fn highshelf() {
-        check_coeffs(
+        check_transfer(
             &Filter::default()
                 .critical_frequency(0.02)
                 .gain_db(-10.0)
@@ -584,7 +594,7 @@ mod test {
 
     #[test]
     fn lowshelf() {
-        check_coeffs(
+        check_transfer(
             &Filter::default()
                 .critical_frequency(0.02)
                 .gain_db(-10.0)
@@ -601,7 +611,7 @@ mod test {
 
     #[test]
     fn iho() {
-        check_coeffs(
+        check_transfer(
             &Filter::default()
                 .critical_frequency(0.01)
                 .gain_db(-20.0)
