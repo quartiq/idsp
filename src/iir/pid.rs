@@ -153,6 +153,9 @@ impl<T: Float> Pid<T> {
     /// let i: Biquad<f32> = Pid::default().gain(Action::Kp, 3.0).build().unwrap().into();
     /// assert_eq!(i, Biquad::proportional(3.0));
     /// ```
+    ///
+    /// # Panic
+    /// Will panic in debug mode on coefficient overflow.
     pub fn build<C: FilterNum + AsPrimitive<T>>(self) -> Result<[C; 5], PidError>
     where
         T: AsPrimitive<C>,
@@ -171,14 +174,7 @@ impl<T: Float> Pid<T> {
             return Err(PidError::OrderRange);
         }
 
-        // Derivative/integration kernels
-        let kernels = [
-            [T::one(), T::zero(), T::zero()],
-            [T::one(), -T::one(), T::zero()],
-            [T::one(), -(T::one() + T::one()), T::one()],
-        ];
-
-        // Scale gains, compute limits, quantize
+        // Scale gains, compute limits
         let mut zi = self.period.powi(low as i32 - KP as i32);
         let mut gl = [[T::zero(); 2]; 3];
         for (gli, (i, (ggi, lli))) in gl.iter_mut().zip(
@@ -194,12 +190,20 @@ impl<T: Float> Pid<T> {
         }
         let a0i = T::one() / (gl[0][1] + gl[1][1] + gl[2][1]);
 
+        // Derivative/integration kernels
+        let kernels = [
+            [C::one(), C::zero(), C::zero()],
+            [C::one(), C::zero() - C::one(), C::zero()],
+            [C::one(), C::zero() - C::one() - C::one(), C::one()],
+        ];
+
         // Coefficients
         let mut ba = [[C::ZERO; 2]; 3];
         for (gli, ki) in gl.iter().zip(kernels.iter()) {
+            // Quantize the gains and not the coefficients
             let (g, l) = (C::quantize(gli[0] * a0i), C::quantize(gli[1] * a0i));
             for (j, baj) in ba.iter_mut().enumerate() {
-                *baj = [baj[0] + ki[j].as_() * g, baj[1] + ki[j].as_() * l];
+                *baj = [baj[0] + ki[j] * g, baj[1] + ki[j] * l];
             }
         }
 
