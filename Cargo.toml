@@ -16,17 +16,10 @@ num-complex = { version = "0.4.0", features = ["serde"], default-features = fals
 num-traits = { version = "0.2.14", features = ["libm"], default-features = false}
 
 [dev-dependencies]
-easybench = "1.0"
 rand = "0.8"
-ndarray = "0.15"
 rustfft = "6.1.0"
-iai-callgrind = "0.10.0"
 # futuredsp = "0.0.6"
 # sdr = "0.7.0"
-
-[[bench]]
-name = "micro"
-harness = false
 
 [profile.release]
 debug = 1

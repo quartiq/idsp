@@ -93,7 +93,6 @@ impl RPLL {
 #[cfg(test)]
 mod test {
     use super::RPLL;
-    use ndarray::prelude::*;
     use rand::{prelude::*, rngs::StdRng};
     use std::vec::Vec;
 
@@ -175,14 +174,12 @@ mod test {
             self.run(t_settle);
 
             let (y, f) = self.run(n);
-            let y = Array::from(y);
-            let f = Array::from(f);
             // println!("{:?} {:?}", f, y);
 
-            let fm = f.mean().unwrap();
-            let fs = f.std_axis(Axis(0), 0.).into_scalar();
-            let ym = y.mean().unwrap();
-            let ys = y.std_axis(Axis(0), 0.).into_scalar();
+            let fm = f.iter().copied().sum::<f32>() / f.len() as f32;
+            let fs = f.iter().map(|f| (*f - fm).powi(2)).sum::<f32>().sqrt() / f.len() as f32;
+            let ym = y.iter().copied().sum::<f32>() / y.len() as f32;
+            let ys = y.iter().map(|y| (*y - ym).powi(2)).sum::<f32>().sqrt() / y.len() as f32;
 
             println!("f: {:.2e}±{:.2e}; y: {:.2e}±{:.2e}", fm, fs, ym, ys);
 
