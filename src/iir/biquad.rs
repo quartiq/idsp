@@ -219,8 +219,8 @@ impl<T: Coefficient> Biquad<T> {
     /// ```
     /// # use idsp::Coefficient;
     /// # use idsp::iir::*;
-    /// assert_eq!(Biquad::<i32>::IDENTITY.ba()[0], i32::ONE);
-    /// assert_eq!(Biquad::<i32>::HOLD.ba()[3], -i32::ONE);
+    /// assert_eq!(Biquad::<i32>::IDENTITY.ba()[0], <i32 as Coefficient>::ONE);
+    /// assert_eq!(Biquad::<i32>::HOLD.ba()[3], -<i32 as Coefficient>::ONE);
     /// ```
     pub fn ba(&self) -> &[T; 5] {
         &self.ba
@@ -234,7 +234,7 @@ impl<T: Coefficient> Biquad<T> {
     /// # use idsp::Coefficient;
     /// # use idsp::iir::*;
     /// let mut i = Biquad::default();
-    /// i.ba_mut()[0] = i32::ONE;
+    /// i.ba_mut()[0] = <i32 as Coefficient>::ONE;
     /// assert_eq!(i, Biquad::IDENTITY);
     /// ```
     pub fn ba_mut(&mut self) -> &mut [T; 5] {
@@ -349,7 +349,7 @@ impl<T: Coefficient> Biquad<T> {
     /// # use idsp::iir::*;
     /// let mut i = Biquad::proportional(3);
     /// i.set_u(3);
-    /// assert_eq!(i.input_offset(), i32::ONE);
+    /// assert_eq!(i.input_offset(), <i32 as Coefficient>::ONE);
     /// ```
     pub fn input_offset(&self) -> T {
         self.u.div_scaled(self.forward_gain())
@@ -375,7 +375,7 @@ impl<T: Coefficient> Biquad<T> {
     /// ```
     /// # use idsp::Coefficient;
     /// # use idsp::iir::*;
-    /// let mut i = Biquad::proportional(-i32::ONE);
+    /// let mut i = Biquad::proportional(-<i32 as Coefficient>::ONE);
     /// i.set_input_offset(1);
     /// assert_eq!(i.u(), -1);
     /// ```
