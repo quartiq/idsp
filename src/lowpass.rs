@@ -7,7 +7,6 @@ use crate::Filter;
 ///
 /// The filter will cleanly saturate towards the `i32` range.
 ///
-///
 /// Both filters have been optimized for accuracy, dynamic range, and
 /// speed on Cortex-M7.
 #[derive(Copy, Clone)]
@@ -33,9 +32,13 @@ impl<const N: usize> Filter for Lowpass<N> {
     /// `1 << 16 <= k <= q*(1 << 31)`.
     type Config = [i32; N];
     fn update(&mut self, x: i32, k: &Self::Config) -> i32 {
-        let mut d = x.saturating_sub((self.0[0] >> 32) as i32) as i64 * k[0] as i64;
+        let mut d = x.saturating_sub(self.get()) as i64 * k[0] as i64;
         let y;
-        if N >= 2 {
+        if N == 1 {
+            self.0[0] += d;
+            y = self.get();
+            self.0[0] += d;
+        } else if N == 2 {
             d += (self.0[1] >> 32) * k[1] as i64;
             self.0[1] += d;
             self.0[0] += self.0[1];
@@ -47,15 +50,15 @@ impl<const N: usize> Filter for Lowpass<N> {
             self.0[0] += self.0[1];
             self.0[1] += d;
         } else {
-            self.0[0] += d;
-            y = self.get();
-            self.0[0] += d;
+            unimplemented!()
         }
         y
     }
+
     fn get(&self) -> i32 {
         (self.0[0] >> 32) as i32
     }
+
     fn set(&mut self, x: i32) {
         self.0[0] = (x as i64) << 32;
     }

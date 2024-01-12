@@ -1,4 +1,9 @@
+/// Single inpout single output i32 filter
 pub trait Filter {
+    /// Filter configuration type.
+    ///
+    /// While the filter struct owns the state,
+    /// the configuration is decoupled to allow sharing.
     type Config;
     /// Update the filter with a new sample.
     ///
@@ -16,6 +21,9 @@ pub trait Filter {
     fn set(&mut self, x: i32);
 }
 
+/// Nyquist zero
+///
+/// Filter with a flat transfer function and a transfer function zero at Nyquist.
 #[derive(Copy, Clone, Default)]
 pub struct Nyquist(i32);
 impl Filter for Nyquist {
@@ -34,6 +42,7 @@ impl Filter for Nyquist {
     }
 }
 
+/// Repeat another filter
 #[derive(Copy, Clone)]
 pub struct Repeat<const N: usize, T>([T; N]);
 impl<const N: usize, T: Filter> Filter for Repeat<N, T> {
@@ -54,6 +63,7 @@ impl<const N: usize, T: Default + Copy> Default for Repeat<N, T> {
     }
 }
 
+/// Combine two different filters in cascade
 #[derive(Copy, Clone, Default)]
 pub struct Cascade<T, U>(T, U);
 impl<T: Filter, U: Filter> Filter for Cascade<T, U> {

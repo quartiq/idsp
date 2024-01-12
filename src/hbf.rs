@@ -1,3 +1,7 @@
+//! Half-band filters and cascades
+//!
+//! Used to perform very efficient high-dynamic range rate changes by powers of two.
+
 use core::{
     iter::Sum,
     ops::{Add, Mul},
@@ -457,12 +461,18 @@ impl Default for HbfDecCascade {
 }
 
 impl HbfDecCascade {
+    /// Set cascade depth
+    ///
+    /// Sets the number of HBF filter stages to apply.
     #[inline]
     pub fn set_depth(&mut self, n: usize) {
         assert!(n <= 4);
         self.depth = n;
     }
 
+    /// Cascade depth
+    ///
+    /// The number of HBF filter stages to apply.
     #[inline]
     pub fn depth(&self) -> usize {
         self.depth
@@ -543,7 +553,7 @@ impl Filter for HbfDecCascade {
 #[derive(Copy, Clone, Debug)]
 pub struct HbfIntCascade {
     depth: usize,
-    pub stages: (
+    stages: (
         HbfInt<
             'static,
             f32,
@@ -586,11 +596,17 @@ impl Default for HbfIntCascade {
 }
 
 impl HbfIntCascade {
+    /// Set cascade depth
+    ///
+    /// Sets the number of HBF filter stages to apply.
     pub fn set_depth(&mut self, n: usize) {
         assert!(n <= 4);
         self.depth = n;
     }
 
+    /// Cascade depth
+    ///
+    /// The number of HBF filter stages to apply.
     pub fn depth(&self) -> usize {
         self.depth
     }

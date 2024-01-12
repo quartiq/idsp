@@ -20,6 +20,9 @@ pub trait FilterNum: 'static + Copy + Num + AsPrimitive<Self::ACCU> {
     /// Undefined result if `max < min`.
     fn macc(self, s: Self::ACCU, min: Self, max: Self, e1: Self) -> (Self, Self);
 
+    /// Clamp to between min and max
+    ///
+    /// Undefined if `min > max`.
     fn clip(self, min: Self, max: Self) -> Self;
 
     /// Multiplication (scaled)
@@ -33,6 +36,7 @@ pub trait FilterNum: 'static + Copy + Num + AsPrimitive<Self::ACCU> {
     where
         Self: AsPrimitive<C>,
         C: Float + AsPrimitive<Self>;
+    // TODO: range check and Result
 }
 
 macro_rules! impl_float {

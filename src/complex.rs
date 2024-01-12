@@ -4,11 +4,17 @@ use super::{atan2, cossin};
 
 /// Complex extension trait offering DSP (fast, good accuracy) functionality.
 pub trait ComplexExt<T, U> {
+    /// Unit magnitude from angle
     fn from_angle(angle: T) -> Self;
+    /// Square of magnitude
     fn abs_sqr(&self) -> U;
+    /// Log2 approximation
     fn log2(&self) -> T;
+    /// Angle
     fn arg(&self) -> T;
+    /// Staturating addition
     fn saturating_add(&self, other: Self) -> Self;
+    /// Saturating subtraction
     fn saturating_sub(&self, other: Self) -> Self;
 }
 
@@ -97,6 +103,7 @@ impl ComplexExt<i32, u32> for Complex<i32> {
 
 /// Full scale fixed point multiplication.
 pub trait MulScaled<T> {
+    /// Scaled multiplication for fixed point
     fn mul_scaled(self, other: T) -> Self;
 }
 
