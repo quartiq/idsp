@@ -1,7 +1,7 @@
 use num_traits::{AsPrimitive, Float, Num};
 
 /// Helper trait unifying fixed point and floating point coefficients/samples
-pub trait FilterNum: 'static + Copy + Num + AsPrimitive<Self::ACCU> {
+pub trait Coefficient: 'static + Copy + Num + AsPrimitive<Self::ACCU> {
     /// Multiplicative identity
     const ONE: Self;
     /// Negative multiplicative identity, equal to `-Self::ONE`.
@@ -41,7 +41,7 @@ pub trait FilterNum: 'static + Copy + Num + AsPrimitive<Self::ACCU> {
 
 macro_rules! impl_float {
     ($T:ty) => {
-        impl FilterNum for $T {
+        impl Coefficient for $T {
             const ONE: Self = 1.0;
             const NEG_ONE: Self = -1.0;
             const ZERO: Self = 0.0;
@@ -82,7 +82,7 @@ impl_float!(f64);
 
 macro_rules! impl_int {
     ($T:ty, $U:ty, $A:ty, $Q:literal) => {
-        impl FilterNum for $T {
+        impl Coefficient for $T {
             const ONE: Self = 1 << $Q;
             const NEG_ONE: Self = -1 << $Q;
             const ZERO: Self = 0;

@@ -1,7 +1,7 @@
 use num_traits::{AsPrimitive, Float};
 use serde::{Deserialize, Serialize};
 
-use crate::FilterNum;
+use crate::Coefficient;
 
 /// PID controller builder
 ///
@@ -156,7 +156,7 @@ impl<T: Float> Pid<T> {
     ///
     /// # Panic
     /// Will panic in debug mode on fixed point coefficient overflow.
-    pub fn build<C: FilterNum + AsPrimitive<T>>(&self) -> Result<[C; 5], PidError>
+    pub fn build<C: Coefficient + AsPrimitive<T>>(&self) -> Result<[C; 5], PidError>
     where
         T: AsPrimitive<C>,
     {
