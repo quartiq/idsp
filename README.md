@@ -39,24 +39,41 @@ Robust and clean clipping and offset (anti-windup, no derivative kick, dynamical
 Three kinds of filter actions: Direct Form 1, Direct Form 2 Transposed, and Direct Form 1 with noise shaping supported.
 Coefficient sharing for multiple channels.
 
-Compared to [`biquad-rs`](https://crates.io/crates/biquad) this crates adds several additional important features:
+### Comparison
 
-* fixed point implementations (`i32`, `i64`, etc.) in addition to `f32`/`f64` floating point
-* additional [`iir::Filter`] builders (I/HO)
-* decoupled [`iir::Biquad<T>`] configuration and flat `[T; N]` state
-* [`iir::Pid`] builder
-* DF1 noise shaping for fixed point
-* proper output limiting/clamping before feedback ("anti-windup")
-* summing junction offset (for PID controller applications)
+This is a rough feature comparison of several available `biquad` crates, with no claim for completeness, accuracy, or even fairness.
+TL;DR: `idsp` is slower but offers more features.
 
-Compared to [`fixed-filters`](https://crates.io/crates/fixed-filters) this crate:
+| Feature\Crate | [`biquad-rs`](https://crates.io/crates/biquad) | [`fixed-filters`](https://crates.io/crates/fixed-filters) | `idsp::iir` |
+|---|---|---|---|
+| Floating point `f32`/`f64` | ✅ | ❌ | ✅ |
+| Fixed point `i32` | ❌ | ✅ | ✅ |
+| Parametric fixed point `i32` | ❌ | ✅ | ❌ |
+| Fixed point `i8`/`i16`/`i64`/`i128` | ❌ | ❌ | ✅ |
+| DF2T | ✅ | ❌ | ✅ |
+| Limiting/Clamping | ❌ | ✅ | ✅ |
+| Fixed point accumulator guard bits | ❌ | ❌ | ✅ |
+| Summing junction offset | ❌ | ❌ | ✅ |
+| Fixed point noise shaping | ❌ | ❌ | ✅ |
+| Configuration/state decoupling/multi-channel | ❌ | ❌ | ✅ |
+| `f32` parameter audio filter builder | ✅ | ✅ | ✅ |
+| `f64` parameter audio filter builder | ✅ | ❌ | ✅ |
+| Additional filters (I/HO) | ❌ | ❌ | ✅ |
+| `f32` PI builder | ❌ | ✅ | ✅ |
+| `f32/f64` PI²D² builder | ❌ | ❌ | ✅ |
+| PI²D² builder limits | ❌ | ❌ | ✅ |
+| Support for fixed point `a1=-2` | ❌ | ❌ | ✅ |
 
-* Supports unified floating point and fixed point API
-* decoupled [`iir::Biquad<T>`] configuration and flat `[T; N]` state
-* [`iir::Pid`] builder
-* additional [`iir::Filter`] builders (I/HO)
-* noise shaping for fixed point
-* summing junction offset (for PID controller applications)
+Three crates have been compared when processing 4x1M samples (4 channels) with a biquad lowpass.
+Hardware was `thumbv7em-none-eabihf`, `cortex-m7`, code in ITCM, data in DTCM, caches enabled.
+
+| Crate | Type, features | Cycles per sample |
+|---|---|---|
+| [`biquad-rs`](https://crates.io/crates/biquad) | `f32` | 11.4 |
+| `idsp::iir` | `f32`, limits, offset | 15.5 |
+| [`fixed-filters`](https://crates.io/crates/fixed-filters) | `i32`, limits | 20.3 |
+| `idsp::iir` | `i32`, limits, offset | 23.5 |
+| `idsp::iir` | `i32`, limits, offset, noise shaping | 30.0 |
 
 ## State variable filter
 
