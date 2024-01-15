@@ -1,5 +1,6 @@
 use num_traits::ops::wrapping::WrappingAdd;
 
+/// Wrapping Accumulator
 #[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
 pub struct Accu<T> {
     state: T,
@@ -7,6 +8,7 @@ pub struct Accu<T> {
 }
 
 impl<T> Accu<T> {
+    /// Create a new accumulator with given initial state and step.
     pub fn new(state: T, step: T) -> Self {
         Self { state, step }
     }

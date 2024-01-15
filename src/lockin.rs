@@ -1,5 +1,8 @@
 use super::{Complex, ComplexExt, Filter, MulScaled};
 
+/// Lockin filter
+///
+/// Combines two [`Filter`] and an NCO to perform demodulation
 #[derive(Copy, Clone, Default)]
 pub struct Lockin<T> {
     state: [T; 2],

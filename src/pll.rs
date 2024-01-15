@@ -33,6 +33,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// The extension to I^3,I^2,I behavior to track chirps phase-accurately or to i64 data to
 /// increase resolution for extremely narrowband applications is obvious.
+///
+/// This PLL implements first order noise shaping to reduce quantization errors.
 #[derive(Copy, Clone, Default, Deserialize, Serialize)]
 pub struct PLL {
     // last input phase

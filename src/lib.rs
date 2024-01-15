@@ -1,7 +1,10 @@
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(test, doctest, feature = "std")), no_std)]
+#![doc = include_str!("../README.md")]
+#![deny(rust_2018_compatibility)]
+#![deny(rust_2018_idioms)]
+#![warn(missing_docs)]
+#![forbid(unsafe_code)]
 
-mod tools;
-pub use tools::*;
 mod atan2;
 pub use atan2::*;
 mod accu;
@@ -13,7 +16,6 @@ pub use complex::*;
 mod cossin;
 pub use cossin::*;
 pub mod iir;
-pub mod iir_int;
 mod lockin;
 pub use lockin::*;
 mod lowpass;
@@ -25,6 +27,9 @@ pub use rpll::*;
 mod unwrap;
 pub use unwrap::*;
 pub mod hbf;
+mod num;
+pub use num::*;
+pub mod svf;
 
 #[cfg(test)]
 pub mod testing;

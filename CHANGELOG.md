@@ -10,6 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * `hbf` FIRs, symmetric FIRs, half band filters, HBF decimators and interpolators
+* `iir::Pid`, `iir:Filter` a builder for PID coefficients and the collection of standard Biquad filters
+* `iir::Biquad::{HOLD, IDENTITY, proportional}`
+* `iir::Biquad` getter/setter
+* `iir`: support for other integers (i8, i16, i128)
+* `iir::Biquad`: support for reduced DF1 state and DF2T state
+* `svf`: state variable filter
+
+### Removed
+
+* `iir::Vec5` type alias has been removed.
+* `iir_int`: integrated into `iir`.
+
+### Changed
+
+* `iir`: The biquad IIR filter API has been reworked. `IIR -> Biquad` renamed.
 
 ## [0.10.0](https://github.com/quartiq/idsp/compare/v0.9.2..v0.10.0) - 2023-07-20
 
