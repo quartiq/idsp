@@ -5,11 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.14.1](https://github.com/quartiq/idsp/compare/v0.14.0..v0.14.1) - 2024-01-15
+
+* Fixed changelog
+
+## [0.14.0](https://github.com/quartiq/idsp/compare/v0.13.0..v0.14.0) - 2024-01-15
 
 ### Added
 
-* `hbf` FIRs, symmetric FIRs, half band filters, HBF decimators and interpolators
 * `iir::Pid`, `iir:Filter` a builder for PID coefficients and the collection of standard Biquad filters
 * `iir::Biquad::{HOLD, IDENTITY, proportional}`
 * `iir::Biquad` getter/setter
@@ -25,6 +28,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * `iir`: The biquad IIR filter API has been reworked. `IIR -> Biquad` renamed.
+
+## [0.13.0](https://github.com/quartiq/idsp/compare/v0.12.1..v0.13.0) - 2024-11-01
+
+### Changed
+
+* `hbf`: more taps, API rework, `f32`/`f64` type genericism
+* `PLL`: redesign, add noise shaping
+* `Unwrapper`: simplify, redesign
+
+## [0.12.1](https://github.com/quartiq/idsp/compare/v0.12.0..v0.12.1) - 2024-10-12
+
+### Changed
+
+* `hbf` taps tweaks, performance tests
+
+## [0.12.0](https://github.com/quartiq/idsp/compare/v0.11.0..v0.12.0) - 2024-10-12
+
+### Added
+
+* `hbf` taps
+
+## [0.11.0](https://github.com/quartiq/idsp/compare/v0.10.0..v0.11.0) - 2024-09-16
+
+### Added
+
+* `hbf` FIRs, symmetric FIRs, half band filters, HBF decimators and interpolators
 
 ## [0.10.0](https://github.com/quartiq/idsp/compare/v0.9.2..v0.10.0) - 2023-07-20
 
