@@ -90,3 +90,7 @@ bandpass, and notch filtering of a signal.
 Fast `f32` symmetric FIR filters, optimized half-band filters, half-band filter decimators and integators and cascades.
 These are used in [`stabilizer-stream`](https://github.com/quartiq/stabilizer-stream) for online PSD calculation on log
 frequency scale for arbitrarily large amounts of data.
+
+## Delta Sigma modulator/noise shaper
+
+[`Dsm`] is a delta sigma modulator/noise shaper in MASH-(1)^K architecture.
