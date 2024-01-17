@@ -29,7 +29,9 @@ pub use unwrap::*;
 pub mod hbf;
 mod num;
 pub use num::*;
+mod dsm;
 pub mod svf;
+pub use dsm::*;
 
 #[cfg(test)]
 pub mod testing;
