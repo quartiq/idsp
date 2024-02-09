@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * `Dsm`: Delta sigma modulator/noise shaper in MASH-(1)^K architecture.
 
+### Changed
+
+* `Pid`: Fixed period/rate mixup.
+
 ## [0.14.1](https://github.com/quartiq/idsp/compare/v0.14.0..v0.14.1) - 2024-01-15
 
 * Fixed changelog
