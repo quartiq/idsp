@@ -85,6 +85,8 @@ impl<T: Float> Pid<T> {
     /// Gains are accurate in the low frequency limit. Towards Nyquist, the
     /// frequency response is warped.
     ///
+    /// Note that limit signs and gain signs should match.
+    ///
     /// ```
     /// # use idsp::iir::*;
     /// let tau = 1e-3;
@@ -97,7 +99,7 @@ impl<T: Float> Pid<T> {
     ///     .into();
     /// let x0 = 5.0;
     /// let y0 = i.update(&mut [0.0; 4], x0);
-    /// assert!((y0 / (x0 * ki / tau) - 1.0).abs() < 2.0 * f32::EPSILON);
+    /// assert!((y0 / (x0 * tau * ki) - 1.0).abs() < 2.0 * f32::EPSILON);
     /// ```
     ///
     /// # Arguments
@@ -112,6 +114,9 @@ impl<T: Float> Pid<T> {
     ///
     /// Gain limit units are `output/input`. See also [`Pid::gain()`].
     /// Multiple gains and limits may interact and lead to peaking.
+    ///
+    /// Note that limit signs and gain signs should match and that the
+    /// default limits are positive infinity.
     ///
     /// ```
     /// # use idsp::iir::*;
@@ -175,7 +180,8 @@ impl<T: Float> Pid<T> {
         }
 
         // Scale gains, compute limits
-        let mut zi = self.period.powi(low as i32 - KP as i32);
+        let mut zi = self.period.powi(KP as i32 - low as i32);
+        let p = self.period.recip();
         let mut gl = [[T::zero(); 2]; 3];
         for (gli, (i, (ggi, lli))) in gl.iter_mut().zip(
             self.gains
@@ -186,7 +192,7 @@ impl<T: Float> Pid<T> {
         ) {
             gli[0] = *ggi * zi;
             gli[1] = if i == KP { T::one() } else { gli[0] / *lli };
-            zi = zi * self.period;
+            zi = zi * p;
         }
         let a0i = T::one() / (gl[0][1] + gl[1][1] + gl[2][1]);
 
@@ -271,7 +277,7 @@ mod test {
         let mut xy = [0.0; 4];
         for i in 1..10 {
             let y_have = b.update(&mut xy, 1.0);
-            let y_want = (i as f32) * (ki / tau);
+            let y_want = (i as f32) * tau * ki;
             assert!(
                 (y_have / y_want - 1.0).abs() < 3.0 * f32::EPSILON,
                 "{i}: have {y_have} != {y_want}"
