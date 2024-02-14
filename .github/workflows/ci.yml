@@ -53,3 +53,27 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: bench
+
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v1
+      - uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: |
+            cargo-deadlinks
+      - name: cargo doc
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --no-deps
+      - name: cargo deadlinks
+        uses: actions-rs/cargo@v1
+        with:
+          command: deadlinks
+          args: --ignore-fragments --check-intra-doc-links
