@@ -213,7 +213,7 @@ impl<T: Coefficient> Biquad<T> {
     /// Filter coefficients
     ///
     /// IIR filter tap gains (`ba`) are an array `[b0, b1, b2, a1, a2]` such that
-    /// [`Biquad::update(&mut xy, x0)`] returns
+    /// [`Biquad::update()`] returns
     /// `y0 = clamp(b0*x0 + b1*x1 + b2*x2 - a1*y1 - a2*y2 + u, min, max)`.
     ///
     /// ```
