@@ -32,6 +32,10 @@ pub use num::*;
 mod dsm;
 pub mod svf;
 pub use dsm::*;
+mod sweptsine;
+pub use sweptsine::*;
+mod cic;
+pub use cic::*;
 
 #[cfg(test)]
 pub mod testing;
