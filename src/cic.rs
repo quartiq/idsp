@@ -7,10 +7,16 @@ use num_traits::{Num, WrappingAdd};
 /// Order `N` where `N = 3` is cubic.
 #[derive(Clone, Debug)]
 pub struct CicInterpolator<T, const N: usize> {
+    /// Rate change (> 0)
     rate: usize,
+    /// Comb/differentiator stages
     combs: [T; N],
-    up: T,
+    /// Zero order hold in the middle combined with the upsampler
+    /// This is equivalent to a single comb + (delta-)upsampler + integrator
+    zoh: T,
+    /// Rate change index (count down)
     index: usize,
+    /// Integrator stages
     integrators: [T; N],
 }
 
@@ -21,7 +27,7 @@ impl<T: Num + AddAssign + Copy, const N: usize> CicInterpolator<T, N> {
         Self {
             rate,
             combs: [T::zero(); N],
-            up: T::zero(),
+            zoh: T::zero(),
             index: 0,
             integrators: [T::zero(); N],
         }
@@ -38,11 +44,11 @@ impl<T: Num + AddAssign + Copy, const N: usize> CicInterpolator<T, N> {
             });
             debug_assert_eq!(self.index, 0);
             self.index = self.rate - 1;
-            self.up = x;
+            self.zoh = x;
         } else {
             self.index -= 1;
         }
-        self.integrators.iter_mut().fold(self.up, |x, i| {
+        self.integrators.iter_mut().fold(self.zoh, |x, i| {
             *i += x;
             *i
         })
@@ -59,9 +65,13 @@ impl<T: Num + AddAssign + Copy, const N: usize> CicInterpolator<T, N> {
 /// Order `N` where `N = 3` is cubic.
 #[derive(Clone, Debug)]
 pub struct CicDecimator<T, const N: usize> {
+    /// Rate change (> 0)
     rate: usize,
+    /// Integration stages
     integrators: [T; N],
+    /// Rate change count down
     index: usize,
+    /// Comb/differentiator stages
     combs: [T; N],
 }
 
