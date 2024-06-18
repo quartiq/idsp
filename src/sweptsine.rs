@@ -16,7 +16,7 @@ impl Iterator for SweepIter {
     }
 }
 
-pub fn sweep(k: u32, f1: u32, f2: u32) -> impl Iterator<Item = u32> {
+pub fn sweep(_k: u32, f1: u32, f2: u32) -> impl Iterator<Item = u32> {
     let it = SweepIter {
         a: 1,
         f: (f1 as u64) << 32,

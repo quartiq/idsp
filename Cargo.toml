@@ -16,6 +16,8 @@ num-complex = { version = "0.4.0", features = ["serde"], default-features = fals
 num-traits = { version = "0.2.14", features = ["libm"], default-features = false}
 
 [dev-dependencies]
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
 rand = "0.8"
 rustfft = "6.1.0"
 # futuredsp = "0.0.6"

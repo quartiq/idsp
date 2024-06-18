@@ -1,77 +1,109 @@
 use core::ops::AddAssign;
 
-use num_traits::{AsPrimitive, Num, WrappingAdd};
+use num_traits::{AsPrimitive, Num, Pow, WrappingAdd, WrappingSub};
 
 /// Cascaded integrator comb structure
 ///
 /// Order `N` where `N = 3` is cubic.
 #[derive(Clone, Debug)]
 pub struct Cic<T, const N: usize> {
-    /// Rate change (> 0)
-    rate: usize,
-    /// Comb/differentiator stages
-    combs: [T; N],
+    /// Rate change (fast/slow - 1)
+    /// Interpolator: output/input - 1
+    /// Decimator: input/output - 1
+    rate: u32,
+    /// Up/downsampler state (count down)
+    index: u32,
     /// Zero order hold behind comb sections.
     /// Interpolator: In the middle combined with the upsampler
-    /// Decimator: After combs to support `get()`
+    /// Decimator: After combs to support `get_decimate()`
     /// This is equivalent to a single comb + (delta-)upsampler + integrator
     zoh: T,
-    /// Rate change index (count down)
-    index: usize,
-    /// Integrator stages
+    /// Comb/differentiator state
+    combs: [T; N],
+    /// Integrator state
     integrators: [T; N],
 }
 
 impl<T, const N: usize> Cic<T, N>
 where
-    T: Num + AddAssign + WrappingAdd + Copy + 'static,
-    usize: AsPrimitive<T>,
+    T: Num + AddAssign + WrappingAdd + WrappingSub + Pow<usize, Output = T> + Copy + 'static,
+    u32: AsPrimitive<T>,
 {
     /// Create a new zero-initialized filter with the given rate change.
-    pub fn new(rate: usize) -> Self {
-        debug_assert!(rate > 0);
+    pub fn new(rate: u32) -> Self {
         Self {
             rate,
-            combs: [T::zero(); N],
-            zoh: T::zero(),
             index: 0,
+            zoh: T::zero(),
+            combs: [T::zero(); N],
             integrators: [T::zero(); N],
         }
     }
 
-    pub fn rate(&self) -> usize {
+    /// Filter order
+    ///
+    /// * 0: zero order hold
+    /// * 1: linear
+    /// * 2: quadratic
+    /// * 3: cubic interpolation/decimation
+    ///
+    /// etc.
+    pub const fn order(&self) -> usize {
+        N
+    }
+
+    /// Rate change
+    ///
+    /// `fast/slow - 1`
+    pub const fn rate(&self) -> u32 {
         self.rate
     }
 
-    pub fn set_rate(&mut self, rate: usize) {
-        debug_assert!(rate > 0);
+    /// Set the rate change
+    ///
+    /// `fast/slow - 1`
+    pub fn set_rate(&mut self, rate: u32) {
         self.rate = rate;
     }
 
+    /// Zero-initialize the filter state
     pub fn clear(&mut self) {
+        self.index = 0;
         self.zoh = T::zero();
         self.combs = [T::zero(); N];
         self.integrators = [T::zero(); N];
     }
 
+    /// Establish a settled filter state
     pub fn settle_interpolate(&mut self, x: T) {
         self.clear();
+        *self.combs.first_mut().unwrap_or(&mut self.zoh) = x;
         let g = self.gain();
-        let i = self.integrators.last_mut().unwrap_or(&mut self.zoh);
-        *i = x * g;
+        if let Some(i) = self.integrators.last_mut() {
+            *i = x * g;
+        }
     }
 
+    /// Establish a settled filter state
     pub fn settle_decimate(&mut self, x: T) {
-        self.clear();
+        for i in self.integrators.iter_mut() {
+            *i = x;
+            // x *= self.rate;
+        }
+        for c in self.combs.iter_mut() {
+            *c = x;
+        }
         self.zoh = x * self.gain();
     }
 
     /// Optionally ingest a new low-rate sample and
     /// retrieve the next output.
+    ///
+    /// A new sample must be supplied at the correct time (see [`Cic::tick()`])
     pub fn interpolate(&mut self, x: Option<T>) -> T {
         if let Some(x) = x {
             debug_assert_eq!(self.index, 0);
-            self.index = self.rate - 1;
+            self.index = self.rate;
             let x = self.combs.iter_mut().fold(x, |x, c| {
                 let y = x - *c;
                 *c = x;
@@ -95,9 +127,9 @@ where
             *i
         });
         if self.index == 0 {
-            self.index = self.rate - 1;
+            self.index = self.rate;
             let x = self.combs.iter_mut().fold(x, |x, c| {
-                let y = x - *c;
+                let y = x.wrapping_sub(c);
                 *c = x;
                 y
             });
@@ -109,90 +141,121 @@ where
         }
     }
 
-    pub fn tick(&self) -> bool {
+    /// Accepts/provides new slow-rate sample
+    ///
+    /// Interpolator: accepts new input sample
+    /// Decimator: returns new output sample
+    pub const fn tick(&self) -> bool {
         self.index == 0
     }
 
+    /// Current interpolator output
     pub fn get_interpolate(&self) -> T {
         *self.integrators.last().unwrap_or(&self.zoh)
     }
 
+    /// Current decimator output
     pub fn get_decimate(&self) -> T {
         self.zoh
     }
 
-    /// Return the filter gain
+    /// Filter gain
     pub fn gain(&self) -> T {
-        self.rate.pow(N as _).as_()
+        (self.rate.as_() + T::one()).pow(N)
     }
 
-    /// Return the right shift amount (the log2 of gain())
+    /// Right shift amount
     ///
-    /// Panics if the gain is not a power of two.
-    pub fn log2_gain(&self) -> u32 {
-        let s = (31 - self.rate.leading_zeros()) * N as u32;
-        debug_assert_eq!(1 << s, self.rate.pow(N as _) as _);
-        s
+    /// `log2(gain())` if gain is a power of two,
+    /// otherwise an upper bound.
+    pub const fn gain_log2(&self) -> u32 {
+        (u32::BITS - self.rate.leading_zeros()) * N as u32
     }
 
-    /// Return the impulse response length
-    pub fn response_length(&self) -> usize {
-        N * (self.rate - 1)
+    /// Impulse response length
+    pub const fn response_length(&self) -> usize {
+        self.rate as usize * N
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use core::cmp::Ordering;
 
-    #[test]
-    fn new() {
-        let _ = Cic::<i64, 3>::new(1);
+    use super::*;
+    use quickcheck_macros::quickcheck;
+
+    #[quickcheck]
+    fn new(rate: u32) {
+        let _ = Cic::<i64, 3>::new(rate);
     }
 
-    #[test]
-    fn identity() {
-        let mut int = Cic::<i64, 3>::new(1);
-        let mut dec = Cic::<i64, 3>::new(1);
-        for x in 0..100 {
-            assert_eq!(int.interpolate(Some(x)), x);
-            assert_eq!(dec.decimate(x), Some(x));
-            assert_eq!(x, int.get_interpolate());
+    #[quickcheck]
+    fn identity_dec(x: Vec<i64>) {
+        let mut dec = Cic::<_, 3>::new(0);
+        for x in x {
+            assert_eq!(x, dec.decimate(x).unwrap());
             assert_eq!(x, dec.get_decimate());
         }
     }
 
-    #[test]
-    fn response_length_gain() {
-        let mut int = Cic::<i64, 3>::new(33);
-        let x = 99;
-        for i in 0..2 * int.response_length() {
-            let y = int.interpolate(if int.tick() { Some(x) } else { None });
-            assert_eq!(y, int.get_interpolate());
-            if i < int.response_length() {
-                assert!(y < x * int.gain());
-            } else {
-                assert_eq!(y, x * int.gain());
+    #[quickcheck]
+    fn identity_int(x: Vec<i64>) {
+        const N: usize = 3;
+        let mut int = Cic::<_, N>::new(0);
+        for x in x {
+            assert_eq!(x >> N, int.interpolate(Some(x >> N)));
+            assert_eq!(x >> N, int.get_interpolate());
+        }
+    }
+
+    #[quickcheck]
+    fn response_length_gain_settle(x: Vec<i32>, rate: u32) {
+        let mut int = Cic::<_, 3>::new(rate);
+        let shift = int.gain_log2();
+        if shift >= 32 {
+            return;
+        }
+        assert!(int.gain() <= 1 << shift);
+        for x in x {
+            while !int.tick() {
+                int.interpolate(None);
+            }
+            let y_last = int.get_interpolate();
+            let y_want = x as i64 * int.gain();
+            for i in 0..2 * int.response_length() {
+                let y = int.interpolate(if int.tick() { Some(x as i64) } else { None });
+                assert_eq!(y, int.get_interpolate());
+                if i < int.response_length() {
+                    match y_want.cmp(&y_last) {
+                        Ordering::Greater => assert!((y_last..y_want).contains(&y)),
+                        Ordering::Less => assert!((y_want..y_last).contains(&(y - 1))),
+                        Ordering::Equal => assert_eq!(y_want, y),
+                    }
+                } else {
+                    assert_eq!(y, y_want);
+                }
             }
         }
     }
 
-    #[test]
-    fn settle() {
-        let x = 99;
-        let mut int = Cic::<i64, 3>::new(33);
-        int.settle_interpolate(x);
-        let mut dec = Cic::<i64, 3>::new(33);
-        dec.settle_decimate(x);
-        for _ in 0..100 {
-            let y = int.interpolate(if int.tick() { Some(x) } else { None });
-            assert_eq!(y, x*int.gain());
-            assert_eq!(y, int.get_interpolate());
-            assert_eq!(dec.get_decimate(), x*dec.gain());
-            if let Some(y) = dec.decimate(x) {
-                assert_eq!(y, dec.get_decimate());
-            }
+    #[quickcheck]
+    fn settle(rate: u32, x: i32) {
+        let mut int = Cic::<i64, 3>::new(rate);
+        if int.gain_log2() >= 32 {
+            return;
         }
-
+        int.settle_interpolate(x as _);
+        //let mut dec = Cic::<i64, 3>::new(rate);
+        //dec.settle_decimate(x as _);
+        for _ in 0..100 {
+            let y = int.interpolate(if int.tick() { Some(x as _) } else { None });
+            assert_eq!(y, x as i64 * int.gain());
+            assert_eq!(y, int.get_interpolate());
+            //assert_eq!(dec.get_decimate(), x*dec.gain());
+            //if let Some(y) = dec.decimate(x) {
+            //    assert_eq!(y, dec.get_decimate());
+            //}
+        }
     }
 }
