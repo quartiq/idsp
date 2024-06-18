@@ -74,6 +74,42 @@ where
         self.integrators = [T::zero(); N];
     }
 
+    /// Accepts/provides new slow-rate sample
+    ///
+    /// Interpolator: accepts new input sample
+    /// Decimator: returns new output sample
+    pub const fn tick(&self) -> bool {
+        self.index == 0
+    }
+
+    /// Current interpolator output
+    pub fn get_interpolate(&self) -> T {
+        *self.integrators.last().unwrap_or(&self.zoh)
+    }
+
+    /// Current decimator output
+    pub fn get_decimate(&self) -> T {
+        self.zoh
+    }
+
+    /// Filter gain
+    pub fn gain(&self) -> T {
+        (self.rate.as_() + T::one()).pow(N)
+    }
+
+    /// Right shift amount
+    ///
+    /// `log2(gain())` if gain is a power of two,
+    /// otherwise an upper bound.
+    pub const fn gain_log2(&self) -> u32 {
+        (u32::BITS - self.rate.leading_zeros()) * N as u32
+    }
+
+    /// Impulse response length
+    pub const fn response_length(&self) -> usize {
+        self.rate as usize * N
+    }
+
     /// Establish a settled filter state
     pub fn settle_interpolate(&mut self, x: T) {
         self.clear();
@@ -85,15 +121,12 @@ where
     }
 
     /// Establish a settled filter state
+    ///
+    /// Unimplemented!
     pub fn settle_decimate(&mut self, x: T) {
-        for i in self.integrators.iter_mut() {
-            *i = x;
-            // x *= self.rate;
-        }
-        for c in self.combs.iter_mut() {
-            *c = x;
-        }
+        self.clear();
         self.zoh = x * self.gain();
+        unimplemented!();
     }
 
     /// Optionally ingest a new low-rate sample and
@@ -139,42 +172,6 @@ where
             self.index -= 1;
             None
         }
-    }
-
-    /// Accepts/provides new slow-rate sample
-    ///
-    /// Interpolator: accepts new input sample
-    /// Decimator: returns new output sample
-    pub const fn tick(&self) -> bool {
-        self.index == 0
-    }
-
-    /// Current interpolator output
-    pub fn get_interpolate(&self) -> T {
-        *self.integrators.last().unwrap_or(&self.zoh)
-    }
-
-    /// Current decimator output
-    pub fn get_decimate(&self) -> T {
-        self.zoh
-    }
-
-    /// Filter gain
-    pub fn gain(&self) -> T {
-        (self.rate.as_() + T::one()).pow(N)
-    }
-
-    /// Right shift amount
-    ///
-    /// `log2(gain())` if gain is a power of two,
-    /// otherwise an upper bound.
-    pub const fn gain_log2(&self) -> u32 {
-        (u32::BITS - self.rate.leading_zeros()) * N as u32
-    }
-
-    /// Impulse response length
-    pub const fn response_length(&self) -> usize {
-        self.rate as usize * N
     }
 }
 
@@ -246,16 +243,16 @@ mod test {
             return;
         }
         int.settle_interpolate(x as _);
-        //let mut dec = Cic::<i64, 3>::new(rate);
-        //dec.settle_decimate(x as _);
+        // let mut dec = Cic::<i64, 3>::new(rate);
+        // dec.settle_decimate(x as _);
         for _ in 0..100 {
             let y = int.interpolate(if int.tick() { Some(x as _) } else { None });
             assert_eq!(y, x as i64 * int.gain());
             assert_eq!(y, int.get_interpolate());
-            //assert_eq!(dec.get_decimate(), x*dec.gain());
-            //if let Some(y) = dec.decimate(x) {
-            //    assert_eq!(y, dec.get_decimate());
-            //}
+            // assert_eq!(dec.get_decimate(), x as i64 * dec.gain());
+            // if let Some(y) = dec.decimate(x as _) {
+            //     assert_eq!(y, x as i64 * dec.gain());
+            // }
         }
     }
 }
