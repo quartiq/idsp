@@ -16,7 +16,6 @@ pub struct Cic<T, const N: usize> {
     /// Zero order hold behind comb sections.
     /// Interpolator: In the middle combined with the upsampler
     /// Decimator: After combs to support `get_decimate()`
-    /// This is equivalent to a single comb + (delta-)upsampler + integrator
     zoh: T,
     /// Comb/differentiator state
     combs: [T; N],

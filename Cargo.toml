@@ -23,5 +23,8 @@ rustfft = "6.1.0"
 # futuredsp = "0.0.6"
 # sdr = "0.7.0"
 
+[features]
+std = []
+
 [profile.release]
 debug = 1
