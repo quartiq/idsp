@@ -57,7 +57,7 @@ pub trait Filter {
 ///
 /// Half-band filters (rate change of 2) and cascades of HBFs are implemented in
 /// [`HbfDec`] and [`HbfInt`] etc.
-/// The half-band filter has unique properties that make it preferrable in many cases:
+/// The half-band filter has unique properties that make it preferable in many cases:
 ///
 /// * only needs M multiplications (fused multiply accumulate) for 4*M taps
 /// * HBF decimator stores less state than a generic FIR filter
@@ -74,7 +74,7 @@ pub trait Filter {
 ///
 /// The implementations here are all `no_std` and `no-alloc`.
 /// They support (but don't require) in-place filtering to reduce memory usage.
-/// They unroll and optimmize extremely well targetting current architectures,
+/// They unroll and optimize extremely well targetting current architectures,
 /// e.g. requiring less than 4 instructions per input item for the full `HbfDecCascade` on Skylake.
 /// The filters are optimized for decent block sizes and perform best (i.e. with negligible
 /// overhead) for blocks of 32 high-rate items or more, depending very much on architecture.
@@ -91,7 +91,7 @@ impl<'a, T: Copy + Zero + Add + Mul<Output = T> + Sum, const M: usize, const N: 
     /// Create a new `SymFir`.
     ///
     /// # Args
-    /// * `taps`: one-sided FIR coefficients, expluding center tap, oldest to one-before-center
+    /// * `taps`: one-sided FIR coefficients, excluding center tap, oldest to one-before-center
     pub fn new(taps: &'a [T; M]) -> Self {
         debug_assert!(N >= M * 2);
         Self {

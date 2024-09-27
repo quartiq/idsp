@@ -3,7 +3,7 @@
 /// Consumes noisy, quantized timestamps of a reference signal and reconstructs
 /// the phase and frequency of the update() invocations with respect to (and in units of
 /// 1 << 32 of) that reference.
-/// In other words, `update()` rate ralative to reference frequency,
+/// In other words, `update()` rate relative to reference frequency,
 /// `u32::MAX` corresponding to both being equal.
 #[derive(Copy, Clone, Default)]
 pub struct RPLL {
