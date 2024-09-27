@@ -26,7 +26,7 @@ use crate::Coefficient;
 /// this allows clamping of the output before feedback.
 ///
 /// DF1 allows atomic coefficient change because only inputs and outputs are pipelined.
-/// The summing junctuion pipelining of TDF2 would require incremental
+/// The summing junction pipelining of TDF2 would require incremental
 /// coefficient changes and is thus less amenable to online tuning.
 ///
 /// DF2T needs less state storage (2 instead of 4). This is in addition to the coefficient
@@ -99,7 +99,7 @@ use crate::Coefficient;
 ///   Therefore it can trivially implement bump-less transfer between any
 ///   coefficients/offset sets.
 /// * Cascading multiple IIR filters allows stable and robust
-///   implementation of transfer functions beyond bequadratic terms.
+///   implementation of transfer functions beyond biquadratic terms.
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub struct Biquad<T> {
     ba: [T; 5],
