@@ -32,7 +32,7 @@ impl Sweep {
 
 /// Sync Sweep parameter error
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-pub enum Error {
+pub enum SweepError {
     /// Start out of bounds
     Start,
     /// End out of bounds
@@ -42,6 +42,7 @@ pub enum Error {
 }
 
 /// Exponential synchronized sweep
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct SyncExpSweep {
     sweep: Sweep,
     f_end: i32,
@@ -49,16 +50,19 @@ pub struct SyncExpSweep {
 
 impl SyncExpSweep {
     /// Create new sweep
-    pub fn new(f_start: i32, octaves: u32, samples_octave: u32) -> Result<Self, Error> {
-        if f_start.checked_ilog2().ok_or(Error::Start)? + octaves >= 31 {
-            return Err(Error::End);
+    ///
+    /// * f_start: initial phase increment
+    /// * octavaes: number of octaves
+    /// * samples: number of samples per octave
+    pub fn new(f_start: i32, octaves: u32, samples: u32) -> Result<Self, SweepError> {
+        if f_start.checked_ilog2().ok_or(SweepError::Start)? + octaves >= 31 {
+            return Err(SweepError::End);
         }
-        if samples_octave == 0 {
-            return Err(Error::Length);
+        if samples == 0 {
+            return Err(SweepError::Length);
         }
-        let a = Float::round(
-            (Float::exp2((samples_octave as f64).recip()) - 1.0) * (1i64 << 32) as f64,
-        ) as i32;
+        let a = Float::round((Float::exp2((samples as f64).recip()) - 1.0) * (1i64 << 32) as f64)
+            as i32;
         Ok(Self {
             sweep: Sweep::new(a, (f_start as i64) << 32),
             f_end: f_start << octaves,
@@ -78,6 +82,7 @@ impl Iterator for SyncExpSweep {
 }
 
 /// Accumulating oscillator
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct AccuOsc<T> {
     f: T,
     p: i64,
