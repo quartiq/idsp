@@ -1,5 +1,5 @@
 use crate::{cossin::cossin, Complex};
-use num_traits::Float;
+use num_traits::{Float, FloatConst};
 
 /// Exponential sweep
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -61,8 +61,8 @@ impl SyncExpSweep {
         if samples == 0 {
             return Err(SweepError::Length);
         }
-        let a = Float::round((Float::exp2((samples as f64).recip()) - 1.0) * (1i64 << 32) as f64)
-            as i32;
+        let a =
+            Float::round(Float::exp_m1(f64::LN_2() / samples as f64) * (1i64 << 32) as f64) as i32;
         Ok(Self {
             sweep: Sweep::new(a, (f_start as i64) << 32),
             f_end: f_start << octaves,
