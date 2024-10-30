@@ -58,11 +58,12 @@ impl SyncExpSweep {
         if f_start.checked_ilog2().ok_or(SweepError::Start)? + octaves >= 31 {
             return Err(SweepError::End);
         }
-        if samples == 0 {
+        let f0 = f_start as f64 / (1i64 << 32) as f64;
+        let k = Float::round(f0 * samples as f64 / f64::LN_2());
+        if k < 1.0 {
             return Err(SweepError::Length);
         }
-        let a =
-            Float::round(Float::exp_m1(f64::LN_2() / samples as f64) * (1i64 << 32) as f64) as i32;
+        let a = Float::round(Float::exp_m1(f0 / k) * (1i64 << 32) as f64) as i32;
         Ok(Self {
             sweep: Sweep::new(a, (f_start as i64) << 32),
             f_end: f_start << octaves,
