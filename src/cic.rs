@@ -131,7 +131,7 @@ where
     /// Optionally ingest a new low-rate sample and
     /// retrieve the next output.
     ///
-    /// A new sample must be supplied at the correct time (see [`Cic::tick()`])
+    /// A new sample must be supplied at the correct time (when [`Cic::tick()`] is true)
     pub fn interpolate(&mut self, x: Option<T>) -> T {
         if let Some(x) = x {
             debug_assert_eq!(self.index, 0);
@@ -158,7 +158,10 @@ where
             *i = i.wrapping_add(&x);
             *i
         });
-        if self.index == 0 {
+        if let Some(index) = self.index.checked_sub(1) {
+            self.index = index;
+            None
+        } else {
             self.index = self.rate;
             let x = self.combs.iter_mut().fold(x, |x, c| {
                 let y = x.wrapping_sub(c);
@@ -167,9 +170,6 @@ where
             });
             self.zoh = x;
             Some(self.zoh)
-        } else {
-            self.index -= 1;
-            None
         }
     }
 }
