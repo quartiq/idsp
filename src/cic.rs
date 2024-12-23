@@ -14,8 +14,8 @@ pub struct Cic<T, const N: usize> {
     /// Up/downsampler state (count down)
     index: u32,
     /// Zero order hold behind comb sections.
-    /// Interpolator: In the middle combined with the upsampler
-    /// Decimator: After combs to support `get_decimate()`
+    /// Interpolator: Combined with the upsampler
+    /// Decimator: To support `get_decimate()`
     zoh: T,
     /// Comb/differentiator state
     combs: [T; N],
@@ -80,7 +80,7 @@ where
 
     /// Current interpolator output
     pub fn get_interpolate(&self) -> T {
-        *self.integrators.last().unwrap_or(&self.zoh)
+        self.integrators.last().copied().unwrap_or(self.zoh)
     }
 
     /// Current decimator output
@@ -109,7 +109,11 @@ where
     /// Establish a settled filter state
     pub fn settle_interpolate(&mut self, x: T) {
         self.clear();
-        *self.combs.first_mut().unwrap_or(&mut self.zoh) = x;
+        if let Some(c) = self.combs.first_mut() {
+            *c = x;
+        } else {
+            self.zoh = x;
+        }
         let g = self.gain();
         if let Some(i) = self.integrators.last_mut() {
             *i = x * g;
@@ -143,6 +147,7 @@ where
             self.index -= 1;
         }
         self.integrators.iter_mut().fold(self.zoh, |x, i| {
+            // Overflow is not OK
             *i += x;
             *i
         })
