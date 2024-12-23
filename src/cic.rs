@@ -67,10 +67,7 @@ where
 
     /// Zero-initialize the filter state
     pub fn clear(&mut self) {
-        self.index = 0;
-        self.zoh = T::zero();
-        self.combs = [T::zero(); N];
-        self.integrators = [T::zero(); N];
+        *self = Self::new(self.rate);
     }
 
     /// Accepts/provides new slow-rate sample
