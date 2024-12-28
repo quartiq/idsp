@@ -17,7 +17,7 @@ impl Iterator for Sweep {
     fn next(&mut self) -> Option<Self::Item> {
         self.f = self
             .f
-            .wrapping_add((self.a as i64).wrapping_mul(self.f >> 32));
+            .wrapping_add((self.a as i64).wrapping_mul((self.f + (1 << 31)) >> 32));
         Some(self.f)
     }
 }
