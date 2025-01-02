@@ -77,7 +77,7 @@ impl Sweep {
             })
             .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(core::cmp::Ordering::Equal))
             .ok_or(SweepError::Length)?;
-        let state = (rate as i64 * cycles as i64) << 32;
+        let state = ((rate * cycles as i32) as i64) << 32;
         if state == 0 {
             return Err(SweepError::Start);
         }
