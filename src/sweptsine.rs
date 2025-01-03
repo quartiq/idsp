@@ -44,19 +44,57 @@ impl Sweep {
         Self { rate, state, count }
     }
 
+    #[inline]
     /// Continuous time exponential sweep rate
     pub fn rate(&self) -> f64 {
         (self.rate as f64 / Q).ln_1p()
     }
 
+    #[inline]
+    /// Number of octaves swept
+    pub fn octaves(&self) -> f64 {
+        self.count as f64 / self.octave_len()
+    }
+
+    #[inline]
     /// Samples per octave
     pub fn octave_len(&self) -> f64 {
         f64::LN_2() / self.rate()
     }
 
+    #[inline]
     /// Current normalized state
     pub fn state(&self) -> f64 {
         self.state as f64 / Q.powi(2)
+    }
+
+    #[inline]
+    /// Response order delay (order >= 1)
+    pub fn order_delay(&self, order: u32) -> f64 {
+        -(order as f64).ln() / self.rate()
+    }
+
+    #[inline]
+    /// Number of cycles in the current octave
+    pub fn cycles(&self) -> f64 {
+        self.state as f64 / self.rate as f64
+    }
+
+    /// Inverse filter
+    ///
+    /// * Stimulus `x(t)`
+    /// * Response `y(t)`
+    /// * Response Fourier transform `Y(f)`
+    /// * Stimulus inverse filter `X'(f)`
+    /// * Transfer function `H(f) = Y(f)*X'(f)'
+    /// * Impulse response `h(t)`
+    pub fn inverse_filter(&self, f: f64) -> Complex<f64> {
+        let rt = self.rate();
+        let fp = f / rt;
+        let r = 2.0 * rt * fp.sqrt();
+        let phi = f64::TAU() * (0.125 - fp * (1.0 + self.cycles().ln() - fp.ln()));
+        let (s, c) = phi.sin_cos();
+        Complex::new(r * c, r * s)
     }
 
     /// Create new sweep
@@ -69,6 +107,11 @@ impl Sweep {
             return Err(SweepError::End);
         }
         let u0 = (f64::LN_2() * (cycles << octaves) as f64 / f_end).ceil() as i32;
+        // A 20% search range on u, one sided, typically yields < 1e-5 error,
+        // and a few e-5 max phase error over the entire sweep.
+        // One sided to larger u as this leads one sided lower f_end
+        // (do not wrap around Nyquist)
+        // Alternatively one could search until tolerance is reached.
         let (u, rate, _err) = (u0..(u0 + u0 / 5))
             .map(|u| {
                 let rate = (Q * (f64::LN_2() / u as f64).exp_m1()).round();
