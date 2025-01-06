@@ -44,40 +44,51 @@ impl Sweep {
         Self { rate, state, count }
     }
 
-    #[inline]
     /// Continuous time exponential sweep rate
+    #[inline]
     pub fn rate(&self) -> f64 {
         (self.rate as f64 / Q).ln_1p()
     }
 
+    /// Number of octaves to be swept
     #[inline]
-    /// Number of octaves swept
     pub fn octaves(&self) -> f64 {
         self.count as f64 / self.octave_len()
     }
 
-    #[inline]
     /// Samples per octave
+    #[inline]
     pub fn octave_len(&self) -> f64 {
         f64::LN_2() / self.rate()
     }
 
+    /// Current continuous time state
     #[inline]
-    /// Current normalized state
     pub fn state(&self) -> f64 {
-        self.state as f64 / Q.powi(2)
+        self.cycles() * self.rate()
     }
 
+    /// Response order delay (order >= 1, )
     #[inline]
-    /// Response order delay (order >= 1)
     pub fn order_delay(&self, order: u32) -> f64 {
         -(order as f64).ln() / self.rate()
     }
 
-    #[inline]
     /// Number of cycles in the current octave
+    #[inline]
     pub fn cycles(&self) -> f64 {
-        self.state as f64 / self.rate as f64
+        self.state as f64 / (Q * self.rate as f64)
+    }
+
+    /// Evaluate sweep at a given time
+    ///
+    /// To evaluate its integral: `continuous(t)/rate()`
+    /// To evaluate it as a synchronized exponential sweep: `(f64::TAU()*continuous(t)/rate()).sin()`
+    /// Note that this is affected by floating point quantization.
+    #[inline]
+    pub fn continuous(&self, t: f64) -> f64 {
+        let rate = self.rate();
+        self.cycles() * rate * (rate * t).exp()
     }
 
     /// Inverse filter
@@ -102,7 +113,7 @@ impl Sweep {
     /// * f_end: maximum final frequency in units of sample rate (e.g. 0.5)
     /// * octaves: number of octaves to sweep
     /// * cycles: number of cycles in the first octave (>= 1)
-    pub fn optimize(f_end: f64, octaves: u32, cycles: u32) -> Result<Self, SweepError> {
+    pub fn fit(f_end: f64, octaves: u32, cycles: u32) -> Result<Self, SweepError> {
         if !(0.0..=0.5).contains(&f_end) {
             return Err(SweepError::End);
         }
@@ -189,21 +200,30 @@ mod test {
         let f_end = 0.3;
         let octaves = 13;
         let cycles = 3;
-        let sweep = Sweep::optimize(f_end, octaves, cycles).unwrap();
-        let f_start = f_end / (1 << octaves) as f64;
-        assert_eq!(sweep.state, 0x23ee0 << 32);
-        assert!((f_start * 0.8..=f_start).contains(&sweep.state()));
+        let sweep = Sweep::fit(f_end, octaves, cycles).unwrap();
         assert_eq!(sweep.rate, 0xbfa0);
         let u = 0xed0f;
         assert_eq!(sweep.count, u * octaves as usize);
+        assert_eq!(sweep.octave_len().round() as usize, u);
+        assert_eq!(sweep.octaves().round() as u32, octaves);
+        assert_eq!(sweep.cycles().round() as u32, cycles);
+        let f_start = f_end / (1 << octaves) as f64;
+        assert!((f_start * 0.8..=f_start).contains(&sweep.state()));
+        let sweep0 = sweep.clone();
         let it: Vec<_> = AccuOsc::new(sweep)
             .map(|c| Complex::new(c.re as f64 / (0.5 * Q), c.im as f64 / (0.5 * Q)))
             .collect();
-        assert_eq!(it.len(), u * octaves as usize);
+        assert_eq!(it.len(), sweep0.count);
         assert!(it.iter().all(|c| isclose(c.norm(), 1.0, 0.0, 1e-3)));
-        let it: Vec<_> = it.iter().map(|c| c.arg() / f64::TAU()).collect();
-        for v in it.iter().step_by(u as _) {
+        let phase: Vec<_> = it.iter().map(|c| c.arg() / f64::TAU()).collect();
+        for v in phase.iter().step_by(u as _) {
             assert!(isclose(*v, 0.0, 0.0, 2e-5));
+        }
+        let freq: Vec<_> = (0..it.len()).map(|t| sweep0.continuous(t as _)).collect();
+        for (p, f0) in phase.iter().zip(&freq) {
+            let mut dphase = f0 / sweep0.rate() - p;
+            dphase -= dphase.round();
+            assert!(isclose(dphase, 0.0, 0.0, 1e-4));
         }
     }
 }
