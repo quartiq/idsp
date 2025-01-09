@@ -64,11 +64,10 @@ impl Sweep {
         self.state as f64 / (Q * self.rate as f64)
     }
 
-    /// Evaluate sweep at a given time
+    /// Evaluate integrated sweep at a given time
     #[inline]
     pub fn continuous(&self, t: f64) -> f64 {
-        let rate = self.rate();
-        self.cycles() * rate * (rate * t).exp()
+        self.cycles() * (self.rate() * t).exp()
     }
 
     /// Inverse filter
@@ -81,13 +80,13 @@ impl Sweep {
     /// * Impulse response `h(t)`
     /// * Windowing each response using `order_delay()`
     /// * Order responses `H_n(f)`
-    pub fn inverse_filter(&self, f: f64) -> Complex<f64> {
-        let rt = self.rate();
-        let fp = f / rt;
-        let r = 2.0 * rt * fp.sqrt();
-        let phi = f64::TAU() * (0.125 - fp * (1.0 + self.cycles().ln() - fp.ln()));
-        let (s, c) = phi.sin_cos();
-        Complex::new(r * c, r * s)
+    pub fn inverse_filter(&self, mut f: f64) -> Complex<f64> {
+        let r = self.rate();
+        f /= r;
+        let amp = 2.0 * r * f.sqrt();
+        let angle = f64::TAU() * (0.125 - f * (1.0 + self.cycles().ln() - f.ln()));
+        let (im, re) = angle.sin_cos();
+        Complex::new(amp * re, amp * im)
     }
 
     /// Create new sweep
@@ -189,7 +188,7 @@ mod test {
         // Check API
         assert_eq!(sweep.octave_len().round() as usize, u);
         assert_eq!(sweep.cycles().round() as u32, cycles);
-        assert_eq!(sweep.state(), sweep.continuous(0.0));
+        assert_eq!(sweep.state(), sweep.continuous(0.0) * sweep.rate());
         let f_start = f_end / (1 << octaves) as f64;
         // End in fit range
         assert!((f_start * 0.8..=f_start).contains(&sweep.state()));
@@ -207,7 +206,7 @@ mod test {
         }
         // Analytic continuous time
         for (t, p) in phase.iter().enumerate() {
-            let err = p - sweep0.continuous(t as _) / sweep0.rate();
+            let err = p - sweep0.continuous(t as _);
             assert!(isclose(err - err.round(), 0.0, 0.0, 1e-4));
         }
     }
