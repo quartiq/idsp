@@ -14,12 +14,18 @@ documentation = "https://docs.rs/idsp"
 serde = { version = "1.0", features = ["derive"], default-features = false }
 num-complex = { version = "0.4.0", features = ["serde"], default-features = false }
 num-traits = { version = "0.2.14", features = ["libm"], default-features = false}
+thiserror = { version = "2.0.9", default-features = false }
 
 [dev-dependencies]
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
 rand = "0.8"
 rustfft = "6.1.0"
 # futuredsp = "0.0.6"
 # sdr = "0.7.0"
+
+[features]
+std = []
 
 [profile.release]
 debug = 1

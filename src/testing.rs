@@ -1,5 +1,7 @@
+//! Tools to test and benchmark algorithms
 #![allow(dead_code)]
 use super::Complex;
+use num_traits::Float;
 
 /// Maximum acceptable error between a computed and actual value given fixed and relative
 /// tolerances.
@@ -13,24 +15,28 @@ use super::Complex;
 ///
 /// # Returns
 /// Maximum acceptable error.
-pub fn max_error(a: f64, b: f64, rtol: f64, atol: f64) -> f64 {
+pub fn max_error<T: Float>(a: T, b: T, rtol: T, atol: T) -> T {
     rtol * a.abs().max(b.abs()) + atol
 }
 
-pub fn isclose(a: f64, b: f64, rtol: f64, atol: f64) -> bool {
-    (a - b).abs() <= a.abs().max(b.abs()) * rtol + atol
+/// Return whether two numbers are within absolute plus relative tolerance
+pub fn isclose<T: Float>(a: T, b: T, rtol: T, atol: T) -> bool {
+    (a - b).abs() <= max_error(a, b, rtol, atol)
 }
 
-pub fn isclosef(a: f32, b: f32, rtol: f32, atol: f32) -> bool {
-    (a - b).abs() <= a.abs().max(b.abs()) * rtol + atol
+/// Return whether all values are close
+pub fn allclose<T: Float>(a: &[T], b: &[T], rtol: T, atol: T) -> bool {
+    a.iter().zip(b).all(|(a, b)| isclose(*a, *b, rtol, atol))
 }
 
-pub fn complex_isclose(a: Complex<f32>, b: Complex<f32>, rtol: f32, atol: f32) -> bool {
-    isclosef(a.re, b.re, rtol, atol) && isclosef(a.im, b.im, rtol, atol)
+/// Return whether both real and imaginary component are close
+pub fn complex_isclose<T: Float>(a: Complex<T>, b: Complex<T>, rtol: T, atol: T) -> bool {
+    isclose(a.re, b.re, rtol, atol) && isclose(a.im, b.im, rtol, atol)
 }
 
-pub fn complex_allclose(a: &[Complex<f32>], b: &[Complex<f32>], rtol: f32, atol: f32) -> bool {
+/// Return whether all complex values are close
+pub fn complex_allclose<T: Float>(a: &[Complex<T>], b: &[Complex<T>], rtol: T, atol: T) -> bool {
     a.iter()
         .zip(b)
-        .all(|(&i, &j)| complex_isclose(i, j, rtol, atol))
+        .all(|(a, b)| complex_isclose(*a, *b, rtol, atol))
 }

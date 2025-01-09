@@ -185,8 +185,8 @@ macro_rules! impl_half_i {
 }
 impl_half_i!(i8 i16 i32 i64 i128);
 
-impl<'a, T: Copy + Zero + Add + Mul<Output = T> + Sum + Half, const M: usize, const N: usize> Filter
-    for HbfDec<'a, T, M, N>
+impl<T: Copy + Zero + Add + Mul<Output = T> + Sum + Half, const M: usize, const N: usize> Filter
+    for HbfDec<'_, T, M, N>
 {
     type Item = T;
 
@@ -259,8 +259,8 @@ impl<'a, T: Copy + Zero + Add + Mul<Output = T> + Sum, const M: usize, const N: 
     }
 }
 
-impl<'a, T: Copy + Zero + Add + Mul<Output = T> + Sum, const M: usize, const N: usize> Filter
-    for HbfInt<'a, T, M, N>
+impl<T: Copy + Zero + Add + Mul<Output = T> + Sum, const M: usize, const N: usize> Filter
+    for HbfInt<'_, T, M, N>
 {
     type Item = T;
 
