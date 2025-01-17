@@ -1,11 +1,9 @@
 use core::iter::FusedIterator;
 
 use crate::{cossin::cossin, Complex};
-#[allow(unused)]
-use num_traits::real::Real as _;
-use num_traits::FloatConst as _;
+use num_traits::{real::Real, FloatConst};
 
-const Q: f64 = (1i64 << 32) as f64;
+const Q: f32 = (1i64 << 32) as f32;
 
 /// Exponential sweep
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -13,16 +11,19 @@ pub struct Sweep {
     /// Rate of exponential increase
     pub rate: i32,
     /// Current state
+    ///
+    /// Includes first order delta sigma modulator
     pub state: i64,
 }
 
+/// Post-increment
 impl Iterator for Sweep {
     type Item = i64;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let s = self.state;
-        self.state += (self.rate as i64) * ((s + (1 << 31)) >> 32);
+        self.state += self.rate as i64 * ((s + (1 << 31)) >> 32);
         Some(s)
     }
 }
@@ -37,13 +38,25 @@ impl Sweep {
     /// Continuous time exponential sweep rate
     #[inline]
     pub fn rate(&self) -> f64 {
-        (self.rate as f64 / Q).ln_1p()
+        Real::ln_1p(self.rate as f64 / Q as f64)
+    }
+
+    /// Harmonic delay/length
+    #[inline]
+    pub fn delay(&self, harmonic: f64) -> f64 {
+        Real::ln(harmonic) / self.rate()
     }
 
     /// Samples per octave
     #[inline]
-    pub fn octave_len(&self) -> f64 {
+    pub fn octave(&self) -> f64 {
         f64::LN_2() / self.rate()
+    }
+
+    /// Samples per decade
+    #[inline]
+    pub fn decade(&self) -> f64 {
+        f64::LN_10() / self.rate()
     }
 
     /// Current continuous time state
@@ -52,22 +65,16 @@ impl Sweep {
         self.cycles() * self.rate()
     }
 
-    /// Response order delay (order >= 1, )
-    #[inline]
-    pub fn order_delay(&self, order: u32) -> f64 {
-        -(order as f64).ln() / self.rate()
-    }
-
-    /// Number of cycles in the current octave
+    /// Number of cycles per harmonic
     #[inline]
     pub fn cycles(&self) -> f64 {
-        self.state as f64 / (Q * self.rate as f64)
+        self.state as f64 / (Q as f64 * self.rate as f64)
     }
 
     /// Evaluate integrated sweep at a given time
     #[inline]
     pub fn continuous(&self, t: f64) -> f64 {
-        self.cycles() * (self.rate() * t).exp()
+        self.cycles() * Real::exp(self.rate() * t)
     }
 
     /// Inverse filter
@@ -78,45 +85,34 @@ impl Sweep {
     /// * Stimulus inverse filter `X'(f)`
     /// * Transfer function `H(f) = X'(f) Y(f)'
     /// * Impulse response `h(t)`
-    /// * Windowing each response using `order_delay()`
+    /// * Windowing each response using `delay()`
     /// * Order responses `H_n(f)`
-    pub fn inverse_filter(&self, mut f: f64) -> Complex<f64> {
-        let r = self.rate();
-        f /= r;
-        let amp = 2.0 * r * f.sqrt();
-        let angle = f64::TAU() * (0.125 - f * (1.0 + self.cycles().ln() - f.ln()));
-        let (im, re) = angle.sin_cos();
+    pub fn inverse_filter(&self, mut f: f32) -> Complex<f32> {
+        let rate = Real::ln_1p(self.rate as f32 / Q);
+        f /= rate;
+        let amp = 2.0 * rate * f.sqrt();
+        let inv_cycles = Q * self.rate as f32 / self.state as f32;
+        let turns = 0.125 - f * (1.0 - Real::ln(f * inv_cycles));
+        let (im, re) = Real::sin_cos(f32::TAU() * turns);
         Complex::new(amp * re, amp * im)
     }
 
     /// Create new sweep
     ///
-    /// * f_end: maximum final frequency in units of sample rate (e.g. 0.5)
-    /// * octaves: number of octaves to sweep
-    /// * cycles: number of cycles in the first octave (>= 1)
-    pub fn fit(f_end: f64, octaves: u32, cycles: u32) -> Result<(Self, usize), SweepError> {
-        if !(0.0..=0.5).contains(&f_end) {
-            return Err(SweepError::End);
+    /// * stop: maximum stop frequency in units of sample rate (e.g. Nyquist, 0.5)
+    /// * harmonics: number of harmonics to sweep
+    /// * cycles: number of cycles (phase wraps) per harmonic (>= 1)
+    pub fn fit(stop: f32, harmonics: f32, cycles: i32) -> Result<Self, SweepError> {
+        if !(0.0..=0.5).contains(&stop) {
+            return Err(SweepError::Stop);
         }
-        let u0 = (f64::LN_2() * (cycles << octaves) as f64 / f_end).ceil() as i32;
-        // A 20% search range on u, one sided, typically yields < 1e-5 error,
-        // and a few e-5 max phase error over the entire sweep.
-        // One sided to larger u as this leads one sided lower f_end
-        // (do not wrap around Nyquist)
-        // Alternatively one could search until tolerance is reached.
-        let (u, rate, _err) = (u0..(u0 + u0 / 5))
-            .map(|u| {
-                let rate = (Q * (f64::LN_2() / u as f64).exp_m1()).round();
-                let err = u as f64 - f64::LN_2() / (rate / Q).ln_1p();
-                (u, rate as i32, err.abs())
-            })
-            .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(core::cmp::Ordering::Equal))
-            .ok_or(SweepError::Length)?;
-        let state = ((rate * cycles as i32) as i64) << 32;
-        if state == 0 {
+        // Floor to undershoot Nyquist
+        let rate = Real::floor(Q * Real::exp_m1(stop / (cycles as f32 * harmonics))) as i32;
+        let state = (rate as i64 * cycles as i64) << 32;
+        if state <= 0 {
             return Err(SweepError::Start);
         }
-        Ok((Self::new(rate, state), octaves as usize * u as usize))
+        Ok(Self::new(rate, state))
     }
 }
 
@@ -126,12 +122,9 @@ pub enum SweepError {
     /// Start out of bounds
     #[error("Start out of bounds")]
     Start,
-    /// End out of bounds
-    #[error("End out of bounds")]
-    End,
-    /// Invalid length
-    #[error("Length invalid")]
-    Length,
+    /// Stop out of bounds
+    #[error("Stop out of bounds")]
+    Stop,
 }
 
 /// Accumulating oscillator
@@ -150,6 +143,7 @@ impl<T> AccuOsc<T> {
     }
 }
 
+/// Post-increment
 impl<T: Iterator<Item = i64>> Iterator for AccuOsc<T> {
     type Item = Complex<i32>;
 
@@ -177,37 +171,41 @@ mod test {
     use crate::testing::*;
 
     #[test]
-    fn example() {
-        let f_end = 0.3;
-        let octaves = 13;
+    fn test() {
+        let stop = 0.3;
+        let harmonics = 3000.0;
         let cycles = 3;
-        let (sweep, len) = Sweep::fit(f_end, octaves, cycles).unwrap();
-        // Expected fit result
-        let u = 0xed0f;
-        assert_eq!(len, u * octaves as usize);
+        let sweep = Sweep::fit(stop, harmonics, cycles).unwrap();
+        assert_eq!(sweep.rate, 0x22f3f);
+        let len = sweep.delay(harmonics as _).floor() as _;
+        assert_eq!(len, 0x3aa40);
         // Check API
-        assert_eq!(sweep.octave_len().round() as usize, u);
-        assert_eq!(sweep.cycles().round() as u32, cycles);
+        assert_eq!(sweep.cycles().round() as i32, cycles);
         assert_eq!(sweep.state(), sweep.continuous(0.0) * sweep.rate());
-        let f_start = f_end / (1 << octaves) as f64;
-        // End in fit range
-        assert!((f_start * 0.8..=f_start).contains(&sweep.state()));
-        let sweep0 = sweep.clone();
-        let x: Vec<_> = AccuOsc::new(sweep)
-            .map(|c| Complex::new(c.re as f64 / (0.5 * Q), c.im as f64 / (0.5 * Q)))
-            .take(len)
-            .collect();
-        // Unit circle
-        assert!(x.iter().all(|c| isclose(c.norm(), 1.0, 0.0, 1e-3)));
-        let phase: Vec<_> = x.iter().map(|c| c.arg() / f64::TAU()).collect();
-        // Zero crossings
-        for p in phase.iter().step_by(u as _) {
-            assert!(isclose(*p, 0.0, 0.0, 2e-5));
+        // Start/stop as desired
+        assert!((stop * 0.99..=stop).contains(&(sweep.state() as f32 * harmonics)));
+        assert!(
+            (stop * 0.99..=stop).contains(&((sweep.continuous(len as _) * sweep.rate()) as f32))
+        );
+        // Zero crossings and wraps
+        // Note inclusion of 0
+        for h in 0..harmonics as i32 {
+            let p = sweep.continuous(sweep.delay(h as _) as _);
+            assert!(isclose(p, (h * cycles) as _, 0.0, 1e-10));
         }
-        // Analytic continuous time
-        for (t, p) in phase.iter().enumerate() {
+        let sweep0 = sweep.clone();
+        for (t, p) in sweep
+            .scan(0i64, |p, f| {
+                let p0 = *p;
+                *p = p0.wrapping_add(f);
+                Some(p0 as f64 / Q.powi(2) as f64)
+            })
+            .take(len)
+            .enumerate()
+        {
+            // Analytic continuous time
             let err = p - sweep0.continuous(t as _);
-            assert!(isclose(err - err.round(), 0.0, 0.0, 1e-4));
+            assert!(isclose(err - err.round(), 0.0, 0.0, 3e-5));
         }
     }
 }
