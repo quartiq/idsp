@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * `sweptsine`: support any number of harmonics
+* `Pid` renamed to `PidBuilder`
 
 ## [0.16.0](https://github.com/quartiq/idsp/compare/v0.15.0..v0.16.0) - 2025-01-09
 

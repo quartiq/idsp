@@ -9,7 +9,7 @@ use crate::Coefficient;
 ///
 /// ```
 /// # use idsp::iir::*;
-/// let b: Biquad<f32> = Pid::default()
+/// let b: Biquad<f32> = PidBuilder::default()
 ///     .period(1e-3)
 ///     .gain(Action::Ki, 1e-3)
 ///     .gain(Action::Kp, 1.0)
@@ -21,13 +21,13 @@ use crate::Coefficient;
 ///     .into();
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub struct Pid<T> {
+pub struct PidBuilder<T> {
     period: T,
     gains: [T; 5],
     limits: [T; 5],
 }
 
-impl<T: Float> Default for Pid<T> {
+impl<T: Float> Default for PidBuilder<T> {
     fn default() -> Self {
         Self {
             period: T::one(),
@@ -37,10 +37,10 @@ impl<T: Float> Default for Pid<T> {
     }
 }
 
-/// [`Pid::build()`] errors
+/// [`PidBuilder::build()`] errors
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
 #[non_exhaustive]
-pub enum PidError {
+pub enum PidBuilderError {
     /// The action gains cover more than three successive orders
     OrderRange,
 }
@@ -62,7 +62,7 @@ pub enum Action {
     Kdd = 4,
 }
 
-impl<T: Float> Pid<T> {
+impl<T: Float> PidBuilder<T> {
     /// Sample period
     ///
     /// # Arguments
@@ -91,7 +91,7 @@ impl<T: Float> Pid<T> {
     /// # use idsp::iir::*;
     /// let tau = 1e-3;
     /// let ki = 1e-4;
-    /// let i: Biquad<f32> = Pid::default()
+    /// let i: Biquad<f32> = PidBuilder::default()
     ///     .period(tau)
     ///     .gain(Action::Ki, ki)
     ///     .build()
@@ -112,7 +112,7 @@ impl<T: Float> Pid<T> {
 
     /// Gain limit for a given action
     ///
-    /// Gain limit units are `output/input`. See also [`Pid::gain()`].
+    /// Gain limit units are `output/input`. See also [`PidBuilder::gain()`].
     /// Multiple gains and limits may interact and lead to peaking.
     ///
     /// Note that limit signs and gain signs should match and that the
@@ -121,7 +121,7 @@ impl<T: Float> Pid<T> {
     /// ```
     /// # use idsp::iir::*;
     /// let ki_limit = 1e3;
-    /// let i: Biquad<f32> = Pid::default()
+    /// let i: Biquad<f32> = PidBuilder::default()
     ///     .gain(Action::Ki, 8.0)
     ///     .limit(Action::Ki, ki_limit)
     ///     .build()
@@ -155,13 +155,17 @@ impl<T: Float> Pid<T> {
     ///
     /// ```
     /// # use idsp::iir::*;
-    /// let i: Biquad<f32> = Pid::default().gain(Action::Kp, 3.0).build().unwrap().into();
+    /// let i: Biquad<f32> = PidBuilder::default()
+    ///     .gain(Action::Kp, 3.0)
+    ///     .build()
+    ///     .unwrap()
+    ///     .into();
     /// assert_eq!(i, Biquad::proportional(3.0));
     /// ```
     ///
     /// # Panic
     /// Will panic in debug mode on fixed point coefficient overflow.
-    pub fn build<C: Coefficient + AsPrimitive<T>>(&self) -> Result<[C; 5], PidError>
+    pub fn build<C: Coefficient + AsPrimitive<T>>(&self) -> Result<[C; 5], PidBuilderError>
     where
         T: AsPrimitive<C>,
     {
@@ -176,7 +180,7 @@ impl<T: Float> Pid<T> {
             .unwrap_or(KP);
 
         if self.gains.iter().skip(low + 3).any(|g| !g.is_zero()) {
-            return Err(PidError::OrderRange);
+            return Err(PidBuilderError::OrderRange);
         }
 
         // Scale gains, compute limits
@@ -223,7 +227,7 @@ mod test {
 
     #[test]
     fn pid() {
-        let b: Biquad<f32> = Pid::default()
+        let b: Biquad<f32> = PidBuilder::default()
             .period(1.0)
             .gain(Action::Ki, 1e-3)
             .gain(Action::Kp, 1.0)
@@ -251,7 +255,7 @@ mod test {
 
     #[test]
     fn pid_i32() {
-        let b: Biquad<i32> = Pid::default()
+        let b: Biquad<i32> = PidBuilder::default()
             .period(1.0)
             .gain(Action::Ki, 1e-5)
             .gain(Action::Kp, 1e-2)
@@ -268,7 +272,7 @@ mod test {
     fn units() {
         let ki = 5e-2;
         let tau = 3e-3;
-        let b: Biquad<f32> = Pid::default()
+        let b: Biquad<f32> = PidBuilder::default()
             .period(tau)
             .gain(Action::Ki, ki)
             .build()

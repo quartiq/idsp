@@ -49,7 +49,7 @@ use crate::Coefficient;
 ///
 /// The filter applies clamping such that `min <= y <= max`.
 ///
-/// See [`crate::iir::Filter`] and [`crate::iir::Pid`] for ways to generate coefficients.
+/// See [`crate::iir::Filter`] and [`crate::iir::PidBuilder`] for ways to generate coefficients.
 ///
 /// # Fixed point
 ///
