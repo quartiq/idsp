@@ -100,7 +100,7 @@ use crate::Coefficient;
 ///   coefficients/offset sets.
 /// * Cascading multiple IIR filters allows stable and robust
 ///   implementation of transfer functions beyond biquadratic terms.
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub struct Biquad<T> {
     ba: [T; 5],
     u: T,

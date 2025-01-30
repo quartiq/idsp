@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * `sweptsine`: support any number of harmonics
 * `Pid` renamed to `PidBuilder`
+* `Pid` added with just P,I,D gains and gain limits/setpoint/min/max
+* `BiquadRepr` enum to convert from different representations to raw biquad
 
 ## [0.16.0](https://github.com/quartiq/idsp/compare/v0.15.0..v0.16.0) - 2025-01-09
 

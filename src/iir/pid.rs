@@ -1,7 +1,8 @@
+use miniconf::{Leaf, Tree};
 use num_traits::{AsPrimitive, Float};
 use serde::{Deserialize, Serialize};
 
-use crate::Coefficient;
+use crate::{iir::Biquad, Coefficient};
 
 /// PID controller builder
 ///
@@ -165,8 +166,9 @@ impl<T: Float> PidBuilder<T> {
     ///
     /// # Panic
     /// Will panic in debug mode on fixed point coefficient overflow.
-    pub fn build<C: Coefficient + AsPrimitive<T>>(&self) -> Result<[C; 5], PidBuilderError>
+    pub fn build<C>(&self) -> Result<[C; 5], PidBuilderError>
     where
+        C: Coefficient + AsPrimitive<T>,
         T: AsPrimitive<C>,
     {
         const KP: usize = Action::Kp as usize;
@@ -218,6 +220,167 @@ impl<T: Float> PidBuilder<T> {
         }
 
         Ok([ba[0][0], ba[1][0], ba[2][0], ba[1][1], ba[2][1]])
+    }
+}
+
+/// PID Controller parameters
+#[derive(Clone, Debug, Tree)]
+pub struct Pid<T> {
+    /// Integral gain
+    ///
+    /// Units: output/input per second
+    pub ki: Leaf<T>,
+    /// Proportional gain
+    ///
+    /// Note that this is the sign reference for all gains and limits
+    ///
+    /// Units: output/input
+    pub kp: Leaf<T>,
+    /// Derivative gain
+    ///
+    /// Units: output/input*second
+    pub kd: Leaf<T>,
+    /// Integral gain limit
+    ///
+    /// Units: output/input
+    pub li: Leaf<T>,
+    /// Derivative gain limit
+    ///
+    /// Units: output/input
+    pub ld: Leaf<T>,
+    /// Setpoint
+    ///
+    /// Units: input
+    pub setpoint: Leaf<T>,
+    /// Output lower limit
+    ///
+    /// Units: output
+    pub min: Leaf<T>,
+    /// Output upper limit
+    ///
+    /// Units: output
+    pub max: Leaf<T>,
+}
+
+impl<T: Float> Default for Pid<T> {
+    fn default() -> Self {
+        Self {
+            ki: Leaf(T::zero()),
+            kp: Leaf(T::zero()), // Note positive default
+            kd: Leaf(T::zero()),
+            li: Leaf(T::infinity()),
+            ld: Leaf(T::infinity()),
+            setpoint: Leaf(T::zero()),
+            min: Leaf(T::neg_infinity()),
+            max: Leaf(T::infinity()),
+        }
+    }
+}
+
+impl<T: Float> Pid<T> {
+    /// Return the `Biquad`
+    pub fn biquad<C, I>(&self, period: T) -> Biquad<C>
+    where
+        C: Coefficient + AsPrimitive<C> + AsPrimitive<I>,
+        T: AsPrimitive<I> + AsPrimitive<C>,
+        I: Float + 'static + AsPrimitive<C>,
+    {
+        let mut biquad: Biquad<C> = PidBuilder::<I>::default()
+            .period(period.as_())
+            .gain(Action::Ki, self.ki.copysign(*self.kp).as_())
+            .gain(Action::Kp, self.kp.as_())
+            .gain(Action::Kd, self.kd.copysign(*self.kp).as_())
+            .limit(
+                Action::Ki,
+                if self.li.is_finite() {
+                    *self.li
+                } else {
+                    T::infinity()
+                }
+                .copysign(*self.kp)
+                .as_(),
+            )
+            .limit(
+                Action::Kd,
+                if self.ld.is_finite() {
+                    *self.ld
+                } else {
+                    T::infinity()
+                }
+                .copysign(*self.kp)
+                .as_(),
+            )
+            .build()
+            .unwrap()
+            .into();
+        biquad.set_input_offset((-*self.setpoint).as_());
+        biquad.set_min(
+            if self.min.is_finite() {
+                *self.min
+            } else {
+                T::neg_infinity()
+            }
+            .as_(),
+        );
+        biquad.set_max(
+            if self.max.is_finite() {
+                *self.max
+            } else {
+                T::infinity()
+            }
+            .as_(),
+        );
+        biquad
+    }
+}
+
+/// Floating point BA coefficients before quantization
+#[derive(Debug, Clone, Tree)]
+pub struct Ba<T, C> {
+    ba: Leaf<[T; 6]>,
+    u: Leaf<C>,
+    min: Leaf<C>,
+    max: Leaf<C>,
+}
+
+/// Representation of Biquad
+#[derive(Debug, Clone, Tree)]
+pub enum BiquadRepr<T, C>
+where
+    C: Coefficient,
+{
+    /// Normalized BA coefficients
+    Ba(Ba<T, C>),
+    /// Raw, possibly fixed point BA coefficients
+    Raw(Leaf<Biquad<C>>),
+    /// A PID
+    Pid(Pid<T>),
+    // Notch, Lowpass, Highpass, Shelf etc
+}
+
+impl<T, C> BiquadRepr<T, C>
+where
+    C: Coefficient + AsPrimitive<C> + AsPrimitive<T>,
+    T: AsPrimitive<C> + Float,
+{
+    /// Build a biquad
+    pub fn biquad<I>(&self, period: T) -> Biquad<C>
+    where
+        T: AsPrimitive<I>,
+        I: Float + 'static + AsPrimitive<C>,
+        C: AsPrimitive<I>,
+    {
+        match self {
+            Self::Ba(ba) => {
+                let mut b = Biquad::from(&*ba.ba);
+                b.set_u(*ba.u);
+                b.set_min(*ba.min);
+                b.set_max(*ba.max);
+                b
+            }
+            Self::Raw(Leaf(raw)) => raw.clone(),
+            Self::Pid(pid) => pid.biquad::<_, I>(period),
+        }
     }
 }
 
