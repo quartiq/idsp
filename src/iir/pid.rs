@@ -343,11 +343,26 @@ pub struct Ba<T, C> {
     max: Leaf<C>,
 }
 
+impl<T, C> Default for Ba<T, C>
+where
+    T: Float,
+    C: Coefficient,
+{
+    fn default() -> Self {
+        Self {
+            ba: Leaf([T::zero(); 6]),
+            u: Leaf(C::ZERO),
+            min: Leaf(C::MIN),
+            max: Leaf(C::MAX),
+        }
+    }
+}
+
 /// Representation of Biquad
-#[derive(Debug, Clone, Tree)]
+#[derive(Debug, Clone, Tree, strum::EnumString, strum::AsRefStr)]
 pub enum BiquadRepr<T, C>
 where
-    C: Coefficient,
+    C: Coefficient, T: Float,
 {
     /// Normalized BA coefficients
     Ba(Ba<T, C>),

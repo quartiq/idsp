@@ -12,10 +12,15 @@ documentation = "https://docs.rs/idsp"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"], default-features = false }
-num-complex = { version = "0.4.0", features = ["serde"], default-features = false }
-num-traits = { version = "0.2.14", features = ["libm"], default-features = false}
+num-complex = { version = "0.4.0", features = [
+    "serde",
+], default-features = false }
+num-traits = { version = "0.2.14", features = [
+    "libm",
+], default-features = false }
 thiserror = { version = "2.0.9", default-features = false }
 miniconf = "0.18.0"
+strum = { version = "0.26.3", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
 quickcheck = "1.0.3"
