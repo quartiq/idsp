@@ -279,7 +279,7 @@ impl<T: Float> Default for Pid<T> {
 
 impl<T: Float> Pid<T> {
     /// Return the `Biquad`
-    pub fn biquad<C, I>(&self, period: T, scale: T) -> Biquad<C>
+    pub fn build<C, I>(&self, period: T, scale: T) -> Biquad<C>
     where
         C: Coefficient + AsPrimitive<C> + AsPrimitive<I>,
         T: AsPrimitive<I> + AsPrimitive<C>,
@@ -290,47 +290,15 @@ impl<T: Float> Pid<T> {
             .gain(Action::Ki, self.ki.copysign(*self.kp).as_())
             .gain(Action::Kp, self.kp.as_())
             .gain(Action::Kd, self.kd.copysign(*self.kp).as_())
-            .limit(
-                Action::Ki,
-                if self.li.is_finite() {
-                    *self.li
-                } else {
-                    T::infinity()
-                }
-                .copysign(*self.kp)
-                .as_(),
-            )
-            .limit(
-                Action::Kd,
-                if self.ld.is_finite() {
-                    *self.ld
-                } else {
-                    T::infinity()
-                }
-                .copysign(*self.kp)
-                .as_(),
-            )
+            .limit(Action::Ki, self.li.copysign(*self.kp).as_())
+            .limit(Action::Kd, self.ld.copysign(*self.kp).as_())
             .build()
             .unwrap()
             .into();
         let s = scale.recip();
         biquad.set_input_offset((-*self.setpoint * s).as_());
-        biquad.set_min(
-            if self.min.is_finite() {
-                *self.min * s
-            } else {
-                T::neg_infinity()
-            }
-            .as_(),
-        );
-        biquad.set_max(
-            if self.max.is_finite() {
-                *self.max * s
-            } else {
-                T::infinity()
-            }
-            .as_(),
-        );
+        biquad.set_min((*self.min * s).as_());
+        biquad.set_max((*self.max * s).as_());
         biquad
     }
 }
@@ -356,8 +324,8 @@ where
         Self {
             ba: Leaf([T::zero(); 6]),
             u: Leaf(T::zero()),
-            min: Leaf(T::min_value()),
-            max: Leaf(T::max_value()),
+            min: Leaf(T::neg_infinity()),
+            max: Leaf(T::infinity()),
         }
     }
 }
@@ -369,13 +337,13 @@ where
     C: Coefficient,
     T: Float,
 {
-    /// Normalized BA coefficients
+    /// Normalized SI unit coefficients
     Ba(Ba<T>),
-    /// Raw, possibly fixed point BA coefficients
+    /// Raw, unscaled, possibly fixed point machine unit coefficients
     Raw(Leaf<Biquad<C>>),
     /// A PID
     Pid(Pid<T>),
-    // Notch, Lowpass, Highpass, Shelf etc
+    // Standard biquad filters: Notch, Lowpass, Highpass, Shelf etc
 }
 
 impl<T, C> Default for BiquadRepr<T, C>
@@ -394,7 +362,7 @@ where
     T: AsPrimitive<C> + Float,
 {
     /// Build a biquad
-    pub fn biquad<I>(&self, period: T, scale: T) -> Biquad<C>
+    pub fn build<I>(&self, period: T, scale: T) -> Biquad<C>
     where
         T: AsPrimitive<I>,
         I: Float + 'static + AsPrimitive<C>,
@@ -410,7 +378,7 @@ where
                 b
             }
             Self::Raw(Leaf(raw)) => raw.clone(),
-            Self::Pid(pid) => pid.biquad::<_, I>(period, scale),
+            Self::Pid(pid) => pid.build::<_, I>(period, scale),
         }
     }
 }
