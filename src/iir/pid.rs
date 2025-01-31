@@ -362,7 +362,8 @@ where
 #[derive(Debug, Clone, Tree, strum::EnumString, strum::AsRefStr)]
 pub enum BiquadRepr<T, C>
 where
-    C: Coefficient, T: Float,
+    C: Coefficient,
+    T: Float,
 {
     /// Normalized BA coefficients
     Ba(Ba<T, C>),
@@ -371,6 +372,16 @@ where
     /// A PID
     Pid(Pid<T>),
     // Notch, Lowpass, Highpass, Shelf etc
+}
+
+impl<T, C> Default for BiquadRepr<T, C>
+where
+    C: Coefficient,
+    T: Float,
+{
+    fn default() -> Self {
+        Self::Raw(Leaf(Biquad::default()))
+    }
 }
 
 impl<T, C> BiquadRepr<T, C>
