@@ -279,7 +279,7 @@ impl<T: Float> Default for Pid<T> {
 
 impl<T: Float> Pid<T> {
     /// Return the `Biquad`
-    pub fn biquad<C, I>(&self, period: T) -> Biquad<C>
+    pub fn biquad<C, I>(&self, period: T, scale: T) -> Biquad<C>
     where
         C: Coefficient + AsPrimitive<C> + AsPrimitive<I>,
         T: AsPrimitive<I> + AsPrimitive<C>,
@@ -313,10 +313,11 @@ impl<T: Float> Pid<T> {
             .build()
             .unwrap()
             .into();
-        biquad.set_input_offset((-*self.setpoint).as_());
+        let s = scale.recip();
+        biquad.set_input_offset((-*self.setpoint * s).as_());
         biquad.set_min(
             if self.min.is_finite() {
-                *self.min
+                *self.min * s
             } else {
                 T::neg_infinity()
             }
@@ -324,7 +325,7 @@ impl<T: Float> Pid<T> {
         );
         biquad.set_max(
             if self.max.is_finite() {
-                *self.max
+                *self.max * s
             } else {
                 T::infinity()
             }
@@ -336,24 +337,27 @@ impl<T: Float> Pid<T> {
 
 /// Floating point BA coefficients before quantization
 #[derive(Debug, Clone, Tree)]
-pub struct Ba<T, C> {
-    ba: Leaf<[T; 6]>,
-    u: Leaf<C>,
-    min: Leaf<C>,
-    max: Leaf<C>,
+pub struct Ba<T> {
+    /// Coefficient array: [b0, b1, b2, a0, a1, a2]
+    pub ba: Leaf<[T; 6]>,
+    /// Summing junction offset
+    pub u: Leaf<T>,
+    /// Output lower limit
+    pub min: Leaf<T>,
+    /// Output upper limit
+    pub max: Leaf<T>,
 }
 
-impl<T, C> Default for Ba<T, C>
+impl<T> Default for Ba<T>
 where
     T: Float,
-    C: Coefficient,
 {
     fn default() -> Self {
         Self {
             ba: Leaf([T::zero(); 6]),
-            u: Leaf(C::ZERO),
-            min: Leaf(C::MIN),
-            max: Leaf(C::MAX),
+            u: Leaf(T::zero()),
+            min: Leaf(T::min_value()),
+            max: Leaf(T::max_value()),
         }
     }
 }
@@ -366,7 +370,7 @@ where
     T: Float,
 {
     /// Normalized BA coefficients
-    Ba(Ba<T, C>),
+    Ba(Ba<T>),
     /// Raw, possibly fixed point BA coefficients
     Raw(Leaf<Biquad<C>>),
     /// A PID
@@ -380,7 +384,7 @@ where
     T: Float,
 {
     fn default() -> Self {
-        Self::Raw(Leaf(Biquad::default()))
+        Self::Ba(Default::default())
     }
 }
 
@@ -390,7 +394,7 @@ where
     T: AsPrimitive<C> + Float,
 {
     /// Build a biquad
-    pub fn biquad<I>(&self, period: T) -> Biquad<C>
+    pub fn biquad<I>(&self, period: T, scale: T) -> Biquad<C>
     where
         T: AsPrimitive<I>,
         I: Float + 'static + AsPrimitive<C>,
@@ -399,13 +403,14 @@ where
         match self {
             Self::Ba(ba) => {
                 let mut b = Biquad::from(&*ba.ba);
-                b.set_u(*ba.u);
-                b.set_min(*ba.min);
-                b.set_max(*ba.max);
+                let s = scale.recip();
+                b.set_u((*ba.u * s).as_());
+                b.set_min((*ba.min * s).as_());
+                b.set_max((*ba.max * s).as_());
                 b
             }
             Self::Raw(Leaf(raw)) => raw.clone(),
-            Self::Pid(pid) => pid.biquad::<_, I>(period),
+            Self::Pid(pid) => pid.biquad::<_, I>(period, scale),
         }
     }
 }
