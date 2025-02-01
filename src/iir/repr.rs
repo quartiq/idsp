@@ -48,7 +48,7 @@ pub enum ShapeStyle {
 
 /// Filter type
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Default, PartialEq, PartialOrd)]
-pub enum Type {
+pub enum Typ {
     /// A lowpass
     #[default]
     Lowpass,
@@ -74,7 +74,7 @@ pub enum Type {
 #[derive(Clone, Debug, Tree)]
 pub struct FilterRepr<T> {
     /// Filter style
-    r#type: Leaf<Type>,
+    typ: Leaf<Typ>,
     /// Angular critical frequency (in units of sampling frequency)
     /// Corner frequency, or 3dB cutoff frequency,
     frequency: Leaf<T>,
@@ -98,7 +98,7 @@ pub struct FilterRepr<T> {
 impl<T: Float + FloatConst> Default for FilterRepr<T> {
     fn default() -> Self {
         Self {
-            r#type: Leaf(Type::default()),
+            typ: Leaf(Typ::default()),
             frequency: Leaf(T::zero()),
             gain: Leaf(T::one()),
             shelf: Leaf(T::one()),
@@ -172,16 +172,16 @@ where
                     ShapeStyle::Bandwidth => f.bandwidth(*filter.shape),
                     ShapeStyle::Slope => f.shelf_slope(*filter.shape),
                 };
-                let mut b: Biquad<C> = (&match *filter.r#type {
-                    Type::Lowpass => f.lowpass(),
-                    Type::Highpass => f.highpass(),
-                    Type::Allpass => f.allpass(),
-                    Type::Bandpass => f.bandpass(),
-                    Type::Highshelf => f.highshelf(),
-                    Type::Lowshelf => f.lowshelf(),
-                    Type::IHo => f.iho(),
-                    Type::Notch => f.notch(),
-                    Type::Peaking => f.peaking(),
+                let mut b: Biquad<C> = (&match *filter.typ {
+                    Typ::Lowpass => f.lowpass(),
+                    Typ::Highpass => f.highpass(),
+                    Typ::Allpass => f.allpass(),
+                    Typ::Bandpass => f.bandpass(),
+                    Typ::Highshelf => f.highshelf(),
+                    Typ::Lowshelf => f.lowshelf(),
+                    Typ::IHo => f.iho(),
+                    Typ::Notch => f.notch(),
+                    Typ::Peaking => f.peaking(),
                 })
                     .into();
                 let s = scale.recip();
