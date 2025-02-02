@@ -1,8 +1,9 @@
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
+/// Transition/corner shape
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
-enum Shape<T> {
+pub enum Shape<T> {
     /// Inverse Q, sqrt(2) for critical
     InverseQ(T),
     /// Relative bandwidth in octaves
@@ -165,6 +166,12 @@ where
     /// * `s`: Shelf slope. A slope of `1.0` is maximally steep without overshoot.
     pub fn shelf_slope(&mut self, s: T) -> &mut Self {
         self.shape = Shape::Slope(s);
+        self
+    }
+
+    /// Set the shape
+    pub fn set_shape(&mut self, s: Shape<T>) -> &mut Self {
+        self.shape = s;
         self
     }
 

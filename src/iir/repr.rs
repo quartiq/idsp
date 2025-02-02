@@ -3,7 +3,7 @@ use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    iir::{Biquad, Pid},
+    iir::{Biquad, Pid, Shape},
     Coefficient,
 };
 
@@ -32,18 +32,6 @@ where
             max: Leaf(T::infinity()),
         }
     }
-}
-
-/// Corner/transition shape parametrization
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default, PartialEq, PartialOrd)]
-pub enum ShapeStyle {
-    /// Quality factor
-    #[default]
-    Q,
-    /// Relative bandwidth
-    Bandwidth,
-    /// Shelf slope. `1` is maximally sharp without overshoot.
-    Slope,
 }
 
 /// Filter type
@@ -84,9 +72,7 @@ pub struct FilterRepr<T> {
     /// Relative to passband gain
     shelf: Leaf<T>,
     /// Inverse Q/Bandwidth/Slope
-    shape: Leaf<T>,
-    /// Corner style
-    shape_style: Leaf<ShapeStyle>,
+    shape: Leaf<Shape<T>>,
     /// Summing junction offset
     offset: Leaf<T>,
     /// Lower output limit
@@ -102,8 +88,7 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
             frequency: Leaf(T::zero()),
             gain: Leaf(T::one()),
             shelf: Leaf(T::one()),
-            shape_style: Leaf(ShapeStyle::default()),
-            shape: Leaf(T::SQRT_2().recip()),
+            shape: Leaf(Shape::default()),
             offset: Leaf(T::zero()),
             min: Leaf(T::neg_infinity()),
             max: Leaf(T::infinity()),
@@ -167,11 +152,7 @@ where
                 f.gain_db(*filter.gain);
                 f.critical_frequency(*filter.frequency * period);
                 f.shelf_db(*filter.shelf);
-                match *filter.shape_style {
-                    ShapeStyle::Q => f.q(*filter.shape),
-                    ShapeStyle::Bandwidth => f.bandwidth(*filter.shape),
-                    ShapeStyle::Slope => f.shelf_slope(*filter.shape),
-                };
+                f.set_shape(*filter.shape);
                 let mut b: Biquad<C> = (&match *filter.typ {
                     Typ::Lowpass => f.lowpass(),
                     Typ::Highpass => f.highpass(),
