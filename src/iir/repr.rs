@@ -71,7 +71,7 @@ pub struct FilterRepr<T> {
     /// Shelf gain (only for peaking, lowshelf, highshelf)
     /// Relative to passband gain
     shelf: Leaf<T>,
-    /// Inverse Q/Bandwidth/Slope
+    /// Q/Bandwidth/Slope
     shape: Leaf<Shape<T>>,
     /// Summing junction offset
     offset: Leaf<T>,

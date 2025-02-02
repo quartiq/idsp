@@ -134,7 +134,7 @@ where
     C: Float + AsPrimitive<T>,
 {
     fn from(ba: &[C; 6]) -> Self {
-        let ia0 = C::one() / ba[3];
+        let ia0 = ba[3].recip();
         Self::from([
             T::quantize(ba[0] * ia0),
             T::quantize(ba[1] * ia0),
