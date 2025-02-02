@@ -1,10 +1,11 @@
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
+/// Transition/corner shape
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
-enum Shape<T> {
-    /// Inverse Q, sqrt(2) for critical
-    InverseQ(T),
+pub enum Shape<T> {
+    /// Q, 1/sqrt(2) for critical
+    Q(T),
     /// Relative bandwidth in octaves
     Bandwidth(T),
     /// Slope steepnes, 1 for critical
@@ -13,7 +14,7 @@ enum Shape<T> {
 
 impl<T: Float + FloatConst> Default for Shape<T> {
     fn default() -> Self {
-        Self::InverseQ(T::SQRT_2())
+        Self::Q(T::SQRT_2().recip())
     }
 }
 
@@ -22,22 +23,22 @@ impl<T: Float + FloatConst> Default for Shape<T> {
 /// <https://www.w3.org/TR/audio-eq-cookbook/>
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Filter<T> {
-    /// Angular critical frequency (in units of sampling frequency)
+    /// Angular critical frequency (in units of sampling angular frequency)
     /// Corner frequency, or 3dB cutoff frequency,
-    w0: T,
+    frequency: T,
     /// Passband gain
     gain: T,
     /// Shelf gain (only for peaking, lowshelf, highshelf)
     /// Relative to passband gain
     shelf: T,
-    /// Inverse Q
+    /// Transition/corner shape
     shape: Shape<T>,
 }
 
 impl<T: Float + FloatConst> Default for Filter<T> {
     fn default() -> Self {
         Self {
-            w0: T::zero(),
+            frequency: T::zero(),
             gain: T::one(),
             shape: Shape::default(),
             shelf: T::one(),
@@ -76,7 +77,7 @@ where
     /// * `w0`: Relative critical angular frequency.
     ///   Must be `0 <= w0 <= π`. Defaults to `0.0`.
     pub fn angular_critical_frequency(&mut self, w0: T) -> &mut Self {
-        self.w0 = w0;
+        self.frequency = w0;
         self
     }
 
@@ -126,8 +127,7 @@ where
     /// # Arguments
     /// * `qi`: Inverse Q parameter.
     pub fn inverse_q(&mut self, qi: T) -> &mut Self {
-        self.shape = Shape::InverseQ(qi);
-        self
+        self.q(qi.recip())
     }
 
     /// Set Q parameter of the filter
@@ -141,7 +141,8 @@ where
     /// # Arguments
     /// * `q`: Q parameter.
     pub fn q(&mut self, q: T) -> &mut Self {
-        self.inverse_q(T::one() / q)
+        self.shape = Shape::Q(q);
+        self
     }
 
     /// Set the relative bandwidth
@@ -168,12 +169,19 @@ where
         self
     }
 
+    /// Set the shape
+    pub fn set_shape(&mut self, s: Shape<T>) -> &mut Self {
+        self.shape = s;
+        self
+    }
+
     /// Get inverse Q
     fn qi(&self) -> T {
         match self.shape {
-            Shape::InverseQ(qi) => qi,
+            Shape::Q(qi) => qi.recip(),
             Shape::Bandwidth(bw) => {
-                2.0.as_() * (T::LN_2() / 2.0.as_() * bw * self.w0 / self.w0.sin()).sinh()
+                2.0.as_()
+                    * (T::LN_2() / 2.0.as_() * bw * self.frequency / self.frequency.sin()).sinh()
             }
             Shape::Slope(s) => {
                 ((self.gain + T::one() / self.gain) * (T::one() / s - T::one()) + 2.0.as_()).sqrt()
@@ -183,7 +191,7 @@ where
 
     /// Get (cos(w0), alpha=sin(w0)/(2*q))
     fn fcos_alpha(&self) -> (T, T) {
-        let (fsin, fcos) = self.w0.sin_cos();
+        let (fsin, fcos) = self.frequency.sin_cos();
         (fcos, 0.5.as_() * fsin * self.qi())
     }
 
@@ -371,7 +379,7 @@ where
     /// Notch, integrating below, flat `shelf_gain` above
     pub fn iho(&self) -> [T; 6] {
         let (fcos, alpha) = self.fcos_alpha();
-        let fsin = 0.5.as_() * self.w0.sin();
+        let fsin = 0.5.as_() * self.frequency.sin();
         let a = (T::one() + fcos) / (2.0.as_() * self.shelf);
         [
             self.gain * (T::one() + alpha),
