@@ -22,8 +22,9 @@ impl Iterator for Sweep {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
+        const BIAS: i64 = 1 << 31;
         let s = self.state;
-        self.state += self.rate as i64 * ((s + (1 << 31)) >> 32);
+        self.state += self.rate as i64 * ((s + BIAS) >> 32);
         Some(s)
     }
 }
