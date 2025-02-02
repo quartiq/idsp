@@ -168,7 +168,7 @@ where
                 let s = scale.recip();
                 b.set_u((*filter.offset * s).as_());
                 b.set_min((*filter.min * s).as_());
-                b.set_min((*filter.max * s).as_());
+                b.set_max((*filter.max * s).as_());
                 b
             }
         }
