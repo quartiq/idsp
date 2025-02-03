@@ -209,7 +209,7 @@ where
     /// let mut xy = [0; 4];
     /// let x = vec![3, -4, 5, 7, -3, 2];
     /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
-    /// assert_eq!(y, [[5, 3, 9], [25, 42, 49]]);
+    /// assert_eq!(y, [5, 3, 9, 25, 42, 49]);
     /// ```
     pub fn lowpass(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
@@ -234,7 +234,7 @@ where
     /// let mut xy = [0; 4];
     /// let x = vec![3, -4, 5, 7, -3, 2];
     /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
-    /// assert_eq!(y, [[5, -9, 11], [12, -1, 17]]);
+    /// assert_eq!(y, [5, -9, 11, 12, -1, 17]);
     /// ```
     pub fn highpass(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
