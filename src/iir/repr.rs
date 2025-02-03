@@ -10,8 +10,8 @@ use crate::{
 /// Floating point BA coefficients before quantization
 #[derive(Debug, Clone, Tree)]
 pub struct Ba<T> {
-    /// Coefficient array: [b0, b1, b2, a0, a1, a2]
-    pub ba: Leaf<[T; 6]>,
+    /// Coefficient array: [[b0, b1, b2], [a0, a1, a2]]
+    pub ba: Leaf<[[T; 3]; 2]>,
     /// Summing junction offset
     pub u: Leaf<T>,
     /// Output lower limit
@@ -26,7 +26,7 @@ where
 {
     fn default() -> Self {
         Self {
-            ba: Leaf([T::zero(); 6]),
+            ba: Leaf([[T::zero(); 3]; 2]),
             u: Leaf(T::zero()),
             min: Leaf(T::neg_infinity()),
             max: Leaf(T::infinity()),

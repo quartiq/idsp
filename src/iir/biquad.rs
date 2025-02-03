@@ -128,25 +128,25 @@ impl<T: Coefficient> From<[T; 5]> for Biquad<T> {
     }
 }
 
-impl<T, C> From<&[C; 6]> for Biquad<T>
+impl<T, C> From<&[[C; 3]; 2]> for Biquad<T>
 where
     T: Coefficient + AsPrimitive<C>,
     C: Float + AsPrimitive<T>,
 {
-    fn from(ba: &[C; 6]) -> Self {
-        let ia0 = ba[3].recip();
+    fn from(ba: &[[C; 3]; 2]) -> Self {
+        let ia0 = ba[1][0].recip();
         Self::from([
-            T::quantize(ba[0] * ia0),
-            T::quantize(ba[1] * ia0),
-            T::quantize(ba[2] * ia0),
+            T::quantize(ba[0][0] * ia0),
+            T::quantize(ba[0][1] * ia0),
+            T::quantize(ba[0][2] * ia0),
             // b[3]: a0*ia0
-            T::quantize(ba[4] * ia0),
-            T::quantize(ba[5] * ia0),
+            T::quantize(ba[1][1] * ia0),
+            T::quantize(ba[1][2] * ia0),
         ])
     }
 }
 
-impl<T, C> From<&Biquad<T>> for [C; 6]
+impl<T, C> From<&Biquad<T>> for [[C; 3]; 2]
 where
     T: Coefficient + AsPrimitive<C>,
     C: 'static + Copy,
@@ -154,12 +154,8 @@ where
     fn from(value: &Biquad<T>) -> Self {
         let ba = value.ba();
         [
-            ba[0].as_(),
-            ba[1].as_(),
-            ba[2].as_(),
-            T::ONE.as_(),
-            ba[3].as_(),
-            ba[4].as_(),
+            [ba[0].as_(), ba[1].as_(), ba[2].as_()],
+            [T::ONE.as_(), ba[3].as_(), ba[4].as_()],
         ]
     }
 }
