@@ -211,16 +211,12 @@ where
     /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
     /// assert_eq!(y, [5, 3, 9, 25, 42, 49]);
     /// ```
-    pub fn lowpass(&self) -> [T; 6] {
+    pub fn lowpass(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let b = self.gain * 0.5.as_() * (T::one() - fcos);
         [
-            b,
-            (2.0).as_() * b,
-            b,
-            T::one() + alpha,
-            (-2.0).as_() * fcos,
-            T::one() - alpha,
+            [b, (2.0).as_() * b, b],
+            [T::one() + alpha, (-2.0).as_() * fcos, T::one() - alpha],
         ]
     }
 
@@ -240,16 +236,12 @@ where
     /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
     /// assert_eq!(y, [5, -9, 11, 12, -1, 17]);
     /// ```
-    pub fn highpass(&self) -> [T; 6] {
+    pub fn highpass(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let b = self.gain * 0.5.as_() * (T::one() + fcos);
         [
-            b,
-            (-2.0).as_() * b,
-            b,
-            T::one() + alpha,
-            (-2.0).as_() * fcos,
-            T::one() - alpha,
+            [b, (-2.0).as_() * b, b],
+            [T::one() + alpha, (-2.0).as_() * fcos, T::one() - alpha],
         ]
     }
 
@@ -264,65 +256,57 @@ where
     ///     .bandpass();
     /// println!("{ba:?}");
     /// ```
-    pub fn bandpass(&self) -> [T; 6] {
+    pub fn bandpass(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let b = self.gain * alpha;
         [
-            b,
-            T::zero(),
-            -b,
-            T::one() + alpha,
-            (-2.0).as_() * fcos,
-            T::one() - alpha,
+            [b, T::zero(), -b],
+            [T::one() + alpha, (-2.0).as_() * fcos, T::one() - alpha],
         ]
     }
 
     /// A notch filter
     ///
     /// Has zero gain at the critical frequency.
-    pub fn notch(&self) -> [T; 6] {
+    pub fn notch(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let f2 = (-2.0).as_() * fcos;
         [
-            self.gain,
-            f2 * self.gain,
-            self.gain,
-            T::one() + alpha,
-            f2,
-            T::one() - alpha,
+            [self.gain, f2 * self.gain, self.gain],
+            [T::one() + alpha, f2, T::one() - alpha],
         ]
     }
 
     /// An allpass filter
     ///
     /// Has constant `gain` at all frequency but a variable phase shift.
-    pub fn allpass(&self) -> [T; 6] {
+    pub fn allpass(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let f2 = (-2.0).as_() * fcos;
         [
-            (T::one() - alpha) * self.gain,
-            f2 * self.gain,
-            (T::one() + alpha) * self.gain,
-            T::one() + alpha,
-            f2,
-            T::one() - alpha,
+            [
+                (T::one() - alpha) * self.gain,
+                f2 * self.gain,
+                (T::one() + alpha) * self.gain,
+            ],
+            [T::one() + alpha, f2, T::one() - alpha],
         ]
     }
 
     /// A peaking/dip filter
     ///
     /// Has `gain*shelf_gain` at critical frequency and `gain` elsewhere.
-    pub fn peaking(&self) -> [T; 6] {
+    pub fn peaking(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let s = self.shelf.sqrt();
         let f2 = (-2.0).as_() * fcos;
         [
-            (T::one() + alpha * s) * self.gain,
-            f2 * self.gain,
-            (T::one() - alpha * s) * self.gain,
-            T::one() + alpha / s,
-            f2,
-            T::one() - alpha / s,
+            [
+                (T::one() + alpha * s) * self.gain,
+                f2 * self.gain,
+                (T::one() - alpha * s) * self.gain,
+            ],
+            [T::one() + alpha / s, f2, T::one() - alpha / s],
         ]
     }
 
@@ -339,55 +323,63 @@ where
     ///     .lowshelf();
     /// println!("{ba:?}");
     /// ```
-    pub fn lowshelf(&self) -> [T; 6] {
+    pub fn lowshelf(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let s = self.shelf.sqrt();
         let tsa = 2.0.as_() * s.sqrt() * alpha;
         let sp1 = s + T::one();
         let sm1 = s - T::one();
         [
-            s * self.gain * (sp1 - sm1 * fcos + tsa),
-            2.0.as_() * s * self.gain * (sm1 - sp1 * fcos),
-            s * self.gain * (sp1 - sm1 * fcos - tsa),
-            sp1 + sm1 * fcos + tsa,
-            (-2.0).as_() * (sm1 + sp1 * fcos),
-            sp1 + sm1 * fcos - tsa,
+            [
+                s * self.gain * (sp1 - sm1 * fcos + tsa),
+                2.0.as_() * s * self.gain * (sm1 - sp1 * fcos),
+                s * self.gain * (sp1 - sm1 * fcos - tsa),
+            ],
+            [
+                sp1 + sm1 * fcos + tsa,
+                (-2.0).as_() * (sm1 + sp1 * fcos),
+                sp1 + sm1 * fcos - tsa,
+            ],
         ]
     }
 
     /// Low shelf
     ///
     /// Approaches `gain*shelf_gain` above critical frequency and `gain` below.
-    pub fn highshelf(&self) -> [T; 6] {
+    pub fn highshelf(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let s = self.shelf.sqrt();
         let tsa = 2.0.as_() * s.sqrt() * alpha;
         let sp1 = s + T::one();
         let sm1 = s - T::one();
         [
-            s * self.gain * (sp1 + sm1 * fcos + tsa),
-            (-2.0).as_() * s * self.gain * (sm1 + sp1 * fcos),
-            s * self.gain * (sp1 + sm1 * fcos - tsa),
-            sp1 - sm1 * fcos + tsa,
-            2.0.as_() * (sm1 - sp1 * fcos),
-            sp1 - sm1 * fcos - tsa,
+            [
+                s * self.gain * (sp1 + sm1 * fcos + tsa),
+                (-2.0).as_() * s * self.gain * (sm1 + sp1 * fcos),
+                s * self.gain * (sp1 + sm1 * fcos - tsa),
+            ],
+            [
+                sp1 - sm1 * fcos + tsa,
+                2.0.as_() * (sm1 - sp1 * fcos),
+                sp1 - sm1 * fcos - tsa,
+            ],
         ]
     }
 
     /// I/HO
     ///
     /// Notch, integrating below, flat `shelf_gain` above
-    pub fn iho(&self) -> [T; 6] {
+    pub fn iho(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let fsin = 0.5.as_() * self.frequency.sin();
         let a = (T::one() + fcos) / (2.0.as_() * self.shelf);
         [
-            self.gain * (T::one() + alpha),
-            (-2.0).as_() * self.gain * fcos,
-            self.gain * (T::one() - alpha),
-            a + fsin,
-            (-2.0).as_() * a,
-            a - fsin,
+            [
+                self.gain * (T::one() + alpha),
+                (-2.0).as_() * self.gain * fcos,
+                self.gain * (T::one() - alpha),
+            ],
+            [a + fsin, (-2.0).as_() * a, a - fsin],
         ]
     }
 }
@@ -457,8 +449,8 @@ mod test {
         }
     }
 
-    fn check_freqz(f: f64, g: Tol, ba: &[f64; 6]) {
-        let h = freqz(&ba[..3], &ba[3..], f);
+    fn check_freqz(f: f64, g: Tol, ba: &[[f64; 3]; 2]) {
+        let h = freqz(&ba[0], &ba[1], f);
         let hp = h.to_polar();
         assert!(
             g.check(h),
@@ -466,7 +458,7 @@ mod test {
         );
     }
 
-    fn check_transfer(ba: &[f64; 6], fg: &[(f64, Tol)]) {
+    fn check_transfer(ba: &[[f64; 3]; 2], fg: &[(f64, Tol)]) {
         println!("{ba:?}");
 
         for (f, g) in fg {
