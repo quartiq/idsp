@@ -26,7 +26,7 @@ where
 {
     fn default() -> Self {
         Self {
-            ba: Leaf([[T::zero(); 3]; 2]),
+            ba: Leaf([[T::zero(); 3], [T::one(), T::zero(), T::zero()]]),
             u: Leaf(T::zero()),
             min: Leaf(T::neg_infinity()),
             max: Leaf(T::infinity()),
