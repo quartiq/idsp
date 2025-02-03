@@ -279,7 +279,7 @@ impl<T: Float> Default for Pid<T> {
 
 impl<T: Float> Pid<T> {
     /// Return the `Biquad`
-    pub fn build<C, I>(&self, period: T, scale: T) -> Biquad<C>
+    pub fn build<C, I>(&self, period: T, out_scale: T) -> Biquad<C>
     where
         C: Coefficient + AsPrimitive<C> + AsPrimitive<I>,
         T: AsPrimitive<I> + AsPrimitive<C>,
@@ -295,10 +295,9 @@ impl<T: Float> Pid<T> {
             .build()
             .unwrap()
             .into();
-        let s = scale.recip();
-        biquad.set_input_offset((-*self.setpoint * s).as_());
-        biquad.set_min((*self.min * s).as_());
-        biquad.set_max((*self.max * s).as_());
+        biquad.set_input_offset((-*self.setpoint * out_scale).as_());
+        biquad.set_min((*self.min * out_scale).as_());
+        biquad.set_max((*self.max * out_scale).as_());
         biquad
     }
 }

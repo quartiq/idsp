@@ -129,7 +129,7 @@ where
     T: AsPrimitive<C> + Float + FloatConst,
 {
     /// Build a biquad
-    pub fn build<I>(&self, period: T, scale: T) -> Biquad<C>
+    pub fn build<I>(&self, period: T, out_scale: T) -> Biquad<C>
     where
         T: AsPrimitive<I>,
         I: Float + 'static + AsPrimitive<C>,
@@ -139,21 +139,20 @@ where
         match self {
             Self::Ba(ba) => {
                 let mut b = Biquad::from(&*ba.ba);
-                let s = scale.recip();
-                b.set_u((*ba.u * s).as_());
-                b.set_min((*ba.min * s).as_());
-                b.set_max((*ba.max * s).as_());
+                b.set_u((*ba.u * out_scale).as_());
+                b.set_min((*ba.min * out_scale).as_());
+                b.set_max((*ba.max * out_scale).as_());
                 b
             }
             Self::Raw(Leaf(raw)) => raw.clone(),
-            Self::Pid(pid) => pid.build::<_, I>(period, scale),
+            Self::Pid(pid) => pid.build::<_, I>(period, out_scale),
             Self::Filter(filter) => {
                 let mut f = crate::iir::Filter::default();
                 f.gain_db(*filter.gain);
                 f.critical_frequency(*filter.frequency * period);
                 f.shelf_db(*filter.shelf);
                 f.set_shape(*filter.shape);
-                let mut b: Biquad<C> = (&match *filter.typ {
+                let mut b = Biquad::from(&match *filter.typ {
                     Typ::Lowpass => f.lowpass(),
                     Typ::Highpass => f.highpass(),
                     Typ::Allpass => f.allpass(),
@@ -163,12 +162,10 @@ where
                     Typ::IHo => f.iho(),
                     Typ::Notch => f.notch(),
                     Typ::Peaking => f.peaking(),
-                })
-                    .into();
-                let s = scale.recip();
-                b.set_u((*filter.offset * s).as_());
-                b.set_min((*filter.min * s).as_());
-                b.set_max((*filter.max * s).as_());
+                });
+                b.set_u((*filter.offset * out_scale).as_());
+                b.set_min((*filter.min * out_scale).as_());
+                b.set_max((*filter.max * out_scale).as_());
                 b
             }
         }
