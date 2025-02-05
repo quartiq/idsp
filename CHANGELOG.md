@@ -9,11 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* `Filter`: use non-inverse Q
-* `Pid` renamed to `PidBuilder`
-* `PidBuilder` feedback order is not guessed but set
-* `Pid` added with miniconf support and P,I,I²,D,D² gains, limits, setpoint, min, max
-* `BiquadRepr` enum to convert from different representations to raw biquad
+* `iir::Filter`: use non-inverse Q
+* `iir::Pid` renamed to `PidBuilder`
+* `iir::PidBuilder` feedback order is not guessed but explicit
+* `iir::Pid` added with miniconf support
+* `iir::BiquadRepr` enum to convert from different representations to quantized biquad
 
 ## [0.17.0](https://github.com/quartiq/idsp/compare/v0.16.0..v0.17.0) - 2025-01-20
 
