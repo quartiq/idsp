@@ -228,6 +228,40 @@ impl<T: Float> PidBuilder<T> {
     }
 }
 
+/// Named gains
+#[derive(Clone, Debug, Tree, Default)]
+#[allow(unused)]
+pub struct Gain<T> {
+    /// Gain values
+    ///
+    /// See [`Action`] for indices.
+    #[tree(skip)]
+    pub value: [Leaf<T>; 5],
+    #[tree(defer = "self.value[Action::I2 as usize]", typ = "Leaf<T>")]
+    i2: (),
+    #[tree(defer = "self.value[Action::I as usize]", typ = "Leaf<T>")]
+    i: (),
+    #[tree(defer = "self.value[Action::P as usize]", typ = "Leaf<T>")]
+    p: (),
+    #[tree(defer = "self.value[Action::D as usize]", typ = "Leaf<T>")]
+    d: (),
+    #[tree(defer = "self.value[Action::D2 as usize]", typ = "Leaf<T>")]
+    d2: (),
+}
+
+impl<T: Float> Gain<T> {
+    fn new(value: T) -> Self {
+        Self {
+            value: [Leaf(value); 5],
+            i2: (),
+            i: (),
+            p: (),
+            d: (),
+            d2: (),
+        }
+    }
+}
+
 /// PID Controller parameters
 #[derive(Clone, Debug, Tree)]
 pub struct Pid<T: Float> {
@@ -239,7 +273,7 @@ pub struct Pid<T: Float> {
     /// * Units: output/intput * second**order where Action::I2 has order=-2
     /// * Gains outside the range `order..=order + 3` are ignored
     /// * P gain sign determines sign of all gains
-    pub gain: [Leaf<T>; 5],
+    pub gain: Gain<T>,
     /// Gain imit
     ///
     /// * Sequence: [I², I, P, D, D²]
@@ -247,7 +281,7 @@ pub struct Pid<T: Float> {
     /// * P gain limit is ignored
     /// * Limits outside the range `order..order + 3` are ignored
     /// * P gain sign determines sign of all gain limits
-    pub limit: [Leaf<T>; 5],
+    pub limit: Gain<T>,
     /// Setpoint
     ///
     /// Units: input
@@ -266,8 +300,8 @@ impl<T: Float> Default for Pid<T> {
     fn default() -> Self {
         Self {
             order: Leaf(Order::default()),
-            gain: [Leaf(T::zero()); 5],
-            limit: [Leaf(T::infinity()); 5],
+            gain: Gain::new(T::zero()),
+            limit: Gain::new(T::infinity()),
             setpoint: Leaf(T::zero()),
             min: Leaf(T::neg_infinity()),
             max: Leaf(T::infinity()),
@@ -288,12 +322,14 @@ impl<T: Float> Pid<T> {
         let mut biquad: Biquad<C> = PidBuilder::<I> {
             gain: self
                 .gain
+                .value
                 .each_ref()
-                .map(|g| g.copysign(*self.gain[Action::P as usize]).as_()),
+                .map(|g| g.copysign(*self.gain.value[Action::P as usize]).as_()),
             limit: self
                 .limit
+                .value
                 .each_ref()
-                .map(|g| g.copysign(*self.gain[Action::P as usize]).as_()),
+                .map(|g| g.copysign(*self.gain.value[Action::P as usize]).as_()),
             period: period.as_(),
             order: *self.order,
         }
