@@ -182,10 +182,10 @@ impl<T: Float> PidBuilder<T> {
         C: Coefficient + AsPrimitive<T>,
         T: AsPrimitive<C>,
     {
-        // Scale gains, compute limits
-        let mut zi = self.period.powi(-(self.order as i32));
+        // Choose relevant gains and limits and scale
+        let mut z = self.period.powi(-(self.order as i32));
         let mut gl = [[T::zero(); 2]; 3];
-        for (gli, (i, (ggi, lli))) in gl
+        for (gl, (i, (gain, limit))) in gl
             .iter_mut()
             .zip(
                 self.gain
@@ -196,14 +196,16 @@ impl<T: Float> PidBuilder<T> {
             )
             .rev()
         {
-            gli[0] = *ggi * zi;
-            gli[1] = if i == Action::P as _ {
+            gl[0] = *gain * z;
+            gl[1] = if i == Action::P as _ {
                 T::one()
             } else {
-                gli[0] / *lli
+                gl[0] / *limit
             };
-            zi = zi * self.period;
+            z = z * self.period;
         }
+
+        // Normalization
         let a0i = T::one() / (gl[0][1] + gl[1][1] + gl[2][1]);
 
         // Derivative/integration kernels
@@ -313,31 +315,28 @@ impl<T: Float> Pid<T> {
     /// Return the `Biquad`
     ///
     /// Builder intermediate type `I`, coefficient type C
-    pub fn build<C, I>(&self, period: T, out_scale: T) -> Biquad<C>
+    pub fn build<C, I>(&self, period: T, b_scale: T, y_scale: T) -> Biquad<C>
     where
         C: Coefficient + AsPrimitive<C> + AsPrimitive<I>,
         T: AsPrimitive<I> + AsPrimitive<C>,
         I: Float + 'static + AsPrimitive<C>,
     {
+        let p = *self.gain.value[Action::P as usize];
         let mut biquad: Biquad<C> = PidBuilder::<I> {
-            gain: self
-                .gain
-                .value
-                .each_ref()
-                .map(|g| g.copysign(*self.gain.value[Action::P as usize]).as_()),
-            limit: self
-                .limit
-                .value
-                .each_ref()
-                .map(|g| g.copysign(*self.gain.value[Action::P as usize]).as_()),
+            gain: self.gain.value.map(|g| (b_scale * g.copysign(p)).as_()),
+            limit: self.limit.value.map(|l| {
+                // infinite gain limit is meaningful but json can only do null/nan
+                let l = if l.is_nan() { T::infinity() } else { *l };
+                (b_scale * l.copysign(p)).as_()
+            }),
             period: period.as_(),
             order: *self.order,
         }
         .build()
         .into();
-        biquad.set_input_offset((-*self.setpoint * out_scale).as_());
-        biquad.set_min((*self.min * out_scale).as_());
-        biquad.set_max((*self.max * out_scale).as_());
+        biquad.set_input_offset((-*self.setpoint * y_scale).as_());
+        biquad.set_min((*self.min * y_scale).as_());
+        biquad.set_max((*self.max * y_scale).as_());
         biquad
     }
 }
