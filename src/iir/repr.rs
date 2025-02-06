@@ -129,7 +129,17 @@ where
     T: AsPrimitive<C> + Float + FloatConst,
 {
     /// Build a biquad
-    pub fn build<I>(&self, period: T, out_scale: T) -> Biquad<C>
+    ///
+    /// # Args:
+    /// * `period`: The sample period in desired units (e.g. SI seconds)
+    /// * `b_scale`: The feed forward (`b` coefficient) conversion scale from
+    ///   desired units to machine units.
+    ///   An identity (`gain=1`) filter a `x` input in machine units
+    ///   will lead to a `y=b_scale*x` filter output in machine units.
+    /// * `y_scale`: The y output scale from desired units to machine units.
+    ///   E.g. a `max` setting will lead to a `y=y_scale*max` upper limit
+    ///   of the filter in machine units.
+    pub fn build<I>(&self, period: T, b_scale: T, y_scale: T) -> Biquad<C>
     where
         T: AsPrimitive<I>,
         I: Float + 'static + AsPrimitive<C>,
@@ -138,21 +148,21 @@ where
     {
         match self {
             Self::Ba(ba) => {
-                let mut b = Biquad::from(&*ba.ba);
-                b.set_u((*ba.u * out_scale).as_());
-                b.set_min((*ba.min * out_scale).as_());
-                b.set_max((*ba.max * out_scale).as_());
+                let mut b = Biquad::from(&[ba.ba[0].map(|b| b * b_scale), ba.ba[1]]);
+                b.set_u((*ba.u * y_scale).as_());
+                b.set_min((*ba.min * y_scale).as_());
+                b.set_max((*ba.max * y_scale).as_());
                 b
             }
             Self::Raw(Leaf(raw)) => raw.clone(),
-            Self::Pid(pid) => pid.build::<_, I>(period, out_scale),
+            Self::Pid(pid) => pid.build::<_, I>(period, b_scale, y_scale),
             Self::Filter(filter) => {
                 let mut f = crate::iir::Filter::default();
                 f.gain_db(*filter.gain);
                 f.critical_frequency(*filter.frequency * period);
                 f.shelf_db(*filter.shelf);
                 f.set_shape(*filter.shape);
-                let mut b = Biquad::from(&match *filter.typ {
+                let mut ba = match *filter.typ {
                     Typ::Lowpass => f.lowpass(),
                     Typ::Highpass => f.highpass(),
                     Typ::Allpass => f.allpass(),
@@ -162,10 +172,12 @@ where
                     Typ::IHo => f.iho(),
                     Typ::Notch => f.notch(),
                     Typ::Peaking => f.peaking(),
-                });
-                b.set_u((*filter.offset * out_scale).as_());
-                b.set_min((*filter.min * out_scale).as_());
-                b.set_max((*filter.max * out_scale).as_());
+                };
+                ba[0] = ba[0].map(|b| b * b_scale);
+                let mut b = Biquad::from(&ba);
+                b.set_u((*filter.offset * y_scale).as_());
+                b.set_min((*filter.min * y_scale).as_());
+                b.set_max((*filter.max * y_scale).as_());
                 b
             }
         }
