@@ -319,17 +319,14 @@ impl<T: Float> Pid<T> {
         T: AsPrimitive<I> + AsPrimitive<C>,
         I: Float + 'static + AsPrimitive<C>,
     {
+        let p = *self.gain.value[Action::P as usize];
         let mut biquad: Biquad<C> = PidBuilder::<I> {
-            gain: self
-                .gain
-                .value
-                .each_ref()
-                .map(|g| g.copysign(*self.gain.value[Action::P as usize]).as_()),
-            limit: self
-                .limit
-                .value
-                .each_ref()
-                .map(|g| g.copysign(*self.gain.value[Action::P as usize]).as_()),
+            gain: self.gain.value.each_ref().map(|g| g.copysign(p).as_()),
+            limit: self.limit.value.each_ref().map(|l| {
+                // infinite gain limit is meaningful but json can only do null/nan
+                let l = if l.is_nan() { T::infinity() } else { **l };
+                l.copysign(p).as_()
+            }),
             period: period.as_(),
             order: *self.order,
         }
