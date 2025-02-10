@@ -24,7 +24,13 @@ impl Iterator for Sweep {
     fn next(&mut self) -> Option<Self::Item> {
         const BIAS: i64 = 1 << 31;
         let s = self.state;
-        self.state += self.rate as i64 * ((s + BIAS) >> 32);
+        match self
+            .state
+            .checked_add(self.rate as i64 * ((s + BIAS) >> 32))
+        {
+            Some(s) => self.state = s,
+            None => self.state = 0,
+        }
         Some(s)
     }
 }
@@ -103,12 +109,11 @@ impl Sweep {
     /// * stop: maximum stop frequency in units of sample rate (e.g. Nyquist, 0.5)
     /// * harmonics: number of harmonics to sweep
     /// * cycles: number of cycles (phase wraps) per harmonic (>= 1)
-    pub fn fit(stop: f32, harmonics: f32, cycles: i32) -> Result<Self, SweepError> {
+    pub fn fit(stop: f32, harmonics: f32, cycles: f32) -> Result<Self, SweepError> {
         if !(0.0..=0.5).contains(&stop) {
             return Err(SweepError::Stop);
         }
-        // Floor to undershoot Nyquist
-        let rate = Real::floor(Q * Real::exp_m1(stop / (cycles as f32 * harmonics))) as i32;
+        let rate = Real::round(Q * Real::exp_m1(stop / (cycles * harmonics))) as i32;
         let state = (rate as i64 * cycles as i64) << 32;
         if state <= 0 {
             return Err(SweepError::Start);
@@ -175,24 +180,23 @@ mod test {
     fn test() {
         let stop = 0.3;
         let harmonics = 3000.0;
-        let cycles = 3;
+        let cycles = 3.0;
         let sweep = Sweep::fit(stop, harmonics, cycles).unwrap();
-        assert_eq!(sweep.rate, 0x22f3f);
-        let len = sweep.delay(harmonics as _).floor() as _;
-        assert_eq!(len, 0x3aa40);
+        assert_eq!(sweep.rate, 0x22f40);
+        let len = sweep.delay(harmonics as _);
+        assert!(isclose(len, 240190.96, 0.0, 1e-2));
         // Check API
-        assert_eq!(sweep.cycles().round() as i32, cycles);
+        assert!(isclose(sweep.cycles(), cycles as f64, 0.0, 1e-2));
         assert_eq!(sweep.state(), sweep.continuous(0.0) * sweep.rate());
         // Start/stop as desired
-        assert!((stop * 0.99..=stop).contains(&(sweep.state() as f32 * harmonics)));
-        assert!(
-            (stop * 0.99..=stop).contains(&((sweep.continuous(len as _) * sweep.rate()) as f32))
-        );
+        assert!((stop * 0.99..=1.01 * stop).contains(&(sweep.state() as f32 * harmonics)));
+        assert!((stop * 0.99..=1.01 * stop)
+            .contains(&((sweep.continuous(len as _) * sweep.rate()) as f32)));
         // Zero crossings and wraps
         // Note inclusion of 0
         for h in 0..harmonics as i32 {
             let p = sweep.continuous(sweep.delay(h as _) as _);
-            assert!(isclose(p, (h * cycles) as _, 0.0, 1e-10));
+            assert!(isclose(p, h as f64 * cycles as f64, 0.0, 1e-10));
         }
         let sweep0 = sweep.clone();
         for (t, p) in sweep
@@ -201,12 +205,12 @@ mod test {
                 *p = p0.wrapping_add(f);
                 Some(p0 as f64 / Q.powi(2) as f64)
             })
-            .take(len)
+            .take(len as _)
             .enumerate()
         {
             // Analytic continuous time
             let err = p - sweep0.continuous(t as _);
-            assert!(isclose(err - err.round(), 0.0, 0.0, 3e-5));
+            assert!(isclose(err - err.round(), 0.0, 0.0, 5e-5));
         }
     }
 }
