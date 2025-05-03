@@ -35,3 +35,7 @@ std = []
 
 [profile.release]
 debug = 1
+
+[patch.crates-io]
+miniconf = { git = "https://github.com/quartiq/miniconf.git" }
+miniconf_derive = { git = "https://github.com/quartiq/miniconf.git" }
