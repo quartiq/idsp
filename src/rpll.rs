@@ -215,7 +215,7 @@ mod test {
         h.shift_frequency = 23;
         h.shift_phase = 22;
 
-        h.measure(1 << 16, [3e-9, 3e-6, 4e-4, 2e-4]);
+        h.measure(1 << 16, [3e-9, 3e-6, 5e-4, 2e-4]);
     }
 
     #[test]
@@ -254,7 +254,7 @@ mod test {
         h.shift_frequency = 10;
         h.shift_phase = 9;
 
-        h.measure(1 << 16, [5e-7, 3e-2, 2e-5, 2e-2]);
+        h.measure(1 << 16, [2e-6, 3e-2, 2e-5, 2e-2]);
     }
 
     #[test]
