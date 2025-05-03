@@ -20,12 +20,12 @@ num-traits = { version = "0.2.14", features = [
 ], default-features = false }
 thiserror = { version = "2.0.9", default-features = false }
 miniconf = "0.18.0"
-strum = { version = "0.26.3", default-features = false, features = ["derive"] }
+strum = { version = "0.27.1", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
-rand = "0.8"
+rand = "0.9.1"
 rustfft = "6.1.0"
 # futuredsp = "0.0.6"
 # sdr = "0.7.0"

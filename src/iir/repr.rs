@@ -97,7 +97,16 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
 }
 
 /// Representation of Biquad
-#[derive(Debug, Clone, Tree, strum::EnumString, strum::AsRefStr)]
+#[derive(
+    Debug,
+    Clone,
+    Tree,
+    strum::EnumString,
+    strum::AsRefStr,
+    strum::FromRepr,
+    strum::EnumDiscriminants,
+)]
+#[strum_discriminants(derive(serde::Serialize, serde::Deserialize))]
 pub enum BiquadRepr<T, C>
 where
     C: Coefficient,
@@ -111,6 +120,47 @@ where
     Pid(Pid<T>),
     /// Standard biquad filters: Notch, Lowpass, Highpass, Shelf etc
     Filter(FilterRepr<T>),
+}
+
+impl<T, C> BiquadRepr<T, C>
+where
+    C: Coefficient,
+    T: Float + FloatConst,
+{
+    /// `TreeSerialize` for the discriminant
+    ///
+    /// Use this through a leaf node:
+    ///
+    /// ```
+    /// #[tree(typ="Leaf<iir::BiquadReprDiscriminants>", rename="typ",
+    ///     with(serialize=self.repr.tag_serialize, deserialize=self.repr.tag_deserialize),
+    ///     deny(ref_any="deny", mut_any="deny"))]
+    /// _tag: (),
+    /// repr: iir::BiquadRepr<f32, f32>,
+    /// ```
+    pub fn tag_serialize<K: miniconf::Keys, S: serde::Serializer>(
+        &self,
+        keys: K,
+        ser: S,
+    ) -> Result<S::Ok, miniconf::Error<S::Error>> {
+        miniconf::TreeSerialize::serialize_by_key(
+            &Leaf(BiquadReprDiscriminants::from(self)),
+            keys,
+            ser,
+        )
+    }
+
+    /// `TreeDeserialize` for the discriminant
+    pub fn tag_deserialize<'de, K: miniconf::Keys, D: serde::Deserializer<'de>>(
+        &mut self,
+        keys: K,
+        de: D,
+    ) -> Result<(), miniconf::Error<D::Error>> {
+        let mut v = Leaf(BiquadReprDiscriminants::from(&*self));
+        miniconf::TreeDeserialize::deserialize_by_key(&mut v, keys, de)?;
+        *self = BiquadRepr::from_repr(*v as _).unwrap();
+        Ok(())
+    }
 }
 
 impl<T, C> Default for BiquadRepr<T, C>
