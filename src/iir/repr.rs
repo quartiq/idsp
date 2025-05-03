@@ -131,7 +131,7 @@ where
     ///
     /// Use this through a leaf node:
     ///
-    /// ```
+    /// ```ignore
     /// #[tree(typ="Leaf<iir::BiquadReprDiscriminants>", rename="typ",
     ///     with(serialize=self.repr.tag_serialize, deserialize=self.repr.tag_deserialize),
     ///     deny(ref_any="deny", mut_any="deny"))]
