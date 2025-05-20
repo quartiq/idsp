@@ -2,7 +2,7 @@ use miniconf::{Leaf, Tree};
 use num_traits::{AsPrimitive, Float};
 use serde::{Deserialize, Serialize};
 
-use crate::{iir::Biquad, Coefficient};
+use crate::{Coefficient, iir::Biquad};
 
 /// Feedback term order
 #[derive(Clone, Debug, Copy, Serialize, Deserialize, Default, PartialEq, PartialOrd)]

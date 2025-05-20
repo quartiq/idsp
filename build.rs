@@ -37,10 +37,62 @@ fn write_cossin_table() {
         write!(file, " {},", cos + (sin << 16)).unwrap();
     }
     writeln!(file, "\n];").unwrap();
+}
 
-    println!("cargo:rerun-if-changed=build.rs");
+fn write_cordic_tables() {
+    const DEPTH: i32 = 30;
+
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("cordic_tables.rs");
+    let mut file = File::create(dest_path).unwrap();
+
+    const Q31: f64 = (1i64 << 31) as _;
+    writeln!(
+        file,
+        "/// Gain of cordic in circular mode.\npub const CORDIC_CIRCULAR_GAIN: f64 = {};",
+        (0..DEPTH).fold(1.0, |f, i| f * (1.0 + 0.25f64.powi(i)).sqrt())
+    )
+    .unwrap();
+    writeln!(
+        file,
+        "pub(crate) const CORDIC_CIRCULAR: [i32; {DEPTH}] = {:?};",
+        (0..DEPTH)
+            .map(|i| (0.5f64.powi(i).atan() / PI * Q31).round() as i64 as _)
+            .collect::<Vec<i32>>()
+    )
+    .unwrap();
+
+    let mut f = 1.0f64;
+    let mut k = 4;
+    for i in 1..DEPTH {
+        let r = if i == k {
+            k = 3 * i + 1;
+            2
+        } else {
+            1
+        };
+        for _ in 0..r {
+            f *= (1.0 - 0.25f64.powi(i)).sqrt();
+        }
+    }
+    writeln!(
+        file,
+        "/// Gain of cordic in hyperbolic mode.\npub const CORDIC_HYPERBOLIC_GAIN: f64 = {};",
+        f
+    )
+    .unwrap();
+    writeln!(
+        file,
+        "pub(crate) const CORDIC_HYPERBOLIC: [i32; {DEPTH}] = {:?};",
+        (0..DEPTH)
+            .map(|i| (0.5f64.powi(i + 1).atanh() * Q31).round() as i64 as _)
+            .collect::<Vec<i32>>()
+    )
+    .unwrap();
 }
 
 fn main() {
     write_cossin_table();
+    write_cordic_tables();
+    println!("cargo:rerun-if-changed=build.rs");
 }

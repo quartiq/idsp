@@ -3,8 +3,8 @@ use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    iir::{Biquad, Pid, Shape},
     Coefficient,
+    iir::{Biquad, Pid, Shape},
 };
 
 /// Floating point BA coefficients before quantization

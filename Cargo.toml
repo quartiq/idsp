@@ -2,7 +2,7 @@
 name = "idsp"
 version = "0.17.0"
 resolver = "2"
-edition = "2021"
+edition = "2024"
 authors = ["Robert Jördens <rj@quartiq.de>"]
 license = "MIT OR Apache-2.0"
 description = "DSP algorithms for embedded, mostly integer math"
@@ -29,6 +29,7 @@ rand = "0.9.1"
 rustfft = "6.1.0"
 # futuredsp = "0.0.6"
 # sdr = "0.7.0"
+log = "0.4"
 
 [features]
 std = []

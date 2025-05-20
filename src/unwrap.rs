@@ -3,10 +3,10 @@ use core::{
     ops::{BitAnd, Shr},
 };
 use num_traits::{
+    Signed,
     cast::AsPrimitive,
     identities::Zero,
     ops::wrapping::{WrappingAdd, WrappingSub},
-    Signed,
 };
 use serde::{Deserialize, Serialize};
 
