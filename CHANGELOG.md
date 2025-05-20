@@ -11,9 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * `iir::Filter`: use non-inverse Q
 * `iir::Pid` renamed to `PidBuilder`
-* `iir::PidBuilder` feedback order is not guessed but explicit
 * `iir::Pid` added with miniconf support
+* `iir::PidBuilder` feedback order is not guessed but explicit
+
+### Added
+
 * `iir::BiquadRepr` enum to convert from different representations to quantized biquad
+* `cordic` `i32` reference CORDIC implementation, all modes
 
 ## [0.17.0](https://github.com/quartiq/idsp/compare/v0.16.0..v0.17.0) - 2025-01-20
 

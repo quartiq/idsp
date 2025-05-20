@@ -1,7 +1,7 @@
 use core::iter::FusedIterator;
 
-use crate::{cossin::cossin, Complex};
-use num_traits::{real::Real, FloatConst};
+use crate::{Complex, cossin::cossin};
+use num_traits::{FloatConst, real::Real};
 
 const Q: f32 = (1i64 << 32) as f32;
 
@@ -190,8 +190,10 @@ mod test {
         assert_eq!(sweep.state(), sweep.continuous(0.0) * sweep.rate());
         // Start/stop as desired
         assert!((stop * 0.99..=1.01 * stop).contains(&(sweep.state() as f32 * harmonics)));
-        assert!((stop * 0.99..=1.01 * stop)
-            .contains(&((sweep.continuous(len as _) * sweep.rate()) as f32)));
+        assert!(
+            (stop * 0.99..=1.01 * stop)
+                .contains(&((sweep.continuous(len as _) * sweep.rate()) as f32))
+        );
         // Zero crossings and wraps
         // Note inclusion of 0
         for h in 0..harmonics as i32 {

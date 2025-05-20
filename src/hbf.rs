@@ -678,7 +678,7 @@ impl Filter for HbfIntCascade {
 #[cfg(test)]
 mod test {
     use super::*;
-    use rustfft::{num_complex::Complex, FftPlanner};
+    use rustfft::{FftPlanner, num_complex::Complex};
 
     #[test]
     fn test() {

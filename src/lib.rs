@@ -36,6 +36,8 @@ mod sweptsine;
 pub use sweptsine::*;
 mod cic;
 pub use cic::*;
+mod cordic;
+pub use cordic::*;
 
 #[cfg(test)]
 pub mod testing;

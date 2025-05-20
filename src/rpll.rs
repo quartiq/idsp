@@ -140,7 +140,7 @@ mod test {
                     assert!(self.time - self.next_noisy < 1 << self.rpll.dt2);
                     self.next = self.next.wrapping_add(self.period);
                     let timestamp = self.next_noisy;
-                    let p_noise = self.rng.gen_range(-self.noise..=self.noise);
+                    let p_noise = self.rng.random_range(-self.noise..=self.noise);
                     self.next_noisy = self.next.wrapping_add(p_noise);
                     Some(timestamp)
                 } else {
