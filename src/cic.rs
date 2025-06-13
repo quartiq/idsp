@@ -5,8 +5,10 @@ use num_traits::{AsPrimitive, Num, Pow, WrappingAdd, WrappingSub};
 /// Cascaded integrator comb structure
 ///
 /// Order `N` where `N = 3` is cubic.
+/// Comb delay `M` where `M = 1` is typical.
+/// Use `rate=0` and some larger `M` to implemnent a unit-rate lowpass.
 #[derive(Clone, Debug)]
-pub struct Cic<T, const N: usize> {
+pub struct Cic<T, const N: usize, const M: usize = 1> {
     /// Rate change (fast/slow - 1)
     /// Interpolator: output/input - 1
     /// Decimator: input/output - 1
@@ -18,23 +20,26 @@ pub struct Cic<T, const N: usize> {
     /// Decimator: To support `get_decimate()`
     zoh: T,
     /// Comb/differentiator state
-    combs: [T; N],
+    combs: [[T; M]; N],
     /// Integrator state
     integrators: [T; N],
 }
 
-impl<T, const N: usize> Cic<T, N>
+impl<T, const N: usize, const M: usize> Cic<T, N, M>
 where
     T: Num + AddAssign + WrappingAdd + WrappingSub + Pow<usize, Output = T> + Copy + 'static,
     u32: AsPrimitive<T>,
+    usize: AsPrimitive<T>,
 {
+    const _M: () = assert!(M > 0, "Comb delay must be non-zero");
+
     /// Create a new zero-initialized filter with the given rate change.
     pub fn new(rate: u32) -> Self {
         Self {
             rate,
             index: 0,
             zoh: T::zero(),
-            combs: [T::zero(); N],
+            combs: [[T::zero(); M]; N],
             integrators: [T::zero(); N],
         }
     }
@@ -49,6 +54,11 @@ where
     /// etc.
     pub const fn order(&self) -> usize {
         N
+    }
+
+    /// Comb delay
+    pub const fn comb_delay(&self) -> usize {
+        M
     }
 
     /// Rate change
@@ -90,7 +100,7 @@ where
 
     /// Filter gain
     pub fn gain(&self) -> T {
-        (self.rate.as_() + T::one()).pow(N)
+        (M.as_() * (self.rate.as_() + T::one())).pow(N)
     }
 
     /// Right shift amount
@@ -98,7 +108,7 @@ where
     /// `log2(gain())` if gain is a power of two,
     /// otherwise an upper bound.
     pub const fn gain_log2(&self) -> u32 {
-        (u32::BITS - self.rate.leading_zeros()) * N as u32
+        (u32::BITS - (M as u32 * self.rate + (M - 1) as u32).leading_zeros()) * N as u32
     }
 
     /// Impulse response length
@@ -110,7 +120,7 @@ where
     pub fn settle_interpolate(&mut self, x: T) {
         self.clear();
         if let Some(c) = self.combs.first_mut() {
-            *c = x;
+            *c = [x; M];
         } else {
             self.zoh = x;
         }
@@ -137,12 +147,12 @@ where
         if let Some(x) = x {
             debug_assert_eq!(self.index, 0);
             self.index = self.rate;
-            let x = self.combs.iter_mut().fold(x, |x, c| {
-                let y = x - *c;
-                *c = x;
+            self.zoh = self.combs.iter_mut().fold(x, |x, c| {
+                let y = x - c[0];
+                c.copy_within(1.., 0);
+                c[M - 1] = x;
                 y
             });
-            self.zoh = x;
         } else {
             self.index -= 1;
         }
@@ -165,12 +175,13 @@ where
             None
         } else {
             self.index = self.rate;
-            let x = self.combs.iter_mut().fold(x, |x, c| {
-                let y = x.wrapping_sub(c);
-                *c = x;
+            self.zoh = self.combs.iter_mut().fold(x, |x, c| {
+                // Overflows expected
+                let y = x.wrapping_sub(&c[0]);
+                c.copy_within(1.., 0);
+                c[M - 1] = x;
                 y
             });
-            self.zoh = x;
             Some(self.zoh)
         }
     }
@@ -254,6 +265,25 @@ mod test {
             // if let Some(y) = dec.decimate(x as _) {
             //     assert_eq!(y, x as i64 * dec.gain());
             // }
+        }
+    }
+
+    #[quickcheck]
+    fn unit_rate(x: (i32, i32, i32, i32, i32)) {
+        let x: [i32; 5] = x.into();
+        let mut cic = Cic::<i64, 3, 3>::new(0);
+        assert!(cic.gain_log2() == 6);
+        assert!(cic.gain() == (cic.comb_delay() as i64).pow(cic.order() as _));
+        for x in x {
+            assert!(cic.tick());
+            let y = cic.decimate(x as _).unwrap();
+            println!("{x:11} {y:11}");
+        }
+        for _ in 0..100 {
+            let y = cic.decimate(0 as _).unwrap();
+            assert_eq!(y, cic.get_decimate());
+            println!("{y:11}");
+            println!("");
         }
     }
 }
