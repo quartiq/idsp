@@ -239,14 +239,19 @@ pub struct Gain<T> {
     /// See [`Action`] for indices.
     #[tree(skip)]
     pub value: [T; 5],
+    /// Double integral
     #[tree(defer = "self.value[Action::I2 as usize]", typ = "T")]
     i2: (),
+    /// Integral
     #[tree(defer = "self.value[Action::I as usize]", typ = "T")]
     i: (),
+    /// Proportional
     #[tree(defer = "self.value[Action::P as usize]", typ = "T")]
     p: (),
+    /// Derivative
     #[tree(defer = "self.value[Action::D as usize]", typ = "T")]
     d: (),
+    /// Double derivative
     #[tree(defer = "self.value[Action::D2 as usize]", typ = "T")]
     d2: (),
 }
@@ -266,6 +271,7 @@ impl<T: Float> Gain<T> {
 
 /// PID Controller parameters
 #[derive(Clone, Debug, Tree)]
+#[tree(meta(doc, typename))]
 pub struct Pid<T: Float> {
     /// Feedback term order
     #[tree(with=miniconf::leaf)]

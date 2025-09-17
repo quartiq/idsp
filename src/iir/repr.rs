@@ -9,6 +9,7 @@ use crate::{
 
 /// Floating point BA coefficients before quantization
 #[derive(Debug, Clone, Tree)]
+#[tree(meta(doc, typename))]
 pub struct Ba<T> {
     /// Coefficient array: [[b0, b1, b2q], [a0, a1, a2]]
     pub ba: Leaf<[[T; 3]; 2]>,
@@ -57,6 +58,7 @@ pub enum Typ {
 
 /// Standard biquad parametrizations
 #[derive(Clone, Debug, Tree)]
+#[tree(meta(doc, typename))]
 pub struct FilterRepr<T> {
     /// Filter style
     #[tree(with=miniconf::leaf)]
@@ -117,7 +119,8 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
     strum::EnumDiscriminants,
     strum::IntoStaticStr,
 )]
-#[strum_discriminants(derive(serde::Serialize, serde::Deserialize))]
+#[strum_discriminants(derive(serde::Serialize, serde::Deserialize), allow(missing_docs))]
+#[tree(meta(doc, typename))]
 pub enum BiquadRepr<T, C>
 where
     C: Coefficient,
@@ -162,7 +165,7 @@ where
     pub fn build<I>(&self, period: T, b_scale: T, y_scale: T) -> Biquad<C>
     where
         T: AsPrimitive<I>,
-        I: Float + 'static + AsPrimitive<C>,
+        I: Float + AsPrimitive<C>,
         C: AsPrimitive<I>,
         f32: AsPrimitive<T>,
     {
