@@ -1,4 +1,5 @@
-use miniconf::{Leaf, Tree};
+use core::any::Any;
+use miniconf::Tree;
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +13,8 @@ use crate::{
 #[tree(meta(doc, typename))]
 pub struct Ba<T> {
     /// Coefficient array: [[b0, b1, b2q], [a0, a1, a2]]
-    pub ba: Leaf<[[T; 3]; 2]>,
+    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: Deserialize<'de>", any="T: Any"))]
+    pub ba: [[T; 3]; 2],
     /// Summing junction offset
     pub u: T,
     /// Output lower limit
@@ -24,7 +26,7 @@ pub struct Ba<T> {
 impl<T: Float> Default for Ba<T> {
     fn default() -> Self {
         Self {
-            ba: Leaf([[T::zero(); 3], [T::one(), T::zero(), T::zero()]]),
+            ba: [[T::zero(); 3], [T::one(), T::zero(), T::zero()]],
             u: T::zero(),
             min: T::neg_infinity(),
             max: T::infinity(),
@@ -72,7 +74,8 @@ pub struct FilterRepr<T> {
     /// Relative to passband gain
     shelf: T,
     /// Q/Bandwidth/Slope
-    shape: Leaf<Shape<T>>,
+    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: Deserialize<'de>", any="T: Any"))]
+    shape: Shape<T>,
     /// Summing junction offset
     offset: T,
     /// Lower output limit
@@ -88,7 +91,7 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
             frequency: T::zero(),
             gain: T::one(),
             shelf: T::one(),
-            shape: Leaf(Shape::default()),
+            shape: Shape::default(),
             offset: T::zero(),
             min: T::neg_infinity(),
             max: T::infinity(),
@@ -120,7 +123,7 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
     strum::IntoStaticStr,
 )]
 #[strum_discriminants(derive(serde::Serialize, serde::Deserialize), allow(missing_docs))]
-#[tree(meta(doc, typename))]
+#[tree(meta(doc = "Representation of Biquad", typename))]
 pub enum BiquadRepr<T, C>
 where
     C: Coefficient,
@@ -129,7 +132,10 @@ where
     /// Normalized SI unit coefficients
     Ba(Ba<T>),
     /// Raw, unscaled, possibly fixed point machine unit coefficients
-    Raw(Leaf<Biquad<C>>),
+    Raw(
+        #[tree(with=miniconf::leaf, bounds(serialize="C: Serialize", deserialize="C: Deserialize<'de>", any="C: Any"))]
+         Biquad<C>,
+    ),
     /// A PID
     Pid(Pid<T>),
     /// Standard biquad filters: Notch, Lowpass, Highpass, Shelf etc
@@ -177,14 +183,14 @@ where
                 b.set_max((ba.max * y_scale).as_());
                 b
             }
-            Self::Raw(Leaf(raw)) => raw.clone(),
+            Self::Raw(raw) => raw.clone(),
             Self::Pid(pid) => pid.build::<_, I>(period, b_scale, y_scale),
             Self::Filter(filter) => {
                 let mut f = crate::iir::Filter::default();
                 f.gain_db(filter.gain);
                 f.critical_frequency(filter.frequency * period);
                 f.shelf_db(filter.shelf);
-                f.set_shape(*filter.shape);
+                f.set_shape(filter.shape);
                 let mut ba = match filter.typ {
                     Typ::Lowpass => f.lowpass(),
                     Typ::Highpass => f.highpass(),
