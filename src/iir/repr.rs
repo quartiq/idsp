@@ -12,7 +12,7 @@ use crate::{
 #[derive(Debug, Clone, Tree)]
 #[tree(meta(doc, typename))]
 pub struct Ba<T> {
-    /// Coefficient array: [[b0, b1, b2q], [a0, a1, a2]]
+    /// Coefficient array: [[b0, b1, b2], [a0, a1, a2]]
     #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: Deserialize<'de>", any="T: Any"))]
     pub ba: [[T; 3]; 2],
     /// Summing junction offset

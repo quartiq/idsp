@@ -197,7 +197,7 @@ impl<T: Float> PidBuilder<T> {
             .rev()
         {
             gl[0] = *gain * z;
-            gl[1] = if i == Action::P as _ {
+            gl[1] = if i == Action::P as usize {
                 T::one()
             } else {
                 gl[0] / *limit

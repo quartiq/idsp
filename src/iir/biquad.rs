@@ -1,3 +1,4 @@
+use miniconf::Tree;
 use num_traits::{AsPrimitive, Float};
 use serde::{Deserialize, Serialize};
 
@@ -100,11 +101,18 @@ use crate::Coefficient;
 ///   coefficients/offset sets.
 /// * Cascading multiple IIR filters allows stable and robust
 ///   implementation of transfer functions beyond biquadratic terms.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Tree)]
 pub struct Biquad<T> {
+    /// Flattened coefficients `[b0, b1, b2, a1, a2]`
+    ///
+    /// The normalization `a0` is determined by the `Coefficient` implementation of the
+    /// underlying type.
     ba: [T; 5],
+    /// Summing junction offset
     u: T,
+    /// Summing junction lower limit
     min: T,
+    /// Summing junction upper limit
     max: T,
 }
 
