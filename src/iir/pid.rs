@@ -1,4 +1,4 @@
-use miniconf::{Leaf, Tree};
+use miniconf::Tree;
 use num_traits::{AsPrimitive, Float};
 use serde::{Deserialize, Serialize};
 
@@ -94,7 +94,7 @@ impl<T: Float> PidBuilder<T> {
     /// * `input` are input (`x`) units
     /// * `time` are sample period units, e.g. SI seconds
     /// * `order` is the action order: the frequency exponent
-    ///    (`-1` for integrating, `0` for proportional, etc.)
+    ///   (`-1` for integrating, `0` for proportional, etc.)
     ///
     /// Gains are accurate in the low frequency limit. Towards Nyquist, the
     /// frequency response is warped.
@@ -197,7 +197,7 @@ impl<T: Float> PidBuilder<T> {
             .rev()
         {
             gl[0] = *gain * z;
-            gl[1] = if i == Action::P as _ {
+            gl[1] = if i == Action::P as usize {
                 T::one()
             } else {
                 gl[0] / *limit
@@ -238,23 +238,28 @@ pub struct Gain<T> {
     ///
     /// See [`Action`] for indices.
     #[tree(skip)]
-    pub value: [Leaf<T>; 5],
-    #[tree(defer = "self.value[Action::I2 as usize]", typ = "Leaf<T>")]
+    pub value: [T; 5],
+    /// Double integral
+    #[tree(defer = "self.value[Action::I2 as usize]", typ = "T")]
     i2: (),
-    #[tree(defer = "self.value[Action::I as usize]", typ = "Leaf<T>")]
+    /// Integral
+    #[tree(defer = "self.value[Action::I as usize]", typ = "T")]
     i: (),
-    #[tree(defer = "self.value[Action::P as usize]", typ = "Leaf<T>")]
+    /// Proportional
+    #[tree(defer = "self.value[Action::P as usize]", typ = "T")]
     p: (),
-    #[tree(defer = "self.value[Action::D as usize]", typ = "Leaf<T>")]
+    /// Derivative
+    #[tree(defer = "self.value[Action::D as usize]", typ = "T")]
     d: (),
-    #[tree(defer = "self.value[Action::D2 as usize]", typ = "Leaf<T>")]
+    /// Double derivative
+    #[tree(defer = "self.value[Action::D2 as usize]", typ = "T")]
     d2: (),
 }
 
 impl<T: Float> Gain<T> {
     fn new(value: T) -> Self {
         Self {
-            value: [Leaf(value); 5],
+            value: [value; 5],
             i2: (),
             i: (),
             p: (),
@@ -266,9 +271,11 @@ impl<T: Float> Gain<T> {
 
 /// PID Controller parameters
 #[derive(Clone, Debug, Tree)]
+#[tree(meta(doc, typename))]
 pub struct Pid<T: Float> {
     /// Feedback term order
-    pub order: Leaf<Order>,
+    #[tree(with=miniconf::leaf)]
+    pub order: Order,
     /// Gain
     ///
     /// * Sequence: [I², I, P, D, D²]
@@ -287,26 +294,26 @@ pub struct Pid<T: Float> {
     /// Setpoint
     ///
     /// Units: input
-    pub setpoint: Leaf<T>,
+    pub setpoint: T,
     /// Output lower limit
     ///
     /// Units: output
-    pub min: Leaf<T>,
+    pub min: T,
     /// Output upper limit
     ///
     /// Units: output
-    pub max: Leaf<T>,
+    pub max: T,
 }
 
 impl<T: Float> Default for Pid<T> {
     fn default() -> Self {
         Self {
-            order: Leaf(Order::default()),
+            order: Order::default(),
             gain: Gain::new(T::zero()),
             limit: Gain::new(T::infinity()),
-            setpoint: Leaf(T::zero()),
-            min: Leaf(T::neg_infinity()),
-            max: Leaf(T::infinity()),
+            setpoint: T::zero(),
+            min: T::neg_infinity(),
+            max: T::infinity(),
         }
     }
 }
@@ -321,22 +328,22 @@ impl<T: Float> Pid<T> {
         T: AsPrimitive<I> + AsPrimitive<C>,
         I: Float + 'static + AsPrimitive<C>,
     {
-        let p = *self.gain.value[Action::P as usize];
+        let p = self.gain.value[Action::P as usize];
         let mut biquad: Biquad<C> = PidBuilder::<I> {
             gain: self.gain.value.map(|g| (b_scale * g.copysign(p)).as_()),
             limit: self.limit.value.map(|l| {
                 // infinite gain limit is meaningful but json can only do null/nan
-                let l = if l.is_nan() { T::infinity() } else { *l };
+                let l = if l.is_nan() { T::infinity() } else { l };
                 (b_scale * l.copysign(p)).as_()
             }),
             period: period.as_(),
-            order: *self.order,
+            order: self.order,
         }
         .build()
         .into();
-        biquad.set_input_offset((-*self.setpoint * y_scale).as_());
-        biquad.set_min((*self.min * y_scale).as_());
-        biquad.set_max((*self.max * y_scale).as_());
+        biquad.set_input_offset((-self.setpoint * y_scale).as_());
+        biquad.set_min((self.min * y_scale).as_());
+        biquad.set_max((self.max * y_scale).as_());
         biquad
     }
 }
