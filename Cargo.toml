@@ -19,7 +19,7 @@ num-traits = { version = "0.2.14", features = [
     "libm",
 ], default-features = false }
 thiserror = { version = "2.0.9", default-features = false }
-miniconf = "0.19.0"
+miniconf = "0.20.0"
 strum = { version = "0.27.1", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
@@ -36,9 +36,3 @@ std = []
 
 [profile.release]
 debug = 1
-
-[patch.crates-io]
-miniconf = { git = "https://github.com/quartiq/miniconf.git" }
-miniconf_derive = { git = "https://github.com/quartiq/miniconf.git" }
-#miniconf = { path = "../miniconf/miniconf" }
-#miniconf_derive = { path = "../miniconf/miniconf_derive" }
