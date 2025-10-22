@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * `cic`: added configurable comb delay to support unit-rate lowpasses
+* `miniconf`: 0.20
 
 ## [0.18.0](https://github.com/quartiq/idsp/compare/v0.17.0..v0.18.0) - 2025-05-20
 
