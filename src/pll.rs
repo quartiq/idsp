@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 /// increase resolution for extremely narrowband applications is obvious.
 ///
 /// This PLL implements first order noise shaping to reduce quantization errors.
-#[derive(Copy, Clone, Default, Deserialize, Serialize)]
+#[derive(Copy, Debug, Clone, Default, Deserialize, Serialize)]
 pub struct PLL {
     // last input phase
     x: i32,
