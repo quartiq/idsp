@@ -3,7 +3,7 @@ use core::{
     ops::{BitAnd, Shr},
 };
 use num_traits::{
-    Signed,
+    Bounded, Signed,
     cast::AsPrimitive,
     identities::Zero,
     ops::wrapping::{WrappingAdd, WrappingSub},
@@ -104,6 +104,40 @@ where
     /// Current output including wraps
     pub fn y(&self) -> Q {
         self.y
+    }
+}
+
+/// Maps wraps to saturation
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Clamp<Q> {
+    /// Last input value
+    pub x0: Q,
+    /// Wrap indicator, -1, 0, 1
+    pub wrap: i32,
+}
+
+impl<Q> Clamp<Q>
+where
+    Q: 'static + Zero + PartialOrd + WrappingSub + Copy + Bounded,
+{
+    /// Update the clamp with a new input
+    pub fn update(&mut self, x: Q) -> Q {
+        let (_dx, wrap) = overflowing_sub(x, self.x0);
+        self.x0 = x;
+        match self.wrap + wrap {
+            i if i > 0 => {
+                self.wrap = 1;
+                Q::max_value()
+            }
+            i if i < 0 => {
+                self.wrap = -1;
+                Q::min_value()
+            }
+            _ => {
+                self.wrap = 0;
+                x
+            }
+        }
     }
 }
 
