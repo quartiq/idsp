@@ -171,11 +171,11 @@ where
 {
     /// Update the clamp with a new input
     ///
-    /// IF (positive wrap, with a pending negative clamp,
-    /// OR negative wrap with a pending positive clamp,
-    /// OR no wrap with no pending clamp): output the input.
-    /// ELSE IF negative wrap: output minimum,
-    /// ELSE IF positive wrap: output maximum.
+    /// IF (positive wrap and negative clamp,
+    /// OR negative wrap and positive clamp,
+    /// OR no wrap and no clamp): output the input.
+    /// ELSE IF negative wrap: clamp minimum,
+    /// ELSE IF positive wrap: clamp maximum.
     pub fn update(&mut self, x: Q) -> Q {
         let (_dx, wrap) = overflowing_sub(x, self.x0);
         self.x0 = x;
