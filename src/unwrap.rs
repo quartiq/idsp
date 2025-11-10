@@ -179,11 +179,19 @@ where
     pub fn update(&mut self, x: Q) -> Q {
         let (_dx, wrap) = overflowing_sub(x, self.x0);
         self.x0 = x;
-        self.clamp = self.clamp + wrap;
-        match self.clamp {
-            Wrap::Negative => Q::min_value(),
-            Wrap::Positive => Q::max_value(),
-            Wrap::None => x,
+        match self.clamp as i32 + wrap as i32 {
+            ..0 => {
+                self.clamp = Wrap::Negative;
+                Q::min_value()
+            }
+            1.. => {
+                self.clamp = Wrap::Positive;
+                Q::max_value()
+            }
+            0 => {
+                self.clamp = Wrap::None;
+                x
+            }
         }
     }
 }
