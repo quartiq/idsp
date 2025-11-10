@@ -1,5 +1,5 @@
 use core::{
-    cmp::PartialOrd,
+    cmp::{Ordering, PartialOrd},
     ops::{BitAnd, Shr},
 };
 use num_traits::{
@@ -20,12 +20,12 @@ use serde::{Deserialize, Serialize};
 /// A tuple containg the (wrapped) difference `y - x` and the signum of the
 /// overflow.
 #[inline(always)]
-pub fn overflowing_sub<T>(y: T, x: T) -> (T, i32)
+pub fn overflowing_sub<T>(y: T, x: T) -> (T, Wrap)
 where
     T: WrappingSub + Zero + PartialOrd,
 {
     let delta = y.wrapping_sub(&x);
-    let wrap = (delta >= T::zero()) as i32 - (y >= x) as i32;
+    let wrap = (delta >= T::zero()).cmp(&(y >= x)).into();
     (delta, wrap)
 }
 
@@ -107,13 +107,62 @@ where
     }
 }
 
+/// Wrap classification
+#[repr(i8)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+pub enum Wrap {
+    /// A wrap occured in the negative direction
+    Negative = -1,
+    /// No wrap, the wrapped difference between successive values
+    /// has the same sign as their comparison
+    #[default]
+    None = 0,
+    /// A wrap occurred in the positive direction
+    Positive = 1,
+}
+
+impl From<Wrap> for Ordering {
+    fn from(value: Wrap) -> Self {
+        match value {
+            Wrap::Negative => Self::Less,
+            Wrap::None => Self::Equal,
+            Wrap::Positive => Self::Greater,
+        }
+    }
+}
+
+impl From<Ordering> for Wrap {
+    fn from(value: Ordering) -> Self {
+        match value {
+            Ordering::Less => Self::Negative,
+            Ordering::Equal => Self::None,
+            Ordering::Greater => Self::Positive,
+        }
+    }
+}
+
+impl core::ops::Add for Wrap {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match self as i32 + rhs as i32 {
+            ..0 => Self::Negative,
+            0 => Self::None,
+            1.. => Self::Positive,
+        }
+    }
+}
+
 /// Maps wraps to saturation
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+///
+/// Clamps output to the value range on wraps and only un-clamps on
+/// (one corresponding) un-wrap.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Clamp<Q> {
     /// Last input value
     pub x0: Q,
-    /// Wrap indicator, -1, 0, 1
-    pub wrap: i32,
+    /// Clamp indicator
+    pub clamp: Wrap,
 }
 
 impl<Q> Clamp<Q>
@@ -121,22 +170,20 @@ where
     Q: 'static + Zero + PartialOrd + WrappingSub + Copy + Bounded,
 {
     /// Update the clamp with a new input
+    ///
+    /// IF (positive wrap, with a pending negative clamp,
+    /// OR negative wrap with a pending positive clamp,
+    /// OR no wrap with no pending clamp): output the input.
+    /// ELSE IF negative wrap: output minimum,
+    /// ELSE IF positive wrap: output maximum.
     pub fn update(&mut self, x: Q) -> Q {
         let (_dx, wrap) = overflowing_sub(x, self.x0);
         self.x0 = x;
-        match self.wrap + wrap {
-            i if i > 0 => {
-                self.wrap = 1;
-                Q::max_value()
-            }
-            i if i < 0 => {
-                self.wrap = -1;
-                Q::min_value()
-            }
-            _ => {
-                self.wrap = 0;
-                x
-            }
+        self.clamp = self.clamp + wrap;
+        match self.clamp {
+            Wrap::Negative => Q::min_value(),
+            Wrap::Positive => Q::max_value(),
+            Wrap::None => x,
         }
     }
 }
