@@ -109,7 +109,7 @@ where
 
 /// Wrap classification
 #[repr(i8)]
-#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Wrap {
     /// A wrap occured in the negative direction
     Negative = -1,
