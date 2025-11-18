@@ -8,3 +8,5 @@ mod pid;
 pub use pid::*;
 mod repr;
 pub use repr::*;
+mod sos;
+pub use sos::*;
