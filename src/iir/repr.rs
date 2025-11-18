@@ -64,24 +64,24 @@ pub enum Typ {
 pub struct FilterRepr<T> {
     /// Filter style
     #[tree(with=miniconf::leaf)]
-    typ: Typ,
+    pub typ: Typ,
     /// Angular critical frequency (in units of sampling frequency)
     /// Corner frequency, or 3dB cutoff frequency,
-    frequency: T,
+    pub frequency: T,
     /// Passband gain
-    gain: T,
+    pub gain: T,
     /// Shelf gain (only for peaking, lowshelf, highshelf)
     /// Relative to passband gain
-    shelf: T,
+    pub shelf: T,
     /// Q/Bandwidth/Slope
     #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: Deserialize<'de>", any="T: Any"))]
-    shape: Shape<T>,
+    pub shape: Shape<T>,
     /// Summing junction offset
-    offset: T,
+    pub offset: T,
     /// Lower output limit
-    min: T,
+    pub min: T,
     /// Upper output limit
-    max: T,
+    pub max: T,
 }
 
 impl<T: Float + FloatConst> Default for FilterRepr<T> {
