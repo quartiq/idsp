@@ -2,21 +2,21 @@ use num_traits::Float as _;
 
 /// Processing block
 /// Single input, single output, one value
-pub trait Process<State> {
+pub trait Process {
     /// Update the state with a new sample and obtain an output sample
-    fn process(&self, state: &mut State, x: i32) -> i32;
+    fn process(&mut self, x: i32) -> i32;
 
     /// Process a block of samples
-    fn process_block(&self, state: &mut State, x: &[i32], y: &mut [i32]) {
+    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
         for (x, y) in x.iter().zip(y) {
-            *y = self.process(state, *x);
+            *y = self.process(*x);
         }
     }
 
     /// Process a block of samples inplace
-    fn process_in_place(&self, state: &mut State, xy: &mut [i32]) {
+    fn process_in_place(&mut self, xy: &mut [i32]) {
         for xy in xy {
-            *xy = self.process(state, *xy);
+            *xy = self.process(*xy);
         }
     }
 }
@@ -25,29 +25,26 @@ pub trait Process<State> {
 #[derive(Clone, Debug, Default)]
 #[repr(transparent)]
 pub struct Cascade<T>(pub T);
-impl<T, const N: usize> Process<[State; N]> for Cascade<[T; N]>
+impl<T, const N: usize> Process for Cascade<[T; N]>
 where
-    T: Process<State>,
+    T: Process,
 {
-    fn process(&self, state: &mut [State; N], x: i32) -> i32 {
-        self.0
-            .iter()
-            .zip(state)
-            .fold(x, |x, (filter, state)| filter.process(state, x))
+    fn process(&mut self, x: i32) -> i32 {
+        self.0.iter_mut().fold(x, |x, filter| filter.process(x))
     }
 
-    fn process_block(&self, state: &mut [State; N], x: &[i32], y: &mut [i32]) {
-        if let Some((filter, state)) = self.0.first().zip(state.first_mut()) {
-            filter.process_block(state, x, y);
+    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
+        if let Some(filter) = self.0.first_mut() {
+            filter.process_block(x, y);
         }
-        for (filter, state) in self.0.iter().zip(state).skip(1) {
-            filter.process_in_place(state, y);
+        for filter in self.0.iter_mut().skip(1) {
+            filter.process_in_place(y);
         }
     }
 
-    fn process_in_place(&self, state: &mut [State; N], xy: &mut [i32]) {
-        for (filter, state) in self.0.iter().zip(state) {
-            filter.process_in_place(state, xy);
+    fn process_in_place(&mut self, xy: &mut [i32]) {
+        for filter in self.0.iter_mut() {
+            filter.process_in_place(xy);
         }
     }
 }
@@ -147,10 +144,13 @@ pub struct StateDither {
     pub e: u32,
 }
 
-impl<const Q: u8> Process<State> for Sos<Q> {
-    fn process(&self, state: &mut State, x0: i32) -> i32 {
-        let xy = &mut state.xy;
-        let ba = &self.ba;
+/// A stateful processor
+pub struct Stateful<F, S>(pub F, pub S);
+
+impl<const Q: u8> Process for Stateful<&Sos<Q>, &mut State> {
+    fn process(&mut self, x0: i32) -> i32 {
+        let xy = &mut self.1.xy;
+        let ba = &self.0.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
@@ -163,31 +163,32 @@ impl<const Q: u8> Process<State> for Sos<Q> {
     }
 }
 
-impl<const Q: u8> Process<State> for SosClamp<Q> {
-    fn process(&self, state: &mut State, x0: i32) -> i32 {
-        let xy = &mut state.xy;
-        let ba = &self.ba;
+impl<const Q: u8> Process for Stateful<&SosClamp<Q>, &mut State> {
+    fn process(&mut self, x0: i32) -> i32 {
+        let xy = &mut self.1.xy;
+        let ba = &self.0.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
         acc += xy[3] as i64 * ba[4] as i64;
-        let mut y0 = (acc >> Q) as i32 + self.u;
-        if y0 < self.min {
-            y0 = self.min;
-        } else if y0 > self.max {
-            y0 = self.max;
+        let mut y0 = (acc >> Q) as i32 + self.0.u;
+        if y0 < self.0.min {
+            y0 = self.0.min;
+        } else if y0 > self.0.max {
+            y0 = self.0.max;
         }
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
-impl<const Q: u8> Process<StateWide> for Sos<Q> {
-    fn process(&self, state: &mut StateWide, x0: i32) -> i32 {
-        let StateWide { x, y } = state;
-        let ba = &self.ba;
+impl<const Q: u8> Process for Stateful<&Sos<Q>, &mut StateWide> {
+    fn process(&mut self, x0: i32) -> i32 {
+        let x = &mut self.1.x;
+        let y = &mut self.1.y;
+        let ba = &self.0.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0] as i64;
         acc += x[0] as i64 * ba[1] as i64;
@@ -203,10 +204,11 @@ impl<const Q: u8> Process<StateWide> for Sos<Q> {
     }
 }
 
-impl<const Q: u8> Process<StateWide> for SosClamp<Q> {
-    fn process(&self, state: &mut StateWide, x0: i32) -> i32 {
-        let StateWide { x, y } = state;
-        let ba = &self.ba;
+impl<const Q: u8> Process for Stateful<&SosClamp<Q>, &mut StateWide> {
+    fn process(&mut self, x0: i32) -> i32 {
+        let x = &mut self.1.x;
+        let y = &mut self.1.y;
+        let ba = &self.0.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0] as i64;
         acc += x[0] as i64 * ba[1] as i64;
@@ -217,21 +219,22 @@ impl<const Q: u8> Process<StateWide> for SosClamp<Q> {
         acc += (y[1] as u32 as i64 * ba[4] as i64) >> 32;
         acc += (y[1] >> 32) * ba[4] as i64;
         acc <<= 32 - Q;
-        let mut y0 = (acc >> 32) as i32 + self.u;
-        if y0 < self.min {
-            y0 = self.min;
-        } else if y0 > self.max {
-            y0 = self.max;
+        let mut y0 = (acc >> 32) as i32 + self.0.u;
+        if y0 < self.0.min {
+            y0 = self.0.min;
+        } else if y0 > self.0.max {
+            y0 = self.0.max;
         }
         *y = [((y0 as i64) << 32) | acc as u32 as i64, y[0]];
         y0
     }
 }
 
-impl<const Q: u8> Process<StateDither> for Sos<Q> {
-    fn process(&self, state: &mut StateDither, x0: i32) -> i32 {
-        let StateDither { xy, e } = state;
-        let ba = &self.ba;
+impl<const Q: u8> Process for Stateful<&Sos<Q>, &mut StateDither> {
+    fn process(&mut self, x0: i32) -> i32 {
+        let xy = &mut self.1.xy;
+        let e = &mut self.1.e;
+        let ba = &self.0.ba;
         let mut acc = *e as i64;
         acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
@@ -246,10 +249,11 @@ impl<const Q: u8> Process<StateDither> for Sos<Q> {
     }
 }
 
-impl<const Q: u8> Process<StateDither> for SosClamp<Q> {
-    fn process(&self, state: &mut StateDither, x0: i32) -> i32 {
-        let StateDither { xy, e } = state;
-        let ba = &self.ba;
+impl<const Q: u8> Process for Stateful<&SosClamp<Q>, &mut StateDither> {
+    fn process(&mut self, x0: i32) -> i32 {
+        let xy = &mut self.1.xy;
+        let e = &mut self.1.e;
+        let ba = &self.0.ba;
         let mut acc = *e as i64;
         acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
@@ -258,24 +262,16 @@ impl<const Q: u8> Process<StateDither> for SosClamp<Q> {
         acc += xy[3] as i64 * ba[4] as i64;
         acc <<= 32 - Q;
         *e = acc as _;
-        let mut y0 = (acc >> 32) as i32 + self.u;
-        if y0 < self.min {
-            y0 = self.min;
-        } else if y0 > self.max {
-            y0 = self.max;
+        let mut y0 = (acc >> 32) as i32 + self.0.u;
+        if y0 < self.0.min {
+            y0 = self.0.min;
+        } else if y0 > self.0.max {
+            y0 = self.0.max;
         }
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
 }
-
-// pub fn pnmr(biquad: &mut [(SosR<29>, StateR); 4], xy0: &mut [i32; 8]) {
-//     for (biquad, state) in biquad.iter_mut() {
-//         for xy0 in xy0.iter_mut() {
-//             *xy0 = biquad.process(state, *xy0);
-//         }
-//     }
-// }
 
 // No manual tuning needed here.
 // Compiler knows best how and when:
@@ -287,14 +283,16 @@ impl<const Q: u8> Process<StateDither> for SosClamp<Q> {
 
 // cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
 
-//pub fn pnm(biquad: &[Sos<29>; 4], state: &mut [State; 4], xy0: &mut [i32; 8]) {
-//    for (biquad, state) in biquad.iter().zip(state) {
-// pub fn pnm(biquad: &mut [(Sos<29>, State); 4], xy0: &mut [i32; 8]) {
-//     for (biquad, state) in biquad.iter_mut() {
-//         for xy0 in xy0.iter_mut() {
-//             *xy0 = biquad.process(state, *xy0);
-//         }
+// pub fn pnm(biquad: &[Sos<29>; 4], state: &mut [State; 4], xy0: &mut [i32; 8]) {
+//     for p in biquad.iter().zip(state) {
+//         Processor(p.0, p.1).process_in_place(xy0);
 //     }
+//     // pub fn pnm(biquad: &mut [(Sos<29>, State); 4], xy0: &mut [i32; 8]) {
+//     //     for (biquad, state) in biquad.iter_mut() {
+//     //     for xy0 in xy0.iter_mut() {
+//     //         *xy0 = biquad.process(state, *xy0);
+//     //     }
+//     // }
 // }
 
 fn quantize(ba: &[[f64; 3]; 2], q: u8) -> [[i32; 3]; 2] {
