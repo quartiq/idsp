@@ -1,3 +1,4 @@
+use miniconf::Tree;
 use num_traits::Float as _;
 
 /// Processing block
@@ -52,7 +53,7 @@ where
 }
 
 /// Second-order-section
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Tree)]
 pub struct Sos<const Q: u8> {
     /// Coefficients
     ///
@@ -62,11 +63,12 @@ pub struct Sos<const Q: u8> {
     ///
     /// Note the a1, a2 sign:
     /// `H = (b0 + b1*z^-1 + b2*z^-2)/((1 << Q) - a2*z^-1 - a2*z^-2)`
+    #[tree(with=miniconf::leaf)]
     pub ba: [i32; 5],
 }
 
 /// Second-order-section with offset and clamp
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Tree)]
 pub struct SosClamp<const Q: u8> {
     /// Coefficients
     ///
@@ -76,6 +78,7 @@ pub struct SosClamp<const Q: u8> {
     ///
     /// Note the a1, a2 sign:
     /// `H = (b0 + b1*z^-1 + b2*z^-2)/((1 << Q) - a2*z^-1 - a2*z^-2)`
+    #[tree(with=miniconf::leaf)]
     pub ba: [i32; 5],
     /// Summing junction offset
     pub u: i32,
@@ -114,7 +117,7 @@ impl<const Q: u8> SosClamp<Q> {
 }
 
 /// SOS state
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Tree)]
 pub struct State {
     /// X,Y state
     ///
@@ -123,7 +126,7 @@ pub struct State {
 }
 
 /// SOS state with wide Y
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Tree)]
 pub struct StateWide {
     /// X state
     ///
@@ -136,7 +139,7 @@ pub struct StateWide {
 }
 
 /// SOS state with first order error feedback
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Tree)]
 pub struct StateDither {
     /// X,Y state
     ///
