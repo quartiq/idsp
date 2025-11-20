@@ -1,3 +1,4 @@
+use miniconf::Tree;
 use num_traits::Float as _;
 
 use super::{Process, State, StatefulRef};
@@ -12,7 +13,8 @@ use super::{Process, State, StatefulRef};
 ///
 /// The `y0`/`y1` fields of [`State`] hold the in-phase and quadrature
 /// components of the current output.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Tree)]
+#[tree(meta(doc, typename))]
 pub struct Normal<const Q: u8> {
     /// Feed forward coefficients
     pub b: [i32; 3],

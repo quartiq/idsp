@@ -25,7 +25,8 @@ pub trait Process {
 }
 
 /// A cascade of several filter blocks of the same type
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Tree)]
+#[tree(meta(doc, typename))]
 #[repr(transparent)]
 pub struct Cascade<T>(pub T);
 impl<T, const N: usize> Process for Cascade<[T; N]>
@@ -54,6 +55,7 @@ where
 
 /// Second-order-section
 #[derive(Clone, Debug, Default, Tree)]
+#[tree(meta(doc, typename))]
 pub struct Sos<const Q: u8> {
     /// Coefficients
     ///
@@ -69,6 +71,7 @@ pub struct Sos<const Q: u8> {
 
 /// Second-order-section with offset and clamp
 #[derive(Clone, Debug, Tree)]
+#[tree(meta(doc, typename))]
 pub struct SosClamp<const Q: u8> {
     /// Coefficients
     ///
@@ -117,7 +120,7 @@ impl<const Q: u8> SosClamp<Q> {
 }
 
 /// SOS state
-#[derive(Clone, Debug, Default, Tree)]
+#[derive(Clone, Debug, Default)]
 pub struct State {
     /// X,Y state
     ///
@@ -126,7 +129,7 @@ pub struct State {
 }
 
 /// SOS state with wide Y
-#[derive(Clone, Debug, Default, Tree)]
+#[derive(Clone, Debug, Default)]
 pub struct StateWide {
     /// X state
     ///
@@ -139,7 +142,7 @@ pub struct StateWide {
 }
 
 /// SOS state with first order error feedback
-#[derive(Clone, Debug, Default, Tree)]
+#[derive(Clone, Debug, Default)]
 pub struct StateDither {
     /// X,Y state
     ///
