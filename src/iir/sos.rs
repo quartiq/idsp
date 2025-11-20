@@ -7,6 +7,7 @@ pub trait Process {
     fn process(&mut self, x: i32) -> i32;
 
     /// Process a block of samples
+    #[inline]
     fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
         for (x, y) in x.iter().zip(y) {
             *y = self.process(*x);
@@ -14,6 +15,7 @@ pub trait Process {
     }
 
     /// Process a block of samples inplace
+    #[inline]
     fn process_in_place(&mut self, xy: &mut [i32]) {
         for xy in xy {
             *xy = self.process(*xy);
@@ -145,9 +147,34 @@ pub struct StateDither {
 }
 
 /// A stateful processor
+#[derive(Debug, Clone, Default)]
 pub struct Stateful<F, S>(pub F, pub S);
 
-impl<const Q: u8> Process for Stateful<&Sos<Q>, &mut State> {
+/// Stateful processor by reference
+#[derive(Debug)]
+pub struct StatefulRef<'a, F, S>(pub &'a F, pub &'a mut S);
+
+impl<F, S> Process for Stateful<F, S>
+where
+    for<'a> StatefulRef<'a, F, S>: Process,
+{
+    #[inline]
+    fn process(&mut self, x: i32) -> i32 {
+        StatefulRef(&self.0, &mut self.1).process(x)
+    }
+
+    #[inline]
+    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
+        StatefulRef(&self.0, &mut self.1).process_block(x, y)
+    }
+
+    #[inline]
+    fn process_in_place(&mut self, xy: &mut [i32]) {
+        StatefulRef(&self.0, &mut self.1).process_in_place(xy)
+    }
+}
+
+impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, State> {
     fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.1.xy;
         let ba = &self.0.ba;
@@ -163,7 +190,7 @@ impl<const Q: u8> Process for Stateful<&Sos<Q>, &mut State> {
     }
 }
 
-impl<const Q: u8> Process for Stateful<&SosClamp<Q>, &mut State> {
+impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, State> {
     fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.1.xy;
         let ba = &self.0.ba;
@@ -184,7 +211,7 @@ impl<const Q: u8> Process for Stateful<&SosClamp<Q>, &mut State> {
     }
 }
 
-impl<const Q: u8> Process for Stateful<&Sos<Q>, &mut StateWide> {
+impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, StateWide> {
     fn process(&mut self, x0: i32) -> i32 {
         let x = &mut self.1.x;
         let y = &mut self.1.y;
@@ -204,7 +231,7 @@ impl<const Q: u8> Process for Stateful<&Sos<Q>, &mut StateWide> {
     }
 }
 
-impl<const Q: u8> Process for Stateful<&SosClamp<Q>, &mut StateWide> {
+impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, StateWide> {
     fn process(&mut self, x0: i32) -> i32 {
         let x = &mut self.1.x;
         let y = &mut self.1.y;
@@ -230,7 +257,7 @@ impl<const Q: u8> Process for Stateful<&SosClamp<Q>, &mut StateWide> {
     }
 }
 
-impl<const Q: u8> Process for Stateful<&Sos<Q>, &mut StateDither> {
+impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, StateDither> {
     fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.1.xy;
         let e = &mut self.1.e;
@@ -249,7 +276,7 @@ impl<const Q: u8> Process for Stateful<&Sos<Q>, &mut StateDither> {
     }
 }
 
-impl<const Q: u8> Process for Stateful<&SosClamp<Q>, &mut StateDither> {
+impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, StateDither> {
     fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.1.xy;
         let e = &mut self.1.e;
@@ -295,29 +322,26 @@ impl<const Q: u8> Process for Stateful<&SosClamp<Q>, &mut StateDither> {
 //     // }
 // }
 
-fn quantize(ba: &[[f64; 3]; 2], q: u8) -> [[i32; 3]; 2] {
+fn quantize(ba: &[[f64; 3]; 2], q: u8) -> [i32; 5] {
     let a0 = (1u64 << q) as f64 / ba[1][0];
-    ba.map(|b| b.map(|b| (b * a0).round() as i32))
-}
-
-fn flip(ba: [[i32; 3]; 2]) -> [i32; 5] {
-    [ba[0][0], ba[0][1], ba[0][2], -ba[1][1], -ba[1][2]]
+    [
+        (ba[0][0] * a0).round() as i32,
+        (ba[0][1] * a0).round() as i32,
+        (ba[0][2] * a0).round() as i32,
+        (ba[1][1] * a0).round() as i32,
+        (ba[1][2] * a0).round() as i32,
+    ]
 }
 
 impl<const Q: u8> From<&[[f64; 3]; 2]> for Sos<Q> {
     fn from(ba: &[[f64; 3]; 2]) -> Self {
-        Self {
-            ba: flip(quantize(ba, Q)),
-        }
+        quantize(ba, Q).into()
     }
 }
 
 impl<const Q: u8> From<&[[f64; 3]; 2]> for SosClamp<Q> {
     fn from(ba: &[[f64; 3]; 2]) -> Self {
-        Self {
-            ba: flip(quantize(ba, Q)),
-            ..Default::default()
-        }
+        quantize(ba, Q).into()
     }
 }
 

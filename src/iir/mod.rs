@@ -10,3 +10,5 @@ mod repr;
 pub use repr::*;
 mod sos;
 pub use sos::*;
+mod normal;
+pub use normal::*;
