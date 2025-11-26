@@ -5,7 +5,7 @@ use super::{Process, State, StatefulRef};
 
 /// Normal form second order section
 ///
-/// Also known as Rader Gold oscillator.
+/// Also known as Rader Gold oscillator, or Chamberlain form IIR.
 /// A direct form implementation has bad pole resolution near the real axis.
 /// The normal form has constant pole resolution in the plane.
 ///
