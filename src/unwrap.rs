@@ -202,32 +202,32 @@ mod tests {
     #[test]
     fn overflowing_sub_correctness() {
         for (x0, x1, v) in [
-            (0i32, 0i32, 0i32),
-            (0, 1, 0),
-            (0, -1, 0),
-            (1, 0, 0),
-            (-1, 0, 0),
-            (0, 0x7fff_ffff, 0),
-            (-1, 0x7fff_ffff, -1),
-            (-2, 0x7fff_ffff, -1),
-            (-1, -0x8000_0000, 0),
-            (0, -0x8000_0000, 0),
-            (1, -0x8000_0000, 1),
-            (-0x6000_0000, 0x6000_0000, -1),
-            (0x6000_0000, -0x6000_0000, 1),
-            (-0x4000_0000, 0x3fff_ffff, 0),
-            (-0x4000_0000, 0x4000_0000, -1),
-            (-0x4000_0000, 0x4000_0001, -1),
-            (0x4000_0000, -0x3fff_ffff, 0),
-            (0x4000_0000, -0x4000_0000, 0),
-            (0x4000_0000, -0x4000_0001, 1),
+            (0i32, 0i32, Wrap::None),
+            (0, 1, Wrap::None),
+            (0, -1, Wrap::None),
+            (1, 0, Wrap::None),
+            (-1, 0, Wrap::None),
+            (0, 0x7fff_ffff, Wrap::None),
+            (-1, 0x7fff_ffff, Wrap::Negative),
+            (-2, 0x7fff_ffff, Wrap::Negative),
+            (-1, -0x8000_0000, Wrap::None),
+            (0, -0x8000_0000, Wrap::None),
+            (1, -0x8000_0000, Wrap::Positive),
+            (-0x6000_0000, 0x6000_0000, Wrap::Negative),
+            (0x6000_0000, -0x6000_0000, Wrap::Positive),
+            (-0x4000_0000, 0x3fff_ffff, Wrap::None),
+            (-0x4000_0000, 0x4000_0000, Wrap::Negative),
+            (-0x4000_0000, 0x4000_0001, Wrap::Negative),
+            (0x4000_0000, -0x3fff_ffff, Wrap::None),
+            (0x4000_0000, -0x4000_0000, Wrap::None),
+            (0x4000_0000, -0x4000_0001, Wrap::Positive),
         ]
         .iter()
         {
             let (dx, w) = overflowing_sub(*x1, *x0);
             assert_eq!(*v, w, " = overflowing_sub({:#x}, {:#x})", *x0, *x1);
             let (dx0, w0) = x1.overflowing_sub(*x0);
-            assert_eq!(w0, w != 0);
+            assert_eq!(w0, w != Wrap::None);
             assert_eq!(dx, dx0);
         }
     }
