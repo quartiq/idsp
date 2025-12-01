@@ -306,28 +306,6 @@ impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, StateDither> {
     }
 }
 
-// No manual tuning needed here.
-// Compiler knows best how and when:
-//   unroll loops
-//   cache on stack
-//   handle alignment
-//   register allocate variables
-//   manage pipeline and insn issue
-
-// cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
-
-// pub fn pnm(biquad: &[Sos<29>; 4], state: &mut [State; 4], xy0: &mut [i32; 8]) {
-//     for p in biquad.iter().zip(state) {
-//         Processor(p.0, p.1).process_in_place(xy0);
-//     }
-//     // pub fn pnm(biquad: &mut [(Sos<29>, State); 4], xy0: &mut [i32; 8]) {
-//     //     for (biquad, state) in biquad.iter_mut() {
-//     //     for xy0 in xy0.iter_mut() {
-//     //         *xy0 = biquad.process(state, *xy0);
-//     //     }
-//     // }
-// }
-
 fn quantize(ba: &[[f64; 3]; 2], q: u8) -> [i32; 5] {
     let a0 = (1u64 << q) as f64 / ba[1][0];
     [
@@ -366,6 +344,29 @@ impl<const Q: u8> From<[i32; 5]> for SosClamp<Q> {
         Self {
             ba,
             ..Default::default()
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    // No manual tuning needed here.
+    // Compiler knows best how and when:
+    //   unroll loops
+    //   cache on stack
+    //   handle alignment
+    //   register allocate variables
+    //   manage pipeline and insn issue
+
+    // cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
+
+    pub struct Casc([Sos<29>; 4]);
+    impl Casc {
+        pub fn block(&self, state: &mut [State; 4], xy0: &mut [i32; 8]) {
+            for p in self.0.iter().zip(state) {
+                StatefulRef(p.0, p.1).process_in_place(xy0);
+            }
         }
     }
 }
