@@ -31,12 +31,12 @@ impl From<u8> for Tpa {
         match value {
             0xa => Tpa::A,
             0xb => Tpa::B,
-            0xc => Tpa::C,
-            0xd => Tpa::D,
             0xe => Tpa::B1,
+            0x1 => Tpa::X,
+            0xc => Tpa::C,
             0xf => Tpa::C1,
-            0x0 => Tpa::Z,
-            _ => Tpa::X,
+            0xd => Tpa::D,
+            _ => Tpa::Z,
         }
     }
 }

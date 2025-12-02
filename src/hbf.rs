@@ -683,7 +683,7 @@ mod test {
     #[test]
     fn test() {
         let mut h = HbfDec::<_, 1, 5>::new(&[0.5]);
-        assert_eq!(h.process_block(None, &mut []), &[]);
+        assert_eq!(h.process_block(None, &mut []), &[0f64; 0]);
 
         let mut x = [1.0; 8];
         assert_eq!((2, x.len()), h.block_size());

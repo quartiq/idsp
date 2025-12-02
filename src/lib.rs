@@ -3,7 +3,7 @@
 #![deny(rust_2018_compatibility)]
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
-#![cfg_attr(not(any(test, feature = "py")), forbid(unsafe_code))]
+#![forbid(unsafe_code)]
 
 mod atan2;
 pub use atan2::*;
