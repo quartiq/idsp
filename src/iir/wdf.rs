@@ -1,4 +1,5 @@
-use num_traits::Float;
+#[cfg(not(feature = "std"))]
+use num_traits::float::FloatCore as _;
 
 use super::{Process, StatefulRef};
 
@@ -42,62 +43,62 @@ impl From<u8> for Tpa {
 
 impl Tpa {
     fn quantize(self, g: f64) -> Result<i32, Self> {
+        // Use negative -0.5 <= a <= 0 instead of the usual positive
+        // as -0.5 just fits the Q32 fixed point range.
         const S: f64 = (1u64 << 32) as _;
-        let (t, a) = match g {
-            0.0 => (Self::X, g),
-            0.5..1.0 => (Self::A, g - 1.0),
-            0.0..0.5 => (Self::B, -g),
-            -0.5..0.0 => (Self::C, g),
-            -1.0..-0.5 => (Self::D, -1.0 - g),
-            _ => (Self::Z, 0.0),
+        let a = match self {
+            Self::Z => 0.0,
+            Self::A => g - 1.0,
+            Self::B | Self::B1 => -g,
+            Self::X => 0.0,
+            Self::C | Self::C1 => g,
+            Self::D => -1.0 - g,
         };
-        assert!(a <= 0.0);
-        assert!(a >= -0.5);
-        if t == self {
+        if (-0.5..=0.0).contains(&a) {
             Ok((a * S).round() as _)
         } else {
-            Err(t)
+            Err(self)
         }
     }
 
     #[inline]
     fn adapt(&self, x: [i32; 2], a: i32) -> [i32; 2] {
         #[inline]
-        fn mm(x: i32, y: i32) -> i32 {
+        fn mul(x: i32, y: i32) -> i32 {
             ((x as i64 * y as i64) >> 32) as i32
         }
 
         match self {
             Tpa::A => {
                 let c = x[1] - x[0];
-                let y = mm(a, c) + x[1];
-                [y + c, y]
+                let y = mul(a, c).wrapping_add(x[1]);
+                [y.wrapping_add(c), y]
             }
             Tpa::B => {
                 let c = x[0] - x[1];
-                let y = mm(a, c) + x[1];
-                [y, y + c]
+                let y = mul(a, c).wrapping_add(x[1]);
+                [y, y.wrapping_add(c)]
             }
             Tpa::B1 => {
                 let c = x[0] - x[1];
-                let y = mm(a, c);
-                [y + x[1], y + x[0]]
+                let y = mul(a, c);
+                [y.wrapping_add(x[1]), y.wrapping_add(x[0])]
             }
             Tpa::X => [x[1], x[0]],
             Tpa::C => {
                 let c = x[1] - x[0];
-                let y = mm(a, c) - x[1];
-                [y, y + c]
+                let y = mul(a, c).wrapping_sub(x[1]);
+                [y, y.wrapping_add(c)]
             }
             Tpa::C1 => {
                 let c = x[1] - x[0];
-                let y = mm(a, c);
-                [y - x[1], y - x[0]]
+                let y = mul(a, c);
+                [y.wrapping_sub(x[1]), y.wrapping_sub(x[0])]
             }
             Tpa::D => {
                 let c = x[0] - x[1];
-                let y = mm(a, c) - x[1];
-                [y + c, y]
+                let y = mul(a, c).wrapping_sub(x[1]);
+                [y.wrapping_add(c), y]
             }
             Tpa::Z => x,
         }
@@ -109,6 +110,15 @@ impl Tpa {
 pub struct Wdf1<const M: u8> {
     /// Filter coefficient
     pub a: i32,
+}
+
+impl<const M: u8> Wdf1<M> {
+    /// Quantize and scale filter coefficient
+    pub fn quantize(g: f64) -> Result<Self, Tpa> {
+        Ok(Self {
+            a: Tpa::from(M).quantize(g)?,
+        })
+    }
 }
 
 /// Wave digital filter state

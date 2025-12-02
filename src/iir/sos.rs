@@ -1,5 +1,6 @@
 use miniconf::Tree;
-use num_traits::Float as _;
+#[cfg(not(feature = "std"))]
+use num_traits::float::FloatCore as _;
 
 /// Processing block
 /// Single input, single output, one value
@@ -350,6 +351,7 @@ impl<const Q: u8> From<[i32; 5]> for SosClamp<Q> {
 
 #[cfg(test)]
 mod test {
+    #![allow(dead_code)]
     use super::*;
     // No manual tuning needed here.
     // Compiler knows best how and when:

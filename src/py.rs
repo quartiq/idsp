@@ -1,13 +1,41 @@
-#[pyo3::pymodule(name = "_idsp")]
+#[pyo3::pymodule]
 mod _idsp {
-    use numpy::ndarray::{ArrayD, ArrayViewD, ArrayViewMutD};
-    use numpy::{IntoPyArray, PyArrayDyn, PyArrayMethods, PyReadonlyArrayDyn};
-    use pyo3::prelude::*;
+    use crate::iir::{Process, Sos, State as SosState, StatefulRef, Wdf2, Wdf2State};
+    use numpy::{PyReadonlyArray2, PyReadwriteArray1};
+    use pyo3::{exceptions::PyTypeError, prelude::*};
 
+    /// Quantize a (N, 6) array of second order section coefficients to Q29 and filter an i32 array with it in place.
     #[pyfunction]
-    fn wdf<'py>(x: &Bound<'py, PyArrayDyn<i32>>) -> PyResult<()> {
-        use crate::iir::{Process, StatefulRef, Wdf2, Wdf2State};
+    fn sos<'py>(
+        sos: PyReadonlyArray2<'py, f64>,
+        mut xy: PyReadwriteArray1<'py, i32>,
+    ) -> PyResult<()> {
+        let sos = sos
+            .as_array()
+            .outer_iter()
+            .map(|sos| {
+                let sos: &[_; 3 * 2] = sos
+                    .as_slice()
+                    .ok_or(PyTypeError::new_err("order"))?
+                    .try_into()
+                    .or(Err(PyTypeError::new_err("shape")))?;
+                let sos: &[[_; 3]; 2] = bytemuck::cast_ref(sos);
+                Ok(Sos::<29>::from(sos))
+            })
+            .collect::<Result<Vec<_>, PyErr>>()?;
+        let xy = xy.as_slice_mut().unwrap();
+        let mut state = vec![SosState::default(); sos.len()];
+        for (sos, state) in sos.iter().zip(state.iter_mut()) {
+            StatefulRef(sos, state).process_in_place(xy);
+        }
+        Ok(())
+    }
 
+    /// Filter an i32 array in place with a 19th order half band WDF.
+    ///
+    /// Gazsi 1985, Example 5
+    #[pyfunction]
+    fn wdf<'py>(mut xy: PyReadwriteArray1<'py, i32>) -> PyResult<()> {
         struct Nineteen {
             a: (Wdf2<0x1c>, Wdf2<0x1d>, Wdf2<0x1d>, Wdf2<0x1d>, Wdf2<0x01>),
             b: (Wdf2<0x1c>, Wdf2<0x1c>, Wdf2<0x1d>, Wdf2<0x1d>, Wdf2<0x1d>),
@@ -46,8 +74,8 @@ mod _idsp {
             ),
         };
         let mut s: [Wdf2State; 10] = Default::default();
-        let x = unsafe { x.as_slice_mut() };
-        StatefulRef(&f, &mut s).process_in_place(x.unwrap());
+        let x = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
+        StatefulRef(&f, &mut s).process_in_place(x);
         Ok(())
     }
 }
