@@ -10,6 +10,9 @@ homepage = "https://github.com/quartiq/idsp"
 repository = "https://github.com/quartiq/idsp.git"
 documentation = "https://docs.rs/idsp"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"], default-features = false }
 num-complex = { version = "0.4.0", features = [
@@ -21,6 +24,8 @@ num-traits = { version = "0.2.14", features = [
 thiserror = { version = "2.0.9", default-features = false }
 miniconf = "0.20.0"
 strum = { version = "0.27.1", default-features = false, features = ["derive"] }
+pyo3 = { version = "0.27.1", features = ["extension-module"], optional = true }
+numpy = { version = "0.27", optional = true }
 
 [dev-dependencies]
 quickcheck = "1.0.3"
@@ -33,6 +38,7 @@ log = "0.4"
 
 [features]
 std = []
+py = ["dep:pyo3", "dep:numpy", "std"]
 
 [profile.release]
 debug = 1

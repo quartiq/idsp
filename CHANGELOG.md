@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `iir`: `Normal` form implementation
 * `Clamp`: signle wrap phase monotonizer
 * `iir`: `Wdf` Wave digital filter, two port adapter and tooling
+* Python package
 
 ## [0.19.0](https://github.com/quartiq/idsp/compare/v0.18.0..v0.19.0) - 2025-10-22
 

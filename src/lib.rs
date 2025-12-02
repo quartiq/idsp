@@ -3,7 +3,7 @@
 #![deny(rust_2018_compatibility)]
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
-#![cfg_attr(not(any(test)), forbid(unsafe_code))]
+#![cfg_attr(not(any(test, feature = "py")), forbid(unsafe_code))]
 
 mod atan2;
 pub use atan2::*;
@@ -38,6 +38,9 @@ mod cic;
 pub use cic::*;
 mod cordic;
 pub use cordic::*;
+
+#[cfg(feature = "py")]
+mod py;
 
 #[cfg(test)]
 pub mod testing;

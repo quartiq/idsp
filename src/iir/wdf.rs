@@ -1,7 +1,9 @@
+use num_traits::Float;
+
 use super::{Process, StatefulRef};
 
 /// Two port adapter
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Tpa {
     /// terminate
@@ -39,6 +41,25 @@ impl From<u8> for Tpa {
 }
 
 impl Tpa {
+    fn quantize(self, g: f64) -> Result<i32, Self> {
+        const S: f64 = (1u64 << 32) as _;
+        let (t, a) = match g {
+            0.0 => (Self::X, g),
+            0.5..1.0 => (Self::A, g - 1.0),
+            0.0..0.5 => (Self::B, -g),
+            -0.5..0.0 => (Self::C, g),
+            -1.0..-0.5 => (Self::D, -1.0 - g),
+            _ => (Self::Z, 0.0),
+        };
+        assert!(a <= 0.0);
+        assert!(a >= -0.5);
+        if t == self {
+            Ok((a * S).round() as _)
+        } else {
+            Err(t)
+        }
+    }
+
     #[inline]
     fn adapt(&self, x: [i32; 2], a: i32) -> [i32; 2] {
         #[inline]
@@ -48,38 +69,32 @@ impl Tpa {
 
         match self {
             Tpa::A => {
-                // a < 0
                 let c = x[1] - x[0];
                 let y = mm(a, c) + x[1];
                 [y + c, y]
             }
             Tpa::B => {
-                // a < 0
                 let c = x[0] - x[1];
                 let y = mm(a, c) + x[1];
                 [y, y + c]
             }
             Tpa::B1 => {
-                // a < 0
                 let c = x[0] - x[1];
                 let y = mm(a, c);
                 [y + x[1], y + x[0]]
             }
             Tpa::X => [x[1], x[0]],
             Tpa::C => {
-                // a < 0
                 let c = x[1] - x[0];
                 let y = mm(a, c) - x[1];
                 [y, y + c]
             }
             Tpa::C1 => {
-                // a < 0
                 let c = x[1] - x[0];
                 let y = mm(a, c);
                 [y - x[1], y - x[0]]
             }
             Tpa::D => {
-                // a < 0
                 let c = x[0] - x[1];
                 let y = mm(a, c) - x[1];
                 [y + c, y]
@@ -90,13 +105,16 @@ impl Tpa {
 }
 
 /// Wave digital filter
+#[derive(Default, Debug, Clone)]
 pub struct Wdf1<const M: u8> {
-    a: i32,
+    /// Filter coefficient
+    pub a: i32,
 }
 
 /// Wave digital filter state
 pub struct Wdf1State {
-    z: i32,
+    /// Filter state
+    pub z: i32,
 }
 
 impl<const M: u8> Process for StatefulRef<'_, Wdf1<M>, Wdf1State> {
@@ -111,13 +129,29 @@ impl<const M: u8> Process for StatefulRef<'_, Wdf1<M>, Wdf1State> {
 ///
 /// This enforces compile-time knowledge about the two TPA architectures
 /// in the two nibbles of the const generic.
+#[derive(Default, Debug, Clone)]
 pub struct Wdf2<const M: u8> {
-    a: [i32; 2],
+    /// Filter coefficients
+    pub a: [i32; 2],
+}
+
+impl<const M: u8> Wdf2<M> {
+    /// Quantize and scale filter coefficients
+    pub fn quantize(g: [f64; 2]) -> Result<Self, Tpa> {
+        Ok(Self {
+            a: [
+                Tpa::from((M >> 0) & 0xf).quantize(g[0])?,
+                Tpa::from((M >> 4) & 0xf).quantize(g[1])?,
+            ],
+        })
+    }
 }
 
 /// Wave digital filter state
+#[derive(Default, Debug, Clone)]
 pub struct Wdf2State {
-    z: [i32; 2],
+    /// Filter state
+    pub z: [i32; 2],
 }
 
 impl<const M: u8> Process for StatefulRef<'_, Wdf2<M>, Wdf2State> {
