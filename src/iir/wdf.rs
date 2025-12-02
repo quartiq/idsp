@@ -150,7 +150,7 @@ impl<const M: u8> Wdf2<M> {
     pub fn quantize(g: [f64; 2]) -> Result<Self, Tpa> {
         Ok(Self {
             a: [
-                Tpa::from((M >> 0) & 0xf).quantize(g[0])?,
+                Tpa::from(M & 0xf).quantize(g[0])?,
                 Tpa::from((M >> 4) & 0xf).quantize(g[1])?,
             ],
         })
@@ -166,7 +166,7 @@ pub struct Wdf2State {
 
 impl<const M: u8> Process for StatefulRef<'_, Wdf2<M>, Wdf2State> {
     fn process(&mut self, x0: i32) -> i32 {
-        let y0 = Tpa::from((M >> 0) & 0xf).adapt([x0, self.1.z[0]], self.0.a[0]);
+        let y0 = Tpa::from(M & 0xf).adapt([x0, self.1.z[0]], self.0.a[0]);
         self.1.z = Tpa::from((M >> 4) & 0xf).adapt([y0[1], self.1.z[1]], self.0.a[1]);
         y0[0]
     }

@@ -1,8 +1,48 @@
 #[pyo3::pymodule]
 mod _idsp {
-    use crate::iir::{Process, Sos, State as SosState, StatefulRef, Wdf2, Wdf2State};
-    use numpy::{PyReadonlyArray2, PyReadwriteArray1};
+    use crate::iir::{Process, StatefulRef, Wdf2, Wdf2State};
+    use numpy::{
+        PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
+    };
     use pyo3::{exceptions::PyTypeError, prelude::*};
+
+    /// Cosine and sine of a phase
+    #[pyfunction]
+    fn cossin<'py>(
+        py: Python<'py>,
+        p: PyReadonlyArray1<'py, i32>,
+    ) -> PyResult<Bound<'py, PyArray2<i32>>> {
+        let p = p.as_slice().or(Err(PyTypeError::new_err("order")))?;
+        let xy = PyArray2::zeros(py, [p.len(), 2], false);
+        for (p, xy) in p.iter().zip(
+            xy.readwrite()
+                .as_slice_mut()
+                .or(Err(PyTypeError::new_err("order")))?
+                .as_chunks_mut::<2>()
+                .0,
+        ) {
+            *xy = crate::cossin(*p).into();
+        }
+        Ok(xy)
+    }
+
+    /// atan2(y, x) of a [[x, y]] array
+    #[pyfunction]
+    fn atan2<'py>(
+        py: Python<'py>,
+        xy: PyReadonlyArray2<'py, i32>,
+    ) -> PyResult<Bound<'py, PyArray1<i32>>> {
+        let xy = xy.as_slice().or(Err(PyTypeError::new_err("order")))?;
+        let p = PyArray1::zeros(py, [xy.len() / 2], false);
+        for (xy, p) in xy.as_chunks::<2>().0.iter().zip(
+            p.readwrite()
+                .as_slice_mut()
+                .or(Err(PyTypeError::new_err("order")))?,
+        ) {
+            *p = crate::atan2(xy[1], xy[0]);
+        }
+        Ok(p)
+    }
 
     /// Quantize a (N, 6) array of second order section coefficients to Q29 and filter an i32 array with it in place.
     #[pyfunction]
@@ -20,11 +60,11 @@ mod _idsp {
                     .try_into()
                     .or(Err(PyTypeError::new_err("shape")))?;
                 let sos: &[[_; 3]; 2] = bytemuck::cast_ref(sos);
-                Ok(Sos::<29>::from(sos))
+                Ok(crate::iir::Sos::<29>::from(sos))
             })
             .collect::<Result<Vec<_>, PyErr>>()?;
         let xy = xy.as_slice_mut().unwrap();
-        let mut state = vec![SosState::default(); sos.len()];
+        let mut state = vec![crate::iir::State::default(); sos.len()];
         for (sos, state) in sos.iter().zip(state.iter_mut()) {
             StatefulRef(sos, state).process_in_place(xy);
         }

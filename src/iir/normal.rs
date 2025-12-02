@@ -1,6 +1,6 @@
 use miniconf::Tree;
 #[cfg(not(feature = "std"))]
-use num_traits::float::FloatCore as _;
+use num_traits::float::Float as _;
 
 use super::{Process, State, StatefulRef};
 
