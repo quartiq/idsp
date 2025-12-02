@@ -6,7 +6,7 @@ use super::{Process, StatefulRef};
 /// Two port adapter
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
-pub enum Tpa {
+enum Tpa {
     /// terminate
     Z = 0x0,
     /// 1 > g > 1/2: a = g - 1
@@ -105,70 +105,61 @@ impl Tpa {
     }
 }
 
-/// Wave digital filter
-#[derive(Default, Debug, Clone)]
-pub struct Wdf1<const M: u8> {
+/// Wave digital filter, order N, configuration M
+#[derive(Debug, Clone)]
+pub struct Wdf<const N: usize, const M: u32> {
     /// Filter coefficient
-    pub a: i32,
+    pub a: [i32; N],
 }
 
-impl<const M: u8> Wdf1<M> {
-    /// Quantize and scale filter coefficient
-    pub fn quantize(g: f64) -> Result<Self, Tpa> {
-        Ok(Self {
-            a: Tpa::from(M).quantize(g)?,
-        })
+impl<const N: usize, const M: u32> Default for Wdf<N, M> {
+    fn default() -> Self {
+        Self { a: [0; N] }
     }
 }
 
-/// Wave digital filter state
-pub struct Wdf1State {
-    /// Filter state
-    pub z: i32,
-}
-
-impl<const M: u8> Process for StatefulRef<'_, Wdf1<M>, Wdf1State> {
-    fn process(&mut self, x0: i32) -> i32 {
-        let y = Tpa::from(M & 0xf).adapt([x0, self.1.z], self.0.a);
-        self.1.z = y[1];
-        y[0]
-    }
-}
-
-/// Wave digital filter
-///
-/// This enforces compile-time knowledge about the two TPA architectures
-/// in the two nibbles of the const generic.
-#[derive(Default, Debug, Clone)]
-pub struct Wdf2<const M: u8> {
-    /// Filter coefficients
-    pub a: [i32; 2],
-}
-
-impl<const M: u8> Wdf2<M> {
+impl<const N: usize, const M: u32> Wdf<N, M> {
     /// Quantize and scale filter coefficients
-    pub fn quantize(g: [f64; 2]) -> Result<Self, Tpa> {
-        Ok(Self {
-            a: [
-                Tpa::from(M & 0xf).quantize(g[0])?,
-                Tpa::from((M >> 4) & 0xf).quantize(g[1])?,
-            ],
-        })
+    pub fn quantize(g: &[f64; N]) -> Result<Self, f64> {
+        let mut a = [0; N];
+        let mut m = M;
+        for (a, g) in a.iter_mut().zip(g) {
+            *a = Tpa::from((m & 0xf) as u8).quantize(*g).or(Err(*g))?;
+            m >>= 4;
+        }
+        Ok(Self { a })
     }
 }
 
-/// Wave digital filter state
-#[derive(Default, Debug, Clone)]
-pub struct Wdf2State {
+/// Wave digital filter state, order N
+#[derive(Clone, Debug)]
+pub struct WdfState<const N: usize> {
     /// Filter state
-    pub z: [i32; 2],
+    pub z: [i32; N],
 }
 
-impl<const M: u8> Process for StatefulRef<'_, Wdf2<M>, Wdf2State> {
+impl<const N: usize> Default for WdfState<N> {
+    fn default() -> Self {
+        Self { z: [0; N] }
+    }
+}
+
+impl<const N: usize, const M: u32> Process for StatefulRef<'_, Wdf<N, M>, WdfState<N>> {
     fn process(&mut self, x0: i32) -> i32 {
-        let y0 = Tpa::from(M & 0xf).adapt([x0, self.1.z[0]], self.0.a[0]);
-        self.1.z = Tpa::from((M >> 4) & 0xf).adapt([y0[1], self.1.z[1]], self.0.a[1]);
-        y0[0]
+        let mut y = 0;
+        let (m, x, z) =
+            self.0
+                .a
+                .iter()
+                .zip(self.1.z.iter_mut())
+                .fold((M, x0, &mut y), |(m, x, y), (a, z)| {
+                    let yx = Tpa::from((m & 0xf) as u8).adapt([x, *z], *a);
+                    *y = yx[0];
+                    (m >> 4, yx[1], z)
+                });
+        debug_assert_eq!(m, 0);
+        *z = x;
+        y
     }
 }
 
@@ -178,11 +169,23 @@ mod test {
 
     /// Gazsi 1985, Example 5
     pub struct Nineteen {
-        a: (Wdf2<0x1c>, Wdf2<0x1d>, Wdf2<0x1d>, Wdf2<0x1d>, Wdf2<0x01>),
-        b: (Wdf2<0x1c>, Wdf2<0x1c>, Wdf2<0x1d>, Wdf2<0x1d>, Wdf2<0x1d>),
+        a: (
+            Wdf<2, 0x1c>,
+            Wdf<2, 0x1d>,
+            Wdf<2, 0x1d>,
+            Wdf<2, 0x1d>,
+            Wdf<2, 0x01>,
+        ),
+        b: (
+            Wdf<2, 0x1c>,
+            Wdf<2, 0x1c>,
+            Wdf<2, 0x1d>,
+            Wdf<2, 0x1d>,
+            Wdf<2, 0x1d>,
+        ),
     }
 
-    impl Process for StatefulRef<'_, Nineteen, [Wdf2State; 10]> {
+    impl Process for StatefulRef<'_, Nineteen, [WdfState<2>; 10]> {
         fn process(&mut self, x0: i32) -> i32 {
             let mut xa = StatefulRef(&self.0.a.0, &mut self.1[0]).process(x0);
             xa = StatefulRef(&self.0.a.1, &mut self.1[1]).process(xa);
@@ -199,11 +202,11 @@ mod test {
     }
 
     impl Nineteen {
-        pub fn inplace(&self, s: &mut [Wdf2State; 10], xy0: &mut [i32; 8]) {
+        pub fn inplace(&self, s: &mut [WdfState<2>; 10], xy0: &mut [i32; 8]) {
             StatefulRef(self, s).process_in_place(xy0);
         }
 
-        pub fn block(&self, s: &mut [Wdf2State; 10], xy0: &mut [[i32; 8]; 2]) {
+        pub fn block(&self, s: &mut [WdfState<2>; 10], xy0: &mut [[i32; 8]; 2]) {
             xy0[1] = xy0[0].clone();
             StatefulRef(&self.a.0, &mut s[0]).process_in_place(&mut xy0[1]);
             StatefulRef(&self.a.1, &mut s[1]).process_in_place(&mut xy0[1]);

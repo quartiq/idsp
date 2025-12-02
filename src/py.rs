@@ -1,6 +1,6 @@
 #[pyo3::pymodule]
 mod _idsp {
-    use crate::iir::{Process, StatefulRef, Wdf2, Wdf2State};
+    use crate::iir::{Process, StatefulRef, Wdf, WdfState};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
@@ -111,12 +111,25 @@ mod _idsp {
     /// Gazsi 1985, Example 5
     #[pyfunction]
     fn wdf<'py>(mut xy: PyReadwriteArray1<'py, i32>) -> PyResult<()> {
-        struct Nineteen {
-            a: (Wdf2<0x1c>, Wdf2<0x1d>, Wdf2<0x1d>, Wdf2<0x1d>, Wdf2<0x01>),
-            b: (Wdf2<0x1c>, Wdf2<0x1c>, Wdf2<0x1d>, Wdf2<0x1d>, Wdf2<0x1d>),
+        /// Gazsi 1985, Example 5
+        pub struct Nineteen {
+            a: (
+                Wdf<2, 0x1c>,
+                Wdf<2, 0x1d>,
+                Wdf<2, 0x1d>,
+                Wdf<2, 0x1d>,
+                Wdf<2, 0x01>,
+            ),
+            b: (
+                Wdf<2, 0x1c>,
+                Wdf<2, 0x1c>,
+                Wdf<2, 0x1d>,
+                Wdf<2, 0x1d>,
+                Wdf<2, 0x1d>,
+            ),
         }
 
-        impl Process for StatefulRef<'_, Nineteen, [Wdf2State; 10]> {
+        impl Process for StatefulRef<'_, Nineteen, [WdfState<2>; 10]> {
             fn process(&mut self, x0: i32) -> i32 {
                 let mut xa = StatefulRef(&self.0.a.0, &mut self.1[0]).process(x0);
                 xa = StatefulRef(&self.0.a.1, &mut self.1[1]).process(xa);
@@ -134,21 +147,21 @@ mod _idsp {
 
         let f = Nineteen {
             a: (
-                Wdf2::quantize([-0.226119, 0.0]).unwrap(),
-                Wdf2::quantize([-0.602422, 0.0]).unwrap(),
-                Wdf2::quantize([-0.839323, 0.0]).unwrap(),
-                Wdf2::quantize([-0.950847, 0.0]).unwrap(),
-                Wdf2::default(),
+                Wdf::quantize(&[-0.226119, 0.0]).unwrap(),
+                Wdf::quantize(&[-0.602422, 0.0]).unwrap(),
+                Wdf::quantize(&[-0.839323, 0.0]).unwrap(),
+                Wdf::quantize(&[-0.950847, 0.0]).unwrap(),
+                Wdf::default(),
             ),
             b: (
-                Wdf2::quantize([-0.063978, 0.0]).unwrap(),
-                Wdf2::quantize([-0.423068, 0.0]).unwrap(),
-                Wdf2::quantize([-0.741327, 0.0]).unwrap(),
-                Wdf2::quantize([-0.905567, 0.0]).unwrap(),
-                Wdf2::quantize([-0.984721, 0.0]).unwrap(),
+                Wdf::quantize(&[-0.063978, 0.0]).unwrap(),
+                Wdf::quantize(&[-0.423068, 0.0]).unwrap(),
+                Wdf::quantize(&[-0.741327, 0.0]).unwrap(),
+                Wdf::quantize(&[-0.905567, 0.0]).unwrap(),
+                Wdf::quantize(&[-0.984721, 0.0]).unwrap(),
             ),
         };
-        let mut s: [Wdf2State; 10] = Default::default();
+        let mut s: [WdfState<2>; 10] = Default::default();
         let x = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
         StatefulRef(&f, &mut s).process_in_place(x);
         Ok(())
