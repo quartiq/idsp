@@ -44,7 +44,8 @@ mod _idsp {
         Ok(p)
     }
 
-    /// Quantize a (N, 6) array of second order section coefficients to Q29 and filter an i32 array with it in place.
+    /// Quantize a (N, 6) array of second order section coefficients to Q29
+    /// and filter an array with it in place.
     #[pyfunction]
     fn sos<'py>(
         sos: PyReadonlyArray2<'py, f64>,
@@ -65,6 +66,40 @@ mod _idsp {
             .collect::<Result<Vec<_>, PyErr>>()?;
         let xy = xy.as_slice_mut().unwrap();
         let mut state = vec![crate::iir::State::default(); sos.len()];
+        for (sos, state) in sos.iter().zip(state.iter_mut()) {
+            StatefulRef(sos, state).process_in_place(xy);
+        }
+        Ok(())
+    }
+
+    /// Quantize a (N, 6) array of second order section coefficients to Q29,
+    /// add offset/min/max,
+    /// and filter an array with it
+    /// on a wide error feedback state in place.
+    #[pyfunction]
+    fn sos_clamp_wide<'py>(
+        sos: PyReadonlyArray2<'py, f64>,
+        mut xy: PyReadwriteArray1<'py, i32>,
+    ) -> PyResult<()> {
+        let sos = sos
+            .as_array()
+            .outer_iter()
+            .map(|s| {
+                let s: &[_; 2 * 3 + 3] = s
+                    .as_slice()
+                    .ok_or(PyTypeError::new_err("order"))?
+                    .try_into()
+                    .or(Err(PyTypeError::new_err("shape")))?;
+                let mut sos =
+                    crate::iir::SosClamp::<29>::from(&[[s[0], s[1], s[2]], [s[3], s[4], s[5]]]);
+                sos.u = s[6] as _;
+                sos.min = s[7] as _;
+                sos.max = s[8] as _;
+                Ok(sos)
+            })
+            .collect::<Result<Vec<_>, PyErr>>()?;
+        let xy = xy.as_slice_mut().unwrap();
+        let mut state = vec![crate::iir::StateWide::default(); sos.len()];
         for (sos, state) in sos.iter().zip(state.iter_mut()) {
             StatefulRef(sos, state).process_in_place(xy);
         }
