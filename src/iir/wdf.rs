@@ -3,10 +3,12 @@ use num_traits::float::FloatCore as _;
 
 use super::{Process, StatefulRef};
 
-/// Two port adapter
+/// Two port adapter architecture
+///
+/// Each architecture is a nibble in the const generic of [`Wdf`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
-enum Tpa {
+pub enum Tpa {
     /// terminate
     Z = 0x0,
     /// 1 > g > 1/2: a = g - 1
@@ -42,10 +44,9 @@ impl From<u8> for Tpa {
 }
 
 impl Tpa {
-    fn quantize(self, g: f64) -> Result<i32, Self> {
+    fn quantize(self, g: f64) -> Option<i32> {
         // Use negative -0.5 <= a <= 0 instead of the usual positive
         // as -0.5 just fits the Q32 fixed point range.
-        const S: f64 = (1u64 << 32) as _;
         let a = match self {
             Self::Z => 0.0,
             Self::A => g - 1.0,
@@ -54,16 +55,13 @@ impl Tpa {
             Self::C | Self::C1 => g,
             Self::D => -1.0 - g,
         };
-        if (-0.5..=0.0).contains(&a) {
-            Ok((a * S).round() as _)
-        } else {
-            Err(self)
-        }
+        (-0.5..=0.0)
+            .contains(&a)
+            .then_some((a * (1u64 << 32) as f64).round() as _)
     }
 
     #[inline]
     fn adapt(&self, x: [i32; 2], a: i32) -> [i32; 2] {
-        #[inline]
         fn mul(x: i32, y: i32) -> i32 {
             ((x as i64 * y as i64) >> 32) as i32
         }
@@ -106,6 +104,11 @@ impl Tpa {
 }
 
 /// Wave digital filter, order N, configuration M
+///
+/// Allpass
+///
+/// The M const generic enforces compile time knowledge about
+/// the two port adapter architecture. Each nibble is one TPA.
 #[derive(Debug, Clone)]
 pub struct Wdf<const N: usize, const M: u32> {
     /// Filter coefficient
@@ -120,14 +123,14 @@ impl<const N: usize, const M: u32> Default for Wdf<N, M> {
 
 impl<const N: usize, const M: u32> Wdf<N, M> {
     /// Quantize and scale filter coefficients
-    pub fn quantize(g: &[f64; N]) -> Result<Self, f64> {
+    pub fn quantize(g: &[f64; N]) -> Option<Self> {
         let mut a = [0; N];
         let mut m = M;
         for (a, g) in a.iter_mut().zip(g) {
-            *a = Tpa::from((m & 0xf) as u8).quantize(*g).or(Err(*g))?;
+            *a = Tpa::from((m & 0xf) as u8).quantize(*g)?;
             m >>= 4;
         }
-        Ok(Self { a })
+        (m == 0).then_some(Self { a })
     }
 }
 
@@ -145,83 +148,18 @@ impl<const N: usize> Default for WdfState<N> {
 }
 
 impl<const N: usize, const M: u32> Process for StatefulRef<'_, Wdf<N, M>, WdfState<N>> {
+    #[inline]
     fn process(&mut self, x0: i32) -> i32 {
         let mut y = 0;
-        let (m, x, z) =
-            self.0
-                .a
-                .iter()
-                .zip(self.1.z.iter_mut())
-                .fold((M, x0, &mut y), |(m, x, y), (a, z)| {
-                    let yx = Tpa::from((m & 0xf) as u8).adapt([x, *z], *a);
-                    *y = yx[0];
-                    (m >> 4, yx[1], z)
-                });
-        debug_assert_eq!(m, 0);
+        let (_, x, z) = self.config.a.iter().zip(self.state.z.iter_mut()).fold(
+            (M, x0, &mut y),
+            |(m, x, y), (a, z0)| {
+                let z1;
+                [*y, z1] = Tpa::from((m & 0xf) as u8).adapt([x, *z0], *a);
+                (m >> 4, z1, z0)
+            },
+        );
         *z = x;
         y
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    /// Gazsi 1985, Example 5
-    pub struct Nineteen {
-        a: (
-            Wdf<2, 0x1c>,
-            Wdf<2, 0x1d>,
-            Wdf<2, 0x1d>,
-            Wdf<2, 0x1d>,
-            Wdf<2, 0x01>,
-        ),
-        b: (
-            Wdf<2, 0x1c>,
-            Wdf<2, 0x1c>,
-            Wdf<2, 0x1d>,
-            Wdf<2, 0x1d>,
-            Wdf<2, 0x1d>,
-        ),
-    }
-
-    impl Process for StatefulRef<'_, Nineteen, [WdfState<2>; 10]> {
-        fn process(&mut self, x0: i32) -> i32 {
-            let mut xa = StatefulRef(&self.0.a.0, &mut self.1[0]).process(x0);
-            xa = StatefulRef(&self.0.a.1, &mut self.1[1]).process(xa);
-            xa = StatefulRef(&self.0.a.2, &mut self.1[2]).process(xa);
-            xa = StatefulRef(&self.0.a.3, &mut self.1[3]).process(xa);
-            xa = StatefulRef(&self.0.a.4, &mut self.1[4]).process(xa);
-            let mut xb = StatefulRef(&self.0.b.0, &mut self.1[5]).process(x0);
-            xb = StatefulRef(&self.0.b.1, &mut self.1[6]).process(xb);
-            xb = StatefulRef(&self.0.b.2, &mut self.1[7]).process(xb);
-            xb = StatefulRef(&self.0.b.3, &mut self.1[8]).process(xb);
-            xb = StatefulRef(&self.0.b.4, &mut self.1[9]).process(xb);
-            xa + xb
-        }
-    }
-
-    impl Nineteen {
-        pub fn inplace(&self, s: &mut [WdfState<2>; 10], xy0: &mut [i32; 8]) {
-            StatefulRef(self, s).process_in_place(xy0);
-        }
-
-        pub fn block(&self, s: &mut [WdfState<2>; 10], xy0: &mut [[i32; 8]; 2]) {
-            xy0[1] = xy0[0].clone();
-            StatefulRef(&self.a.0, &mut s[0]).process_in_place(&mut xy0[1]);
-            StatefulRef(&self.a.1, &mut s[1]).process_in_place(&mut xy0[1]);
-            StatefulRef(&self.a.2, &mut s[2]).process_in_place(&mut xy0[1]);
-            StatefulRef(&self.a.3, &mut s[3]).process_in_place(&mut xy0[1]);
-            StatefulRef(&self.a.4, &mut s[4]).process_in_place(&mut xy0[1]);
-            StatefulRef(&self.b.0, &mut s[5]).process_in_place(&mut xy0[0]);
-            StatefulRef(&self.b.1, &mut s[6]).process_in_place(&mut xy0[0]);
-            StatefulRef(&self.b.2, &mut s[7]).process_in_place(&mut xy0[0]);
-            StatefulRef(&self.b.3, &mut s[8]).process_in_place(&mut xy0[0]);
-            StatefulRef(&self.b.4, &mut s[9]).process_in_place(&mut xy0[0]);
-            let [a, b] = xy0.each_mut();
-            for (a, b) in a.iter_mut().zip(b) {
-                (*a, *b) = (*a + *b, *a - *b);
-            }
-        }
     }
 }

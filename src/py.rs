@@ -1,6 +1,6 @@
 #[pyo3::pymodule]
 mod _idsp {
-    use crate::iir::{Process, StatefulRef, Wdf, WdfState};
+    use crate::iir::{ButterflyState, Process, StatefulRef};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
@@ -54,21 +54,21 @@ mod _idsp {
         let sos = sos
             .as_array()
             .outer_iter()
-            .map(|sos| {
-                let sos: &[_; 3 * 2] = sos
+            .map(|s| {
+                let s: &[_; 3 * 2] = s
                     .as_slice()
                     .ok_or(PyTypeError::new_err("order"))?
                     .try_into()
                     .or(Err(PyTypeError::new_err("shape")))?;
-                let sos: &[[_; 3]; 2] = bytemuck::cast_ref(sos);
-                Ok(crate::iir::Sos::<29>::from(sos))
+                Ok(crate::iir::Sos::<29>::from(&[
+                    [s[0], s[1], s[2]],
+                    [s[3], s[4], s[5]],
+                ]))
             })
             .collect::<Result<Vec<_>, PyErr>>()?;
-        let xy = xy.as_slice_mut().unwrap();
-        let mut state = vec![crate::iir::State::default(); sos.len()];
-        for (sos, state) in sos.iter().zip(state.iter_mut()) {
-            StatefulRef(sos, state).process_in_place(xy);
-        }
+        let mut state = vec![crate::iir::SosState::default(); sos.len()];
+        let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
+        StatefulRef::new(&sos[..], &mut state[..]).process_in_place(xy);
         Ok(())
     }
 
@@ -92,17 +92,15 @@ mod _idsp {
                     .or(Err(PyTypeError::new_err("shape")))?;
                 let mut sos =
                     crate::iir::SosClamp::<29>::from(&[[s[0], s[1], s[2]], [s[3], s[4], s[5]]]);
-                sos.u = s[6] as _;
-                sos.min = s[7] as _;
-                sos.max = s[8] as _;
+                sos.u = s[6].round() as _;
+                sos.min = s[7].round() as _;
+                sos.max = s[8].round() as _;
                 Ok(sos)
             })
             .collect::<Result<Vec<_>, PyErr>>()?;
-        let xy = xy.as_slice_mut().unwrap();
-        let mut state = vec![crate::iir::StateWide::default(); sos.len()];
-        for (sos, state) in sos.iter().zip(state.iter_mut()) {
-            StatefulRef(sos, state).process_in_place(xy);
-        }
+        let mut state = vec![crate::iir::SosStateWide::default(); sos.len()];
+        let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
+        StatefulRef::new(&sos[..], &mut state[..]).process_in_place(xy);
         Ok(())
     }
 
@@ -111,59 +109,41 @@ mod _idsp {
     /// Gazsi 1985, Example 5
     #[pyfunction]
     fn wdf<'py>(mut xy: PyReadwriteArray1<'py, i32>) -> PyResult<()> {
-        /// Gazsi 1985, Example 5
-        pub struct Nineteen {
-            a: (
-                Wdf<2, 0x1c>,
-                Wdf<2, 0x1d>,
-                Wdf<2, 0x1d>,
-                Wdf<2, 0x1d>,
-                Wdf<2, 0x01>,
-            ),
-            b: (
-                Wdf<2, 0x1c>,
-                Wdf<2, 0x1c>,
-                Wdf<2, 0x1d>,
-                Wdf<2, 0x1d>,
-                Wdf<2, 0x1d>,
-            ),
-        }
+        use crate::iir::{Butterfly, Wdf, WdfState};
 
-        impl Process for StatefulRef<'_, Nineteen, [WdfState<2>; 10]> {
-            fn process(&mut self, x0: i32) -> i32 {
-                let mut xa = StatefulRef(&self.0.a.0, &mut self.1[0]).process(x0);
-                xa = StatefulRef(&self.0.a.1, &mut self.1[1]).process(xa);
-                xa = StatefulRef(&self.0.a.2, &mut self.1[2]).process(xa);
-                xa = StatefulRef(&self.0.a.3, &mut self.1[3]).process(xa);
-                xa = StatefulRef(&self.0.a.4, &mut self.1[4]).process(xa);
-                let mut xb = StatefulRef(&self.0.b.0, &mut self.1[5]).process(x0);
-                xb = StatefulRef(&self.0.b.1, &mut self.1[6]).process(xb);
-                xb = StatefulRef(&self.0.b.2, &mut self.1[7]).process(xb);
-                xb = StatefulRef(&self.0.b.3, &mut self.1[8]).process(xb);
-                xb = StatefulRef(&self.0.b.4, &mut self.1[9]).process(xb);
-                xa + xb
-            }
-        }
-
-        let f = Nineteen {
-            a: (
-                Wdf::quantize(&[-0.226119, 0.0]).unwrap(),
-                Wdf::quantize(&[-0.602422, 0.0]).unwrap(),
-                Wdf::quantize(&[-0.839323, 0.0]).unwrap(),
-                Wdf::quantize(&[-0.950847, 0.0]).unwrap(),
-                Wdf::default(),
+        // With constant coefficients and fixed block size 4, already with O2, this
+        // is fully unrolled and inlined on e.g. thubv7em-none-eabi and about 36 insns per sample,
+        // i.e. less than 2 insn per order and sample.
+        let f = Butterfly(
+            (
+                (
+                    Wdf::<1, 0x1>::default(),
+                    Wdf::<2, 0x1c>::quantize(&[-0.226119, 0.0]).unwrap(),
+                ),
+                [
+                    Wdf::<2, 0x1d>::quantize(&[-0.602422, 0.0]).unwrap(),
+                    Wdf::quantize(&[-0.839323, 0.0]).unwrap(),
+                    Wdf::quantize(&[-0.950847, 0.0]).unwrap(),
+                ],
             ),
-            b: (
-                Wdf::quantize(&[-0.063978, 0.0]).unwrap(),
-                Wdf::quantize(&[-0.423068, 0.0]).unwrap(),
-                Wdf::quantize(&[-0.741327, 0.0]).unwrap(),
-                Wdf::quantize(&[-0.905567, 0.0]).unwrap(),
-                Wdf::quantize(&[-0.984721, 0.0]).unwrap(),
+            (
+                [
+                    Wdf::<2, 0x1c>::quantize(&[-0.063978, 0.0]).unwrap(),
+                    Wdf::quantize(&[-0.423068, 0.0]).unwrap(),
+                ],
+                [
+                    Wdf::<2, 0x1d>::quantize(&[-0.741327, 0.0]).unwrap(),
+                    Wdf::quantize(&[-0.905567, 0.0]).unwrap(),
+                    Wdf::quantize(&[-0.984721, 0.0]).unwrap(),
+                ],
             ),
-        };
-        let mut s: [WdfState<2>; 10] = Default::default();
-        let x = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
-        StatefulRef(&f, &mut s).process_in_place(x);
+        );
+        let mut s: ButterflyState<
+            ((WdfState<1>, WdfState<2>), [WdfState<2>; 3]),
+            ([WdfState<2>; 2], [WdfState<2>; 3]),
+        > = Default::default();
+        let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
+        StatefulRef::new(&f, &mut s).process_in_place(xy);
         Ok(())
     }
 }

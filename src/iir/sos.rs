@@ -1,58 +1,7 @@
+use super::{Process, StatefulRef};
 use miniconf::Tree;
 #[cfg(not(feature = "std"))]
 use num_traits::float::FloatCore as _;
-
-/// Processing block
-/// Single input, single output, one value
-pub trait Process {
-    /// Update the state with a new sample and obtain an output sample
-    fn process(&mut self, x: i32) -> i32;
-
-    /// Process a block of samples
-    #[inline]
-    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
-        for (x, y) in x.iter().zip(y) {
-            *y = self.process(*x);
-        }
-    }
-
-    /// Process a block of samples inplace
-    #[inline]
-    fn process_in_place(&mut self, xy: &mut [i32]) {
-        for xy in xy {
-            *xy = self.process(*xy);
-        }
-    }
-}
-
-/// A cascade of several filter blocks of the same type
-#[derive(Clone, Debug, Default, Tree)]
-#[tree(meta(doc, typename))]
-#[repr(transparent)]
-pub struct Cascade<T>(pub T);
-impl<T, const N: usize> Process for Cascade<[T; N]>
-where
-    T: Process,
-{
-    fn process(&mut self, x: i32) -> i32 {
-        self.0.iter_mut().fold(x, |x, filter| filter.process(x))
-    }
-
-    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
-        if let Some(filter) = self.0.first_mut() {
-            filter.process_block(x, y);
-        }
-        for filter in self.0.iter_mut().skip(1) {
-            filter.process_in_place(y);
-        }
-    }
-
-    fn process_in_place(&mut self, xy: &mut [i32]) {
-        for filter in self.0.iter_mut() {
-            filter.process_in_place(xy);
-        }
-    }
-}
 
 /// Second-order-section
 #[derive(Clone, Debug, Default, Tree)]
@@ -122,7 +71,7 @@ impl<const Q: u8> SosClamp<Q> {
 
 /// SOS state
 #[derive(Clone, Debug, Default)]
-pub struct State {
+pub struct SosState {
     /// X,Y state
     ///
     /// `[x1, x2, y1, y2]`
@@ -131,7 +80,7 @@ pub struct State {
 
 /// SOS state with wide Y
 #[derive(Clone, Debug, Default)]
-pub struct StateWide {
+pub struct SosStateWide {
     /// X state
     ///
     /// `[x1, x2]`
@@ -144,7 +93,7 @@ pub struct StateWide {
 
 /// SOS state with first order error feedback
 #[derive(Clone, Debug, Default)]
-pub struct StateDither {
+pub struct SosStateDither {
     /// X,Y state
     ///
     /// `[x1, x2, y1, y2]`
@@ -153,38 +102,10 @@ pub struct StateDither {
     pub e: u32,
 }
 
-/// A stateful processor
-#[derive(Debug, Clone, Default)]
-pub struct Stateful<F, S>(pub F, pub S);
-
-/// Stateful processor by reference
-#[derive(Debug)]
-pub struct StatefulRef<'a, F, S>(pub &'a F, pub &'a mut S);
-
-impl<F, S> Process for Stateful<F, S>
-where
-    for<'a> StatefulRef<'a, F, S>: Process,
-{
-    #[inline]
-    fn process(&mut self, x: i32) -> i32 {
-        StatefulRef(&self.0, &mut self.1).process(x)
-    }
-
-    #[inline]
-    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
-        StatefulRef(&self.0, &mut self.1).process_block(x, y)
-    }
-
-    #[inline]
-    fn process_in_place(&mut self, xy: &mut [i32]) {
-        StatefulRef(&self.0, &mut self.1).process_in_place(xy)
-    }
-}
-
-impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, State> {
+impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, SosState> {
     fn process(&mut self, x0: i32) -> i32 {
-        let xy = &mut self.1.xy;
-        let ba = &self.0.ba;
+        let xy = &mut self.state.xy;
+        let ba = &self.config.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
@@ -197,32 +118,33 @@ impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, State> {
     }
 }
 
-impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, State> {
+impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, SosState> {
     fn process(&mut self, x0: i32) -> i32 {
-        let xy = &mut self.1.xy;
-        let ba = &self.0.ba;
+        let xy = &mut self.state.xy;
+        let ba = &self.config.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
         acc += xy[3] as i64 * ba[4] as i64;
-        let mut y0 = (acc >> Q) as i32 + self.0.u;
-        if y0 < self.0.min {
-            y0 = self.0.min;
-        } else if y0 > self.0.max {
-            y0 = self.0.max;
+        let mut y0 = (acc >> Q) as i32 + self.config.u;
+        // clamp() is slower
+        if y0 < self.config.min {
+            y0 = self.config.min;
+        } else if y0 > self.config.max {
+            y0 = self.config.max;
         }
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
-impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, StateWide> {
+impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, SosStateWide> {
     fn process(&mut self, x0: i32) -> i32 {
-        let x = &mut self.1.x;
-        let y = &mut self.1.y;
-        let ba = &self.0.ba;
+        let x = &mut self.state.x;
+        let y = &mut self.state.y;
+        let ba = &self.config.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0] as i64;
         acc += x[0] as i64 * ba[1] as i64;
@@ -238,11 +160,11 @@ impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, StateWide> {
     }
 }
 
-impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, StateWide> {
+impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, SosStateWide> {
     fn process(&mut self, x0: i32) -> i32 {
-        let x = &mut self.1.x;
-        let y = &mut self.1.y;
-        let ba = &self.0.ba;
+        let x = &mut self.state.x;
+        let y = &mut self.state.y;
+        let ba = &self.config.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0] as i64;
         acc += x[0] as i64 * ba[1] as i64;
@@ -253,22 +175,23 @@ impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, StateWide> {
         acc += (y[1] as u32 as i64 * ba[4] as i64) >> 32;
         acc += (y[1] >> 32) * ba[4] as i64;
         acc <<= 32 - Q;
-        let mut y0 = (acc >> 32) as i32 + self.0.u;
-        if y0 < self.0.min {
-            y0 = self.0.min;
-        } else if y0 > self.0.max {
-            y0 = self.0.max;
+        let mut y0 = (acc >> 32) as i32 + self.config.u;
+        // clamp() is slower
+        if y0 < self.config.min {
+            y0 = self.config.min;
+        } else if y0 > self.config.max {
+            y0 = self.config.max;
         }
         *y = [((y0 as i64) << 32) | acc as u32 as i64, y[0]];
         y0
     }
 }
 
-impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, StateDither> {
+impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, SosStateDither> {
     fn process(&mut self, x0: i32) -> i32 {
-        let xy = &mut self.1.xy;
-        let e = &mut self.1.e;
-        let ba = &self.0.ba;
+        let xy = &mut self.state.xy;
+        let e = &mut self.state.e;
+        let ba = &self.config.ba;
         let mut acc = *e as i64;
         acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
@@ -283,11 +206,11 @@ impl<const Q: u8> Process for StatefulRef<'_, Sos<Q>, StateDither> {
     }
 }
 
-impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, StateDither> {
+impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, SosStateDither> {
     fn process(&mut self, x0: i32) -> i32 {
-        let xy = &mut self.1.xy;
-        let e = &mut self.1.e;
-        let ba = &self.0.ba;
+        let xy = &mut self.state.xy;
+        let e = &mut self.state.e;
+        let ba = &self.config.ba;
         let mut acc = *e as i64;
         acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
@@ -296,11 +219,11 @@ impl<const Q: u8> Process for StatefulRef<'_, SosClamp<Q>, StateDither> {
         acc += xy[3] as i64 * ba[4] as i64;
         acc <<= 32 - Q;
         *e = acc as _;
-        let mut y0 = (acc >> 32) as i32 + self.0.u;
-        if y0 < self.0.min {
-            y0 = self.0.min;
-        } else if y0 > self.0.max {
-            y0 = self.0.max;
+        let mut y0 = (acc >> 32) as i32 + self.config.u;
+        if y0 < self.config.min {
+            y0 = self.config.min;
+        } else if y0 > self.config.max {
+            y0 = self.config.max;
         }
         *xy = [x0, xy[0], y0, xy[2]];
         y0
@@ -365,10 +288,8 @@ mod test {
 
     pub struct Casc([Sos<29>; 4]);
     impl Casc {
-        pub fn block(&self, state: &mut [State; 4], xy0: &mut [i32; 8]) {
-            for p in self.0.iter().zip(state) {
-                StatefulRef(p.0, p.1).process_in_place(xy0);
-            }
+        pub fn block(&self, state: &mut [SosState; 4], xy0: &mut [i32; 8]) {
+            StatefulRef::new(&self.0, state).process_in_place(xy0);
         }
     }
 }
