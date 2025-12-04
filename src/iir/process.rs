@@ -1,12 +1,14 @@
+use core::ops::{Add, Sub};
+
 /// Processing block
 /// Single input, single output, one value
-pub trait Process {
+pub trait Process<T: Copy> {
     /// Update the state with a new sample and obtain an output sample
-    fn process(&mut self, x: i32) -> i32;
+    fn process(&mut self, x: T) -> T;
 
     /// Process a block of samples
     #[inline]
-    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
+    fn process_block(&mut self, x: &[T], y: &mut [T]) {
         for (x, y) in x.iter().zip(y) {
             *y = self.process(*x);
         }
@@ -14,7 +16,7 @@ pub trait Process {
 
     /// Process a block of samples inplace
     #[inline]
-    fn process_in_place(&mut self, xy: &mut [i32]) {
+    fn process_in_place(&mut self, xy: &mut [T]) {
         for xy in xy {
             *xy = self.process(*xy);
         }
@@ -55,33 +57,35 @@ impl<C, S> Stateful<C, S> {
     }
 }
 
-impl<C, S> Process for Stateful<C, S>
+impl<T, C, S> Process<T> for Stateful<C, S>
 where
-    for<'a> StatefulRef<'a, C, S>: Process,
+    T: Copy,
+    for<'a> StatefulRef<'a, C, S>: Process<T>,
 {
     #[inline]
-    fn process(&mut self, x: i32) -> i32 {
+    fn process(&mut self, x: T) -> T {
         StatefulRef::new(&self.config, &mut self.state).process(x)
     }
 
     #[inline]
-    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
+    fn process_block(&mut self, x: &[T], y: &mut [T]) {
         StatefulRef::new(&self.config, &mut self.state).process_block(x, y)
     }
 
     #[inline]
-    fn process_in_place(&mut self, xy: &mut [i32]) {
+    fn process_in_place(&mut self, xy: &mut [T]) {
         StatefulRef::new(&self.config, &mut self.state).process_in_place(xy)
     }
 }
 
 /// A chain of multiple filters of the same type
-impl<C, S> Process for StatefulRef<'_, [C], [S]>
+impl<T, C, S> Process<T> for StatefulRef<'_, [C], [S]>
 where
-    for<'a> StatefulRef<'a, C, S>: Process,
+    T: Copy,
+    for<'a> StatefulRef<'a, C, S>: Process<T>,
 {
     #[inline]
-    fn process(&mut self, x: i32) -> i32 {
+    fn process(&mut self, x: T) -> T {
         self.config
             .iter()
             .zip(self.state.iter_mut())
@@ -89,19 +93,19 @@ where
     }
 
     #[inline]
-    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
-        if let Some((f, s)) = self.config.first().zip(self.state.first_mut()) {
-            StatefulRef::new(f, s).process_block(x, y);
+    fn process_block(&mut self, x: &[T], y: &mut [T]) {
+        if let Some(((f0, f1), (s0, s1))) =
+            self.config.split_first().zip(self.state.split_first_mut())
+        {
+            StatefulRef::new(f0, s0).process_block(x, y);
+            StatefulRef::new(f1, s1).process_in_place(y);
         } else {
-            y.clone_from_slice(x);
-        }
-        for (f, s) in self.config.iter().zip(self.state.iter_mut()).skip(1) {
-            StatefulRef::new(f, s).process_in_place(y);
+            y.copy_from_slice(x);
         }
     }
 
     #[inline]
-    fn process_in_place(&mut self, xy: &mut [i32]) {
+    fn process_in_place(&mut self, xy: &mut [T]) {
         for (f, s) in self.config.iter().zip(self.state.iter_mut()) {
             StatefulRef::new(f, s).process_in_place(xy);
         }
@@ -109,22 +113,23 @@ where
 }
 
 /// A chain of multiple filters of the same type
-impl<C, S, const N: usize> Process for StatefulRef<'_, [C; N], [S; N]>
+impl<T, C, S, const N: usize> Process<T> for StatefulRef<'_, [C; N], [S; N]>
 where
-    for<'a> StatefulRef<'a, [C], [S]>: Process,
+    T: Copy,
+    for<'a> StatefulRef<'a, [C], [S]>: Process<T>,
 {
     #[inline]
-    fn process(&mut self, x: i32) -> i32 {
+    fn process(&mut self, x: T) -> T {
         StatefulRef::new(&self.config[..], &mut self.state[..]).process(x)
     }
 
     #[inline]
-    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
+    fn process_block(&mut self, x: &[T], y: &mut [T]) {
         StatefulRef::new(&self.config[..], &mut self.state[..]).process_block(x, y)
     }
 
     #[inline]
-    fn process_in_place(&mut self, xy: &mut [i32]) {
+    fn process_in_place(&mut self, xy: &mut [T]) {
         StatefulRef::new(&self.config[..], &mut self.state[..]).process_in_place(xy)
     }
 }
@@ -132,25 +137,26 @@ where
 /// A chain of two filters of different type.
 ///
 /// This then automatically covers any nested tuple.
-impl<C1, C2, S1, S2> Process for StatefulRef<'_, (C1, C2), (S1, S2)>
+impl<T, C1, C2, S1, S2> Process<T> for StatefulRef<'_, (C1, C2), (S1, S2)>
 where
-    for<'a> StatefulRef<'a, C1, S1>: Process,
-    for<'a> StatefulRef<'a, C2, S2>: Process,
+    T: Copy,
+    for<'a> StatefulRef<'a, C1, S1>: Process<T>,
+    for<'a> StatefulRef<'a, C2, S2>: Process<T>,
 {
     #[inline]
-    fn process(&mut self, mut x: i32) -> i32 {
+    fn process(&mut self, mut x: T) -> T {
         x = StatefulRef::new(&self.config.0, &mut self.state.0).process(x);
         StatefulRef::new(&self.config.1, &mut self.state.1).process(x)
     }
 
     #[inline]
-    fn process_block(&mut self, x: &[i32], y: &mut [i32]) {
+    fn process_block(&mut self, x: &[T], y: &mut [T]) {
         StatefulRef::new(&self.config.0, &mut self.state.0).process_block(x, y);
         StatefulRef::new(&self.config.1, &mut self.state.1).process_in_place(y);
     }
 
     #[inline]
-    fn process_in_place(&mut self, xy: &mut [i32]) {
+    fn process_in_place(&mut self, xy: &mut [T]) {
         StatefulRef::new(&self.config.0, &mut self.state.0).process_in_place(xy);
         StatefulRef::new(&self.config.1, &mut self.state.1).process_in_place(xy);
     }
@@ -179,28 +185,33 @@ pub struct ButterflyState<S1, S2>(
     pub S2,
 );
 
-impl<C1, C2, S1, S2> Process for StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>>
+impl<T: Add<Output = T>, C1, C2, S1, S2> Process<T>
+    for StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>>
 where
-    for<'a> StatefulRef<'a, C1, S1>: Process,
-    for<'a> StatefulRef<'a, C2, S2>: Process,
+    T: Copy,
+    for<'a> StatefulRef<'a, C1, S1>: Process<T>,
+    for<'a> StatefulRef<'a, C2, S2>: Process<T>,
 {
-    fn process(&mut self, x: i32) -> i32 {
+    fn process(&mut self, x: T) -> T {
         StatefulRef::new(&self.config.0, &mut self.state.0).process(x)
             + StatefulRef::new(&self.config.1, &mut self.state.1).process(x)
     }
 }
 
-impl<C1, C2, S1, S2> StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>>
-where
-    for<'a> StatefulRef<'a, C1, S1>: Process,
-    for<'a> StatefulRef<'a, C2, S2>: Process,
-{
-    /// Process complementary inputs into complementary outputs in place
+impl<C1, C2, S1, S2> StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>> {
+    /// Process inputs into complementary outputs in place
     ///
     /// Such that `[x0, x1]` inputs become `[y0 + y1, y0 - y1]` outputs.
     /// For single channel input, copying and scaling by 0.5
     /// is to be done before the filter.
-    pub fn process_complementary_in_place(&mut self, xy: [&mut [i32]; 2]) {
+    pub fn process_complementary_in_place<T: Add<Output = T> + Sub<Output = T>>(
+        &mut self,
+        xy: [&mut [T]; 2],
+    ) where
+        T: Copy,
+        for<'a> StatefulRef<'a, C1, S1>: Process<T>,
+        for<'a> StatefulRef<'a, C2, S2>: Process<T>,
+    {
         let [xy0, xy1] = xy;
         StatefulRef::new(&self.config.0, &mut self.state.0).process_in_place(xy0);
         StatefulRef::new(&self.config.1, &mut self.state.1).process_in_place(xy1);

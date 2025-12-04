@@ -147,7 +147,7 @@ impl<const N: usize> Default for WdfState<N> {
     }
 }
 
-impl<const N: usize, const M: u32> Process for StatefulRef<'_, Wdf<N, M>, WdfState<N>> {
+impl<const N: usize, const M: u32> Process<i32> for StatefulRef<'_, Wdf<N, M>, WdfState<N>> {
     #[inline]
     fn process(&mut self, x0: i32) -> i32 {
         let mut y = 0;

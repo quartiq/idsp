@@ -25,7 +25,7 @@ pub struct Normal<const Q: u8> {
     pub p: [i32; 2],
 }
 
-impl<const Q: u8> Process for StatefulRef<'_, Normal<Q>, SosState> {
+impl<const Q: u8> Process<i32> for StatefulRef<'_, Normal<Q>, SosState> {
     fn process(&mut self, x0: i32) -> i32 {
         let b = &self.config.b;
         let p = &self.config.p;
