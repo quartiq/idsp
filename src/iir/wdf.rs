@@ -123,6 +123,10 @@ impl<const N: usize, const M: u32> Default for Wdf<N, M> {
 
 impl<const N: usize, const M: u32> Wdf<N, M> {
     /// Quantize and scale filter coefficients
+    ///
+    /// The coefficients are the allpass poles.
+    /// The type (configuration nibbles M) must match the
+    /// optimal scaled architecture, see [`Tpa`].
     pub fn quantize(g: &[f64; N]) -> Option<Self> {
         let mut a = [0; N];
         let mut m = M;

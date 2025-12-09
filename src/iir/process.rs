@@ -164,8 +164,11 @@ where
 
 /// Complementary allpass filter pair
 ///
+/// Also known as digital lattice filter.
+/// Cadidates for the two branches are allpasses like Wdf or Ldi.
+///
 /// The [`Process`] implementation returns only the sum of the two filters
-/// while [`Self::process_complementary_in_place`]
+/// while `process_complementary_in_place()`
 /// yields both sum and difference.
 /// Scaling with 0.5 gain is to be performed ahead of the filter.
 #[derive(Clone, Debug, Default)]
@@ -204,6 +207,7 @@ impl<C1, C2, S1, S2> StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>> 
     /// Such that `[x0, x1]` inputs become `[y0 + y1, y0 - y1]` outputs.
     /// For single channel input, copying and scaling by 0.5
     /// is to be done before the filter.
+    #[inline]
     pub fn process_complementary_in_place<T: Add<Output = T> + Sub<Output = T>>(
         &mut self,
         xy: [&mut [T]; 2],
@@ -219,5 +223,31 @@ impl<C1, C2, S1, S2> StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>> 
             // Butterfly
             [*y0, *y1] = [*y0 + *y1, *y0 - *y1];
         }
+    }
+
+    /// Process input as lowpass
+    pub fn process_lowpass_in_place<T: Add<Output = T> + Sub<Output = T>, const N: usize>(
+        &mut self,
+        xy: &mut [T; N],
+    ) where
+        T: Copy,
+        for<'a> StatefulRef<'a, C1, S1>: Process<T>,
+        for<'a> StatefulRef<'a, C2, S2>: Process<T>,
+    {
+        let mut xyc = *xy;
+        self.process_complementary_in_place([xy, &mut xyc]);
+    }
+
+    /// Process input as highpass
+    pub fn process_highpass_in_place<T: Add<Output = T> + Sub<Output = T>, const N: usize>(
+        &mut self,
+        xy: &mut [T; N],
+    ) where
+        T: Copy,
+        for<'a> StatefulRef<'a, C1, S1>: Process<T>,
+        for<'a> StatefulRef<'a, C2, S2>: Process<T>,
+    {
+        let mut xyc = *xy;
+        self.process_complementary_in_place([&mut xyc, xy]);
     }
 }
