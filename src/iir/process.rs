@@ -1,4 +1,6 @@
-use core::ops::{Add, Sub};
+use core::ops::{Add, AddAssign, Sub, SubAssign};
+
+use num_traits::Zero;
 
 /// Processing block
 /// Single input, single output, one value
@@ -20,6 +22,12 @@ pub trait Process<T: Copy> {
         for xy in xy {
             *xy = self.process(*xy);
         }
+    }
+
+    /// Process a block of samples and return only the last
+    #[inline]
+    fn process_decimate(&mut self, x: &[T]) -> Option<T> {
+        x.iter().map(|x| self.process(*x)).last()
     }
 }
 
@@ -75,6 +83,11 @@ where
     #[inline]
     fn process_in_place(&mut self, xy: &mut [T]) {
         StatefulRef::new(&self.config, &mut self.state).process_in_place(xy)
+    }
+
+    #[inline]
+    fn process_decimate(&mut self, x: &[T]) -> Option<T> {
+        StatefulRef::new(&self.config, &mut self.state).process_decimate(x)
     }
 }
 
@@ -132,6 +145,11 @@ where
     fn process_in_place(&mut self, xy: &mut [T]) {
         StatefulRef::new(&self.config[..], &mut self.state[..]).process_in_place(xy)
     }
+
+    #[inline]
+    fn process_decimate(&mut self, x: &[T]) -> Option<T> {
+        StatefulRef::new(&self.config[..], &mut self.state[..]).process_decimate(x)
+    }
 }
 
 /// A chain of two filters of different type.
@@ -168,9 +186,8 @@ where
 /// Cadidates for the two branches are allpasses like Wdf or Ldi.
 ///
 /// The [`Process`] implementation returns only the sum of the two filters
-/// while `process_complementary_in_place()`
-/// yields both sum and difference.
-/// Scaling with 0.5 gain is to be performed ahead of the filter.
+/// while `process_complementary_in_place()` etc. yields both sum and difference.
+/// Scaling with 0.5 gain is to be performed ahead of the filter or within both branches.
 #[derive(Clone, Debug, Default)]
 pub struct Butterfly<C1, C2>(
     /// Top filter
@@ -188,16 +205,24 @@ pub struct ButterflyState<S1, S2>(
     pub S2,
 );
 
-impl<T: Add<Output = T>, C1, C2, S1, S2> Process<T>
-    for StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>>
+impl<T, C1, C2, S1, S2> Process<T> for StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>>
 where
-    T: Copy,
+    T: Copy + Add<Output = T>,
     for<'a> StatefulRef<'a, C1, S1>: Process<T>,
     for<'a> StatefulRef<'a, C2, S2>: Process<T>,
 {
+    #[inline]
     fn process(&mut self, x: T) -> T {
         StatefulRef::new(&self.config.0, &mut self.state.0).process(x)
             + StatefulRef::new(&self.config.1, &mut self.state.1).process(x)
+    }
+
+    #[inline]
+    fn process_decimate(&mut self, x: &[T]) -> Option<T> {
+        StatefulRef::new(&self.config.0, &mut self.state.0)
+            .process_decimate(x)
+            .zip(StatefulRef::new(&self.config.1, &mut self.state.1).process_decimate(x))
+            .map(|(y0, y1)| y0 + y1)
     }
 }
 
@@ -208,11 +233,9 @@ impl<C1, C2, S1, S2> StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>> 
     /// For single channel input, copying and scaling by 0.5
     /// is to be done before the filter.
     #[inline]
-    pub fn process_complementary_in_place<T: Add<Output = T> + Sub<Output = T>>(
-        &mut self,
-        xy: [&mut [T]; 2],
-    ) where
-        T: Copy,
+    pub fn process_complementary_in_place<T>(&mut self, xy: [&mut [T]; 2])
+    where
+        T: Copy + Add<Output = T> + Sub<Output = T>,
         for<'a> StatefulRef<'a, C1, S1>: Process<T>,
         for<'a> StatefulRef<'a, C2, S2>: Process<T>,
     {
@@ -226,28 +249,50 @@ impl<C1, C2, S1, S2> StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>> 
     }
 
     /// Process input as lowpass
-    pub fn process_lowpass_in_place<T: Add<Output = T> + Sub<Output = T>, const N: usize>(
-        &mut self,
-        xy: &mut [T; N],
-    ) where
-        T: Copy,
+    #[inline]
+    pub fn process_lowpass_in_place<T, const N: usize>(&mut self, xy: &mut [T; N])
+    where
+        T: Copy + Zero + AddAssign,
         for<'a> StatefulRef<'a, C1, S1>: Process<T>,
         for<'a> StatefulRef<'a, C2, S2>: Process<T>,
     {
-        let mut xyc = *xy;
-        self.process_complementary_in_place([xy, &mut xyc]);
+        let mut xy1 = [T::zero(); N];
+        StatefulRef::new(&self.config.1, &mut self.state.1).process_block(xy, &mut xy1);
+        StatefulRef::new(&self.config.0, &mut self.state.0).process_in_place(xy);
+        for (y0, y1) in xy.iter_mut().zip(xy1) {
+            *y0 += y1;
+        }
     }
 
     /// Process input as highpass
-    pub fn process_highpass_in_place<T: Add<Output = T> + Sub<Output = T>, const N: usize>(
-        &mut self,
-        xy: &mut [T; N],
-    ) where
-        T: Copy,
+    #[inline]
+    pub fn process_highpass_in_place<T, const N: usize>(&mut self, xy: &mut [T; N])
+    where
+        T: Copy + Zero + SubAssign,
         for<'a> StatefulRef<'a, C1, S1>: Process<T>,
         for<'a> StatefulRef<'a, C2, S2>: Process<T>,
     {
-        let mut xyc = *xy;
-        self.process_complementary_in_place([&mut xyc, xy]);
+        let mut xy1 = [T::zero(); N];
+        StatefulRef::new(&self.config.1, &mut self.state.1).process_block(xy, &mut xy1);
+        StatefulRef::new(&self.config.0, &mut self.state.0).process_in_place(xy);
+        for (y0, y1) in xy.iter_mut().zip(xy1) {
+            *y0 -= y1;
+        }
+    }
+
+    /// Process input into highpass and decimate
+    ///
+    /// [`Process::process_decimate()`] implements the lowpass version of this.
+    #[inline]
+    pub fn process_highpass_decimate<T>(&mut self, x: &[T]) -> Option<T>
+    where
+        T: Copy + Sub<Output = T>,
+        for<'a> StatefulRef<'a, C1, S1>: Process<T>,
+        for<'a> StatefulRef<'a, C2, S2>: Process<T>,
+    {
+        StatefulRef::new(&self.config.0, &mut self.state.0)
+            .process_decimate(x)
+            .zip(StatefulRef::new(&self.config.1, &mut self.state.1).process_decimate(x))
+            .map(|(y0, y1)| y0 - y1)
     }
 }
