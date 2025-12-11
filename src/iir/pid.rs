@@ -233,7 +233,7 @@ impl<T: Float> PidBuilder<T> {
 /// Named gains
 #[derive(Clone, Debug, Tree, Default)]
 #[allow(unused)]
-pub struct Gain<T> {
+pub struct Gains<T> {
     /// Gain values
     ///
     /// See [`Action`] for indices.
@@ -256,7 +256,7 @@ pub struct Gain<T> {
     d2: (),
 }
 
-impl<T: Float> Gain<T> {
+impl<T: Float> Gains<T> {
     fn new(value: T) -> Self {
         Self {
             value: [value; 5],
@@ -282,7 +282,7 @@ pub struct Pid<T: Float> {
     /// * Units: output/intput * second**order where Action::I2 has order=-2
     /// * Gains outside the range `order..=order + 3` are ignored
     /// * P gain sign determines sign of all gains
-    pub gain: Gain<T>,
+    pub gains: Gains<T>,
     /// Gain imit
     ///
     /// * Sequence: [I², I, P, D, D²]
@@ -290,7 +290,7 @@ pub struct Pid<T: Float> {
     /// * P gain limit is ignored
     /// * Limits outside the range `order..order + 3` are ignored
     /// * P gain sign determines sign of all gain limits
-    pub limit: Gain<T>,
+    pub limits: Gains<T>,
     /// Setpoint
     ///
     /// Units: input
@@ -309,8 +309,8 @@ impl<T: Float> Default for Pid<T> {
     fn default() -> Self {
         Self {
             order: Order::default(),
-            gain: Gain::new(T::zero()),
-            limit: Gain::new(T::infinity()),
+            gains: Gains::new(T::zero()),
+            limits: Gains::new(T::infinity()),
             setpoint: T::zero(),
             min: T::neg_infinity(),
             max: T::infinity(),
@@ -328,10 +328,10 @@ impl<T: Float> Pid<T> {
         T: AsPrimitive<I> + AsPrimitive<C>,
         I: Float + 'static + AsPrimitive<C>,
     {
-        let p = self.gain.value[Action::P as usize];
+        let p = self.gains.value[Action::P as usize];
         let mut biquad: Biquad<C> = PidBuilder::<I> {
-            gain: self.gain.value.map(|g| (b_scale * g.copysign(p)).as_()),
-            limit: self.limit.value.map(|l| {
+            gain: self.gains.value.map(|g| (b_scale * g.copysign(p)).as_()),
+            limit: self.limits.value.map(|l| {
                 // infinite gain limit is meaningful but json can only do null/nan
                 let l = if l.is_nan() { T::infinity() } else { l };
                 (b_scale * l.copysign(p)).as_()

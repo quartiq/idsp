@@ -1,5 +1,5 @@
 //! Sample processing, filtering, combination of filters.
-use core::ops::{Add, AddAssign, SubAssign};
+use core::ops::{Add, AddAssign, Mul, Neg, SubAssign};
 
 /// Processing block
 ///
@@ -7,13 +7,17 @@ use core::ops::{Add, AddAssign, SubAssign};
 ///
 /// Process impls can be cascaded in (homogeneous) `[C; N]` arrays/`[C]` slices, and heterogeneous
 /// `(C1, C2)` tuples. They can be used in [`Pair`]s on complementary allpasses and polyphase banks.
+/// Tuples and arrays process blocks of samples as sample-major (sample iteration is outer loop).
 /// Use [`Chain<(C1, C2)>`], `Chain<[C; N]>` for cascadeds of large filters
-/// (large state and/or configuration compared to a single sample).
-/// Tuples, arrays, and Pairs, and Chain can be mixed and nested ad lib.
+/// (large state and/or configuration compared to a single sample) to process blocks sample-minor.
 ///
 /// For a given filter configuration `C` and state `S` pair the trait is usually implemented
 /// through [`ProcessorRef<'_, C, S>`] (created ad-hoc from by borrowing configuration and state)
 /// or [`Processor<C, S>`] (owned configuration and state).
+/// Stateless filters should implement `Process` on `ProcessorRef<'_, C, S=()>` for composability.
+///
+/// Tuples, arrays, and Pairs, and Chain can be mixed and nested ad lib. The corresponding
+/// [`Processor`]/[`ProcessorRef`] will implement `Process`.
 ///
 /// And the same configuration they can be applied to multiple [`Channels`].
 pub trait Process<T> {
@@ -66,7 +70,7 @@ pub trait Process<T> {
 
 /// Stateful processor by reference
 #[derive(Debug)]
-pub struct ProcessorRef<'a, C: ?Sized, S: ?Sized> {
+pub struct ProcessorRef<'a, C: ?Sized, S: ?Sized = ()> {
     /// Processor configuration
     pub config: &'a C,
     /// Processor state
@@ -83,7 +87,7 @@ impl<'a, C: ?Sized, S: ?Sized> ProcessorRef<'a, C, S> {
 
 /// A stateful processor
 #[derive(Debug, Clone, Default)]
-pub struct Processor<C, S> {
+pub struct Processor<C, S = ()> {
     /// Processor configuration
     pub config: C,
     /// Processor state
@@ -129,23 +133,34 @@ where
     }
 }
 
-/// A chain of two filters of different type.
-///
-/// This then automatically covers any nested tuple.
-///
-/// Iterations are sample-major, and filter-minor. This is good if at least
-/// one of the filters with has no or small state and configuration.
-///
-/// For large filters/state, use [`Chain`].
-impl<T, C1, C2, S1, S2> Process<T> for ProcessorRef<'_, (C1, C2), (S1, S2)>
+/// Stateless filters
+impl<C, T> Process<T> for ProcessorRef<'_, C>
 where
-    for<'a> ProcessorRef<'a, C1, S1>: Process<T>,
-    for<'a> ProcessorRef<'a, C2, S2>: Process<T>,
+    for<'a> &'a C: Process<T>,
 {
     #[inline]
     fn process(&mut self, x: &T) -> T {
-        let u = ProcessorRef::new(&self.config.0, &mut self.state.0).process(x);
-        ProcessorRef::new(&self.config.1, &mut self.state.1).process(&u)
+        self.config.process(x)
+    }
+
+    #[inline]
+    fn block(&mut self, x: &[T], y: &mut [T]) {
+        self.config.block(x, y)
+    }
+
+    #[inline]
+    fn in_place(&mut self, xy: &mut [T]) {
+        self.config.in_place(xy)
+    }
+
+    #[inline]
+    fn decimate(&mut self, x: &[T]) -> Option<T> {
+        x.last().map(|x| self.config.process(x))
+    }
+
+    #[inline]
+    fn interpolate(&mut self, x: &T, y: &mut [T]) {
+        self.config.interpolate(x, y)
     }
 }
 
@@ -169,6 +184,26 @@ impl<C> Chain<C> {
     #[inline]
     pub fn new(c: C) -> Self {
         Self(c)
+    }
+}
+
+/// A chain of two small filters of different type.
+///
+/// This then automatically covers any nested tuple.
+///
+/// Iterations are sample-major, and filter-minor. This is good if at least
+/// one of the filters with has no or small state and configuration.
+///
+/// For large filters/state, use [`Chain`].
+impl<T, C1, C2, S1, S2> Process<T> for ProcessorRef<'_, (C1, C2), (S1, S2)>
+where
+    for<'a> ProcessorRef<'a, C1, S1>: Process<T>,
+    for<'a> ProcessorRef<'a, C2, S2>: Process<T>,
+{
+    #[inline]
+    fn process(&mut self, x: &T) -> T {
+        let u = ProcessorRef::new(&self.config.0, &mut self.state.0).process(x);
+        ProcessorRef::new(&self.config.1, &mut self.state.1).process(&u)
     }
 }
 
@@ -198,6 +233,7 @@ where
 
 impl<C1, C2, S1, S2> ProcessorRef<'_, Chain<(C1, C2)>, (S1, S2)> {
     /// Decimate using the input samples as scratch
+    #[inline]
     pub fn decimate_in_place<T, const N: usize>(&mut self, xy: &mut [T; N]) -> Option<T>
     where
         for<'a> ProcessorRef<'a, C1, S1>: Process<T>,
@@ -264,6 +300,7 @@ where
 
 impl<C, S> ProcessorRef<'_, Chain<[C]>, [S]> {
     /// Decimate using the input samples as scratch
+    #[inline]
     pub fn decimate_in_place<T, const N: usize>(&mut self, xy: &mut [T; N]) -> Option<T>
     where
         T: Copy,
@@ -327,6 +364,19 @@ where
     fn interpolate(&mut self, x: &T, y: &mut [T]) {
         let c: &Chain<[_]> = &*self.config;
         ProcessorRef::new(c, &mut self.state[..]).interpolate(x, y)
+    }
+}
+
+impl<C, S, const N: usize> ProcessorRef<'_, Chain<[C; N]>, [S; N]> {
+    /// Decimate using the input samples as scratch
+    #[inline]
+    pub fn decimate_in_place<T, const M: usize>(&mut self, xy: &mut [T; M]) -> Option<T>
+    where
+        T: Copy,
+        for<'a> ProcessorRef<'a, C, S>: Process<T>,
+    {
+        let c: &Chain<[_]> = &*self.config;
+        ProcessorRef::new(c, &mut self.state[..]).decimate_in_place(xy)
     }
 }
 
@@ -479,7 +529,10 @@ where
 /// Note that this may result in suboptimal code because the data ordering is channel-minor.
 /// The Process block loops are implemented channel-major to give better cache/register usage patterns
 /// but require indexing/striding and the layout still is transposed relative to channel-major blocks.
+///
 /// To avoid a potential penalty, implement the channel loop explicitly on channel-major data.
+///
+/// TODO: play with as_chunks::<N>()
 impl<T, C, S, const N: usize> Process<[T; N]> for ProcessorRef<'_, C, Channels<S, N>>
 where
     [T; N]: Default,
@@ -527,4 +580,131 @@ where
     }
 }
 
-// TODO: Delay, Invert, Nyquist, Integrator, Derivative, Clamp, Gain
+/// Identity using [`Copy`]
+#[derive(Debug, Clone, Default)]
+pub struct Identity;
+impl<T> Process<T> for &Identity
+where
+    T: Copy,
+{
+    #[inline]
+    fn process(&mut self, x: &T) -> T {
+        *x
+    }
+
+    #[inline]
+    fn block(&mut self, x: &[T], y: &mut [T]) {
+        debug_assert_eq!(x.len(), y.len());
+        y.copy_from_slice(x);
+    }
+
+    #[inline]
+    fn in_place(&mut self, _xy: &mut [T]) {}
+}
+
+/// Inversion using [`Neg`].
+#[derive(Debug, Clone, Default)]
+pub struct Invert;
+impl<T> Process<T> for &Invert
+where
+    T: Copy + Neg<Output = T>,
+{
+    #[inline]
+    fn process(&mut self, x: &T) -> T {
+        x.neg()
+    }
+}
+
+/// Fixed point with F fractional bits.
+///
+/// * Q<i32, 32> is [-0.5, 0.5[
+/// * Q<i16, 15> is [-1, 1[
+/// * Q<u8, 4> is [0, 16-1/16]
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(transparent)]
+pub struct Q<T, const F: u8>(pub T);
+
+macro_rules! impl_mul_q {
+    ($q:ty, $t:ty, $a:ty) => {
+        /// Multiplication with truncation
+        impl<const F: u8> Mul<$t> for Q<$q, F> {
+            type Output = $t;
+
+            #[inline]
+            fn mul(self, rhs: $t) -> Self::Output {
+                ((self.0 as $a * rhs as $a) >> F) as _
+            }
+        }
+    };
+}
+impl_mul_q!(i8, i8, i16);
+impl_mul_q!(i16, i16, i32);
+impl_mul_q!(i32, i32, i64);
+impl_mul_q!(i64, i64, i128);
+
+/// Addition of a constant
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(transparent)]
+pub struct Adder<T>(pub T);
+
+/// Offset using `Add`
+impl<T, G> Process<T> for &Adder<G>
+where
+    G: Add<T, Output = T> + Copy,
+    T: Copy,
+{
+    #[inline]
+    fn process(&mut self, x: &T) -> T {
+        self.0 + *x
+    }
+}
+
+/// Gain using `Mul`
+impl<T, G, const F: u8> Process<T> for &Q<G, F>
+where
+    Q<G, F>: Mul<T, Output = T> + Copy,
+    T: Copy,
+{
+    #[inline]
+    fn process(&mut self, x: &T) -> T {
+        **self * *x
+    }
+}
+
+/// Clamp between min and max using `Ord`
+#[derive(Debug, Clone, Default)]
+pub struct Clamp<T> {
+    /// Lowest output value
+    pub min: T,
+    /// Highest output value
+    pub max: T,
+}
+
+impl<T> Process<T> for &Clamp<T>
+where
+    T: Copy + Ord,
+{
+    #[inline]
+    fn process(&mut self, x: &T) -> T {
+        (*x).clamp(self.min, self.max)
+    }
+}
+
+// TODO: Delay, Nyquist, Integrator, Derivative
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn stateless() {
+        assert_eq!((&Identity).process(&3), 3);
+        assert_eq!(Processor::new(Invert, ()).process(&9), -9);
+        assert_eq!((&Q::<i32, 3>(32)).process(&9), 9 * 4);
+        assert_eq!((&Adder(7)).process(&9), 7 + 9);
+        assert_eq!(
+            Processor::new((Adder(7), Adder(1)), ((), ())).process(&9),
+            7 + 1 + 9
+        );
+    }
+}
