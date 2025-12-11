@@ -3,9 +3,9 @@ use core::ops::{Add, AddAssign, Sub, SubAssign};
 /// Processing block
 ///
 /// Single input, single output
-pub trait Process<T: Copy> {
-    /// Update the state with a new sample and obtain an output sample
-    fn process(&mut self, x: T) -> T;
+pub trait Process<T> {
+    /// Update the state with a new input sample and obtain an output sample
+    fn process(&mut self, x: &T) -> T;
 
     /// Process a block of samples
     ///
@@ -14,7 +14,7 @@ pub trait Process<T: Copy> {
     fn process_block(&mut self, x: &[T], y: &mut [T]) {
         debug_assert_eq!(x.len(), y.len());
         for (x, y) in x.iter().zip(y) {
-            *y = self.process(*x);
+            *y = self.process(x);
         }
     }
 
@@ -22,7 +22,7 @@ pub trait Process<T: Copy> {
     #[inline]
     fn process_in_place(&mut self, xy: &mut [T]) {
         for xy in xy {
-            *xy = self.process(*xy);
+            *xy = self.process(xy);
         }
     }
 
@@ -32,7 +32,7 @@ pub trait Process<T: Copy> {
     /// ratio of the process.
     #[inline]
     fn process_decimate(&mut self, x: &[T]) -> Option<T> {
-        x.iter().map(|x| self.process(*x)).last()
+        x.iter().map(|x| self.process(x)).last()
     }
 
     /// Process one sample into a block of multiple samples
@@ -43,7 +43,7 @@ pub trait Process<T: Copy> {
     /// The output block size should match the design intepolation
     /// ratio of the process.
     #[inline]
-    fn process_interpolate(&mut self, x: T, y: &mut [T]) {
+    fn process_interpolate(&mut self, x: &T, y: &mut [T]) {
         let y0 = self.process(x);
         if let Some(y) = y.first_mut() {
             *y = y0;
@@ -87,11 +87,10 @@ impl<C, S> Stateful<C, S> {
 
 impl<T, C, S> Process<T> for Stateful<C, S>
 where
-    T: Copy,
     for<'a> StatefulRef<'a, C, S>: Process<T>,
 {
     #[inline]
-    fn process(&mut self, x: T) -> T {
+    fn process(&mut self, x: &T) -> T {
         StatefulRef::new(&self.config, &mut self.state).process(x)
     }
 
@@ -111,7 +110,7 @@ where
     }
 
     #[inline]
-    fn process_interpolate(&mut self, x: T, y: &mut [T]) {
+    fn process_interpolate(&mut self, x: &T, y: &mut [T]) {
         StatefulRef::new(&self.config, &mut self.state).process_interpolate(x, y)
     }
 }
@@ -123,12 +122,12 @@ where
     for<'a> StatefulRef<'a, C, S>: Process<T>,
 {
     #[inline]
-    fn process(&mut self, x: T) -> T {
+    fn process(&mut self, x: &T) -> T {
         debug_assert_eq!(self.config.len(), self.state.len());
         self.config
             .iter()
             .zip(self.state.iter_mut())
-            .fold(x, |x, (f, s)| StatefulRef::new(f, s).process(x))
+            .fold(*x, |x, (f, s)| StatefulRef::new(f, s).process(&x))
     }
 
     #[inline]
@@ -156,11 +155,10 @@ where
 /// A chain of multiple filters of the same type
 impl<T, C, S, const N: usize> Process<T> for StatefulRef<'_, [C; N], [S; N]>
 where
-    T: Copy,
     for<'a> StatefulRef<'a, [C], [S]>: Process<T>,
 {
     #[inline]
-    fn process(&mut self, x: T) -> T {
+    fn process(&mut self, x: &T) -> T {
         StatefulRef::new(&self.config[..], &mut self.state[..]).process(x)
     }
 
@@ -180,7 +178,7 @@ where
     }
 
     #[inline]
-    fn process_interpolate(&mut self, x: T, y: &mut [T]) {
+    fn process_interpolate(&mut self, x: &T, y: &mut [T]) {
         StatefulRef::new(&self.config[..], &mut self.state[..]).process_interpolate(x, y)
     }
 }
@@ -190,14 +188,13 @@ where
 /// This then automatically covers any nested tuple.
 impl<T, C1, C2, S1, S2> Process<T> for StatefulRef<'_, (C1, C2), (S1, S2)>
 where
-    T: Copy,
     for<'a> StatefulRef<'a, C1, S1>: Process<T>,
     for<'a> StatefulRef<'a, C2, S2>: Process<T>,
 {
     #[inline]
-    fn process(&mut self, x: T) -> T {
+    fn process(&mut self, x: &T) -> T {
         let u = StatefulRef::new(&self.config.0, &mut self.state.0).process(x);
-        StatefulRef::new(&self.config.1, &mut self.state.1).process(u)
+        StatefulRef::new(&self.config.1, &mut self.state.1).process(&u)
     }
 
     #[inline]
@@ -216,14 +213,14 @@ where
 /// Parallel filter pair
 ///
 /// Can be viewed as digital lattice filter or butterfly filter or complementary allpass pair.
-/// Cadidates for the branches are allpasses like Wdf or Ldi or polyphase banks.
+/// Candidates for the branches are allpasses like Wdf or Ldi, polyphase banks for resampling or Hilbert filters.
 ///
 /// The [`Process::process`] and [`Process::process_decimate`] return the sum of the two branches
 /// while intrinsic `process_complementary_in_place()` etc. yields both sum and difference.
 ///
 /// [`Process::process_interpolate`] stores the (polyphase) branch outputs in the first two output samples.
 ///
-/// Scaling with 0.5 gain is to be performed ahead of the filter or within both branches.
+/// Potentially required scaling with 0.5 gain is to be performed ahead of the filter or within each branch.
 #[derive(Clone, Debug, Default)]
 pub struct Pair<C1, C2>(
     /// Top filter
@@ -243,12 +240,12 @@ pub struct PairState<S1, S2>(
 
 impl<T, C1, C2, S1, S2> Process<T> for StatefulRef<'_, Pair<C1, C2>, PairState<S1, S2>>
 where
-    T: Copy + Add<Output = T>,
+    T: Add<Output = T>,
     for<'a> StatefulRef<'a, C1, S1>: Process<T>,
     for<'a> StatefulRef<'a, C2, S2>: Process<T>,
 {
     #[inline]
-    fn process(&mut self, x: T) -> T {
+    fn process(&mut self, x: &T) -> T {
         StatefulRef::new(&self.config.0, &mut self.state.0).process(x)
             + StatefulRef::new(&self.config.1, &mut self.state.1).process(x)
     }
@@ -262,7 +259,7 @@ where
     }
 
     #[inline]
-    fn process_interpolate(&mut self, x: T, y: &mut [T]) {
+    fn process_interpolate(&mut self, x: &T, y: &mut [T]) {
         let y0 = StatefulRef::new(&self.config.0, &mut self.state.0).process(x);
         let y1 = StatefulRef::new(&self.config.1, &mut self.state.1).process(x);
         if let Some(y) = y.first_chunk_mut() {
@@ -298,11 +295,12 @@ impl<C1, C2, S1, S2> StatefulRef<'_, Pair<C1, C2>, PairState<S1, S2>> {
     #[inline]
     pub fn process_sum_in_place<T, const N: usize>(&mut self, xy: &mut [T; N])
     where
-        T: Copy + Default + AddAssign,
+        T: AddAssign,
+        [T; N]: Default,
         for<'a> StatefulRef<'a, C1, S1>: Process<T>,
         for<'a> StatefulRef<'a, C2, S2>: Process<T>,
     {
-        let mut xy1 = [T::default(); N];
+        let mut xy1 = <[T; N]>::default();
         StatefulRef::new(&self.config.1, &mut self.state.1).process_block(xy, &mut xy1);
         StatefulRef::new(&self.config.0, &mut self.state.0).process_in_place(xy);
         for (y0, y1) in xy.iter_mut().zip(xy1) {
@@ -314,15 +312,81 @@ impl<C1, C2, S1, S2> StatefulRef<'_, Pair<C1, C2>, PairState<S1, S2>> {
     #[inline]
     pub fn process_difference_in_place<T, const N: usize>(&mut self, xy: &mut [T; N])
     where
-        T: Copy + Default + SubAssign,
+        T: SubAssign,
+        [T; N]: Default,
         for<'a> StatefulRef<'a, C1, S1>: Process<T>,
         for<'a> StatefulRef<'a, C2, S2>: Process<T>,
     {
-        let mut xy1 = [T::default(); N];
+        let mut xy1 = <[T; N]>::default();
         StatefulRef::new(&self.config.1, &mut self.state.1).process_block(xy, &mut xy1);
         StatefulRef::new(&self.config.0, &mut self.state.0).process_in_place(xy);
         for (y0, y1) in xy.iter_mut().zip(xy1) {
             *y0 -= y1;
         }
+    }
+}
+
+/// Multiple channels to be processed with the same configuration
+///
+/// Note that this may result in suboptimal code because the data ordering is sample-major.
+/// The Process block operations are implemented channel-major to give better cache/register usage patterns
+/// but require indexing/striding and the layout is transposed relative to channel-major blocks.
+/// To avoid a potential penalty, implement the channel loop explicitly on channel-major data.
+#[derive(Clone, Debug)]
+pub struct Channels<S, const N: usize>(pub [S; N]);
+
+impl<S, const N: usize> Default for Channels<S, N>
+where
+    [S; N]: Default,
+{
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<T, C, S, const N: usize> Process<[T; N]> for StatefulRef<'_, C, Channels<S, N>>
+where
+    [T; N]: Default,
+    for<'a> StatefulRef<'a, C, S>: Process<T>,
+{
+    #[inline]
+    fn process(&mut self, x: &[T; N]) -> [T; N] {
+        let mut y = <[T; N]>::default();
+        for ((x, y), state) in x.iter().zip(y.iter_mut()).zip(self.state.0.iter_mut()) {
+            *y = StatefulRef::new(self.config, state).process(x);
+        }
+        y
+    }
+
+    #[inline]
+    fn process_block(&mut self, x: &[[T; N]], y: &mut [[T; N]]) {
+        debug_assert_eq!(x.len(), y.len());
+        for (i, state) in self.state.0.iter_mut().enumerate() {
+            for (x, y) in x.iter().zip(y.iter_mut()) {
+                y[i] = StatefulRef::new(self.config, state).process(&x[i]);
+            }
+        }
+    }
+
+    #[inline]
+    fn process_in_place(&mut self, xy: &mut [[T; N]]) {
+        for (i, state) in self.state.0.iter_mut().enumerate() {
+            for xy in xy.iter_mut() {
+                xy[i] = StatefulRef::new(self.config, state).process(&xy[i]);
+            }
+        }
+    }
+
+    #[inline]
+    fn process_decimate(&mut self, x: &[[T; N]]) -> Option<[T; N]> {
+        // https://github.com/rust-lang/rust/issues/130828 and https://github.com/rust-lang/rust/issues/79711
+        let mut y = <[T; N]>::default();
+        for (i, (y, state)) in y.iter_mut().zip(self.state.0.iter_mut()).enumerate() {
+            *y = x
+                .iter()
+                .map(|x| StatefulRef::new(self.config, state).process(&x[i]))
+                .last()?;
+        }
+        Some(y)
     }
 }

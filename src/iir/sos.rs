@@ -103,27 +103,27 @@ pub struct SosStateDither {
 }
 
 impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosState> {
-    fn process(&mut self, x0: i32) -> i32 {
+    fn process(&mut self, x0: &i32) -> i32 {
         let xy = &mut self.state.xy;
         let ba = &self.config.ba;
         let mut acc = 0;
-        acc += x0 as i64 * ba[0] as i64;
+        acc += *x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
         acc += xy[3] as i64 * ba[4] as i64;
         let y0 = (acc >> Q) as i32;
-        *xy = [x0, xy[0], y0, xy[2]];
+        *xy = [*x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
 impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosState> {
-    fn process(&mut self, x0: i32) -> i32 {
+    fn process(&mut self, x0: &i32) -> i32 {
         let xy = &mut self.state.xy;
         let ba = &self.config.ba;
         let mut acc = 0;
-        acc += x0 as i64 * ba[0] as i64;
+        acc += *x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
@@ -135,21 +135,21 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosState> {
         } else if y0 > self.config.max {
             y0 = self.config.max;
         }
-        *xy = [x0, xy[0], y0, xy[2]];
+        *xy = [*x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
 impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosStateWide> {
-    fn process(&mut self, x0: i32) -> i32 {
+    fn process(&mut self, x0: &i32) -> i32 {
         let x = &mut self.state.x;
         let y = &mut self.state.y;
         let ba = &self.config.ba;
         let mut acc = 0;
-        acc += x0 as i64 * ba[0] as i64;
+        acc += *x0 as i64 * ba[0] as i64;
         acc += x[0] as i64 * ba[1] as i64;
         acc += x[1] as i64 * ba[2] as i64;
-        *x = [x0, x[0]];
+        *x = [*x0, x[0]];
         acc += (y[0] as u32 as i64 * ba[3] as i64) >> 32;
         acc += (y[0] >> 32) * ba[3] as i64;
         acc += (y[1] as u32 as i64 * ba[4] as i64) >> 32;
@@ -161,15 +161,15 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosStateWide> {
 }
 
 impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosStateWide> {
-    fn process(&mut self, x0: i32) -> i32 {
+    fn process(&mut self, x0: &i32) -> i32 {
         let x = &mut self.state.x;
         let y = &mut self.state.y;
         let ba = &self.config.ba;
         let mut acc = 0;
-        acc += x0 as i64 * ba[0] as i64;
+        acc += *x0 as i64 * ba[0] as i64;
         acc += x[0] as i64 * ba[1] as i64;
         acc += x[1] as i64 * ba[2] as i64;
-        *x = [x0, x[0]];
+        *x = [*x0, x[0]];
         acc += (y[0] as u32 as i64 * ba[3] as i64) >> 32;
         acc += (y[0] >> 32) * ba[3] as i64;
         acc += (y[1] as u32 as i64 * ba[4] as i64) >> 32;
@@ -188,12 +188,12 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosStateWide> {
 }
 
 impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosStateDither> {
-    fn process(&mut self, x0: i32) -> i32 {
+    fn process(&mut self, x0: &i32) -> i32 {
         let xy = &mut self.state.xy;
         let e = &mut self.state.e;
         let ba = &self.config.ba;
         let mut acc = *e as i64;
-        acc += x0 as i64 * ba[0] as i64;
+        acc += *x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
@@ -201,18 +201,18 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosStateDither> {
         acc <<= 32 - Q;
         *e = acc as _;
         let y0 = (acc >> 32) as i32;
-        *xy = [x0, xy[0], y0, xy[2]];
+        *xy = [*x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
 impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosStateDither> {
-    fn process(&mut self, x0: i32) -> i32 {
+    fn process(&mut self, x0: &i32) -> i32 {
         let xy = &mut self.state.xy;
         let e = &mut self.state.e;
         let ba = &self.config.ba;
         let mut acc = *e as i64;
-        acc += x0 as i64 * ba[0] as i64;
+        acc += *x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
@@ -225,7 +225,7 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosStateDither> 
         } else if y0 > self.config.max {
             y0 = self.config.max;
         }
-        *xy = [x0, xy[0], y0, xy[2]];
+        *xy = [*x0, xy[0], y0, xy[2]];
         y0
     }
 }

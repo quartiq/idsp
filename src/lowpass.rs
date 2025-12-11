@@ -35,7 +35,7 @@ impl<const N: usize> Process<i32> for StatefulRef<'_, Lowpass<N>, LowpasState<N>
     /// `1 <= k <= (1 << 31) - 1`.
     /// The second-order lowpass works and is accurate for
     /// `1 << 16 <= k <= q*(1 << 31)`.
-    fn process(&mut self, x: i32) -> i32 {
+    fn process(&mut self, x: &i32) -> i32 {
         // d = (x0 - p1)*k0
         // p0 = p1 + 2d
         // y0 = p1 + d
