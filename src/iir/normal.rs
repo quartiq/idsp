@@ -2,7 +2,7 @@ use miniconf::Tree;
 #[cfg(not(feature = "std"))]
 use num_traits::float::Float as _;
 
-use super::{Process, SosState, StatefulRef};
+use super::{Process, ProcessorRef, SosState};
 
 /// Normal form second order section
 ///
@@ -12,7 +12,7 @@ use super::{Process, SosState, StatefulRef};
 ///
 /// This implementation includes a second order all-zeros before the all-poles section.
 ///
-/// The `y0`/`y1` fields of [`State`] hold the in-phase and quadrature
+/// The `y0`/`y1` fields of [`SosState`] hold the in-phase and quadrature
 /// components of the current output.
 #[derive(Debug, Clone, Default, Tree)]
 #[tree(meta(doc, typename))]
@@ -25,7 +25,7 @@ pub struct Normal<const Q: u8> {
     pub p: [i32; 2],
 }
 
-impl<const Q: u8> Process<i32> for StatefulRef<'_, Normal<Q>, SosState> {
+impl<const Q: u8> Process<i32> for ProcessorRef<'_, Normal<Q>, SosState> {
     fn process(&mut self, x0: &i32) -> i32 {
         let b = &self.config.b;
         let p = &self.config.p;

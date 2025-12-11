@@ -1,4 +1,4 @@
-use super::{Process, StatefulRef};
+use super::{Process, ProcessorRef};
 use miniconf::Tree;
 #[cfg(not(feature = "std"))]
 use num_traits::float::FloatCore as _;
@@ -102,7 +102,7 @@ pub struct SosStateDither {
     pub e: u32,
 }
 
-impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosState> {
+impl<const Q: u8> Process<i32> for ProcessorRef<'_, Sos<Q>, SosState> {
     fn process(&mut self, x0: &i32) -> i32 {
         let xy = &mut self.state.xy;
         let ba = &self.config.ba;
@@ -118,7 +118,7 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosState> {
     }
 }
 
-impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosState> {
+impl<const Q: u8> Process<i32> for ProcessorRef<'_, SosClamp<Q>, SosState> {
     fn process(&mut self, x0: &i32) -> i32 {
         let xy = &mut self.state.xy;
         let ba = &self.config.ba;
@@ -140,7 +140,7 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosState> {
     }
 }
 
-impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosStateWide> {
+impl<const Q: u8> Process<i32> for ProcessorRef<'_, Sos<Q>, SosStateWide> {
     fn process(&mut self, x0: &i32) -> i32 {
         let x = &mut self.state.x;
         let y = &mut self.state.y;
@@ -160,7 +160,7 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosStateWide> {
     }
 }
 
-impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosStateWide> {
+impl<const Q: u8> Process<i32> for ProcessorRef<'_, SosClamp<Q>, SosStateWide> {
     fn process(&mut self, x0: &i32) -> i32 {
         let x = &mut self.state.x;
         let y = &mut self.state.y;
@@ -187,7 +187,7 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosStateWide> {
     }
 }
 
-impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosStateDither> {
+impl<const Q: u8> Process<i32> for ProcessorRef<'_, Sos<Q>, SosStateDither> {
     fn process(&mut self, x0: &i32) -> i32 {
         let xy = &mut self.state.xy;
         let e = &mut self.state.e;
@@ -206,7 +206,7 @@ impl<const Q: u8> Process<i32> for StatefulRef<'_, Sos<Q>, SosStateDither> {
     }
 }
 
-impl<const Q: u8> Process<i32> for StatefulRef<'_, SosClamp<Q>, SosStateDither> {
+impl<const Q: u8> Process<i32> for ProcessorRef<'_, SosClamp<Q>, SosStateDither> {
     fn process(&mut self, x0: &i32) -> i32 {
         let xy = &mut self.state.xy;
         let e = &mut self.state.e;
@@ -289,7 +289,7 @@ mod test {
     pub struct Casc([Sos<29>; 4]);
     impl Casc {
         pub fn block(&self, state: &mut [SosState; 4], xy0: &mut [i32; 8]) {
-            StatefulRef::new(&self.0, state).process_in_place(xy0);
+            ProcessorRef::new(&self.0, state).in_place(xy0);
         }
     }
 }

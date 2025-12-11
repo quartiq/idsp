@@ -1,4 +1,4 @@
-use crate::iir::{Process, StatefulRef};
+use crate::iir::{Process, ProcessorRef};
 
 /// Arbitrary order, high dynamic range, wide coefficient range,
 /// lowpass filter implementation. DC gain is 1.
@@ -16,7 +16,7 @@ pub struct Lowpass<const N: usize>(pub [i32; N]);
 #[derive(Clone, Debug)]
 pub struct LowpasState<const N: usize>(pub [i64; N]);
 
-impl<const N: usize> Process<i32> for StatefulRef<'_, Lowpass<N>, LowpasState<N>> {
+impl<const N: usize> Process<i32> for ProcessorRef<'_, Lowpass<N>, LowpasState<N>> {
     /// The filter configuration `Config` contains the filter gains.
     ///
     /// For the first-order lowpass this is a single element array `[k]` with

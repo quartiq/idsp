@@ -1,7 +1,7 @@
 #[cfg(not(feature = "std"))]
 use num_traits::float::FloatCore as _;
 
-use super::{Process, StatefulRef};
+use super::{Process, ProcessorRef};
 
 /// Two port adapter architecture
 ///
@@ -151,7 +151,7 @@ impl<const N: usize> Default for WdfState<N> {
     }
 }
 
-impl<const N: usize, const M: u32> Process<i32> for StatefulRef<'_, Wdf<N, M>, WdfState<N>> {
+impl<const N: usize, const M: u32> Process<i32> for ProcessorRef<'_, Wdf<N, M>, WdfState<N>> {
     #[inline]
     fn process(&mut self, x0: &i32) -> i32 {
         let mut y = 0;
