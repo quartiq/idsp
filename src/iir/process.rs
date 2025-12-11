@@ -279,20 +279,4 @@ impl<C1, C2, S1, S2> StatefulRef<'_, Butterfly<C1, C2>, ButterflyState<S1, S2>> 
             *y0 -= y1;
         }
     }
-
-    /// Process input into highpass and decimate
-    ///
-    /// [`Process::process_decimate()`] implements the lowpass version of this.
-    #[inline]
-    pub fn process_highpass_decimate<T>(&mut self, x: &[T]) -> Option<T>
-    where
-        T: Copy + Sub<Output = T>,
-        for<'a> StatefulRef<'a, C1, S1>: Process<T>,
-        for<'a> StatefulRef<'a, C2, S2>: Process<T>,
-    {
-        StatefulRef::new(&self.config.0, &mut self.state.0)
-            .process_decimate(x)
-            .zip(StatefulRef::new(&self.config.1, &mut self.state.1).process_decimate(x))
-            .map(|(y0, y1)| y0 - y1)
-    }
 }
