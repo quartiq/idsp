@@ -1,6 +1,6 @@
 #[pyo3::pymodule]
 mod _idsp {
-    use crate::iir::{ButterflyState, Process, StatefulRef};
+    use crate::iir::{PairState, Process, StatefulRef};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
@@ -109,12 +109,12 @@ mod _idsp {
     /// Gazsi 1985, Example 5
     #[pyfunction]
     fn wdf<'py>(mut xy: PyReadwriteArray1<'py, i32>) -> PyResult<()> {
-        use crate::iir::{Butterfly, Wdf, WdfState};
+        use crate::iir::{Pair, Wdf, WdfState};
 
         // With constant coefficients and fixed block size 4, already with O2, this
         // is fully unrolled and inlined on e.g. thubv7em-none-eabi and about 36 insns per sample,
         // i.e. less than 2 insn per order and sample.
-        let f = Butterfly(
+        let f = Pair(
             (
                 (
                     Wdf::<1, 0x1>::default(),
@@ -138,7 +138,7 @@ mod _idsp {
                 ],
             ),
         );
-        let mut s: ButterflyState<
+        let mut s: PairState<
             ((WdfState<1>, WdfState<2>), [WdfState<2>; 3]),
             ([WdfState<2>; 2], [WdfState<2>; 3]),
         > = Default::default();
