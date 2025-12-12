@@ -2,6 +2,8 @@ use core::ops::AddAssign;
 
 use num_traits::{AsPrimitive, Num, Pow, WrappingAdd, WrappingSub};
 
+use crate::iir::Process;
+
 /// Cascaded integrator comb structure
 ///
 /// Order `N` where `N = 3` is cubic.
@@ -184,6 +186,67 @@ where
             });
             Some(self.zoh)
         }
+    }
+}
+
+impl<T, const N: usize, const M: usize> Process<Option<T>, T> for Cic<T, N, M>
+where
+    T: Num + AddAssign + WrappingAdd + WrappingSub + Pow<usize, Output = T> + Copy + 'static,
+    u32: AsPrimitive<T>,
+    usize: AsPrimitive<T>,
+{
+    #[inline]
+    fn process(&mut self, x: Option<T>) -> T {
+        self.interpolate(x)
+    }
+}
+
+impl<T, const N: usize, const M: usize, const R: usize> Process<T, [T; R]> for Cic<T, N, M>
+where
+    T: Num + AddAssign + WrappingAdd + WrappingSub + Pow<usize, Output = T> + Copy + 'static,
+    u32: AsPrimitive<T>,
+    usize: AsPrimitive<T>,
+    [T; R]: Default,
+{
+    #[inline]
+    fn process(&mut self, x: T) -> [T; R] {
+        let mut y = <[T; R]>::default();
+        if let Some((y0, yr)) = y.split_first_mut() {
+            *y0 = self.interpolate(Some(x));
+            for y in yr.iter_mut() {
+                *y = self.interpolate(None);
+            }
+        }
+        y
+    }
+}
+
+impl<T, const N: usize, const M: usize> Process<T, Option<T>> for Cic<T, N, M>
+where
+    T: Num + AddAssign + WrappingAdd + WrappingSub + Pow<usize, Output = T> + Copy + 'static,
+    u32: AsPrimitive<T>,
+    usize: AsPrimitive<T>,
+{
+    #[inline]
+    fn process(&mut self, x: T) -> Option<T> {
+        self.decimate(x)
+    }
+}
+
+impl<T, const N: usize, const M: usize, const R: usize> Process<[T; R], T> for Cic<T, N, M>
+where
+    T: Num + AddAssign + WrappingAdd + WrappingSub + Pow<usize, Output = T> + Copy + 'static,
+    u32: AsPrimitive<T>,
+    usize: AsPrimitive<T>,
+{
+    #[inline]
+    fn process(&mut self, x: [T; R]) -> T {
+        for x in x {
+            if let Some(y) = self.decimate(x) {
+                return y;
+            }
+        }
+        return T::zero();
     }
 }
 

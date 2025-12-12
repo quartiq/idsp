@@ -1,6 +1,6 @@
 #[pyo3::pymodule]
 mod _idsp {
-    use crate::iir::{Inplace, Major, Minor, Processor};
+    use crate::iir::{Inplace, Major, Minor, Stateful};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
@@ -68,7 +68,7 @@ mod _idsp {
             .collect::<Result<Vec<_>, PyErr>>()?;
         let mut state = vec![crate::iir::SosState::default(); sos.len()];
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
-        Processor::new(Major::new(&sos[..]), &mut state[..]).inplace(xy);
+        Stateful::new(Major::new(&sos[..]), &mut state[..]).inplace(xy);
         Ok(())
     }
 
@@ -100,7 +100,7 @@ mod _idsp {
             .collect::<Result<Vec<_>, PyErr>>()?;
         let mut state = vec![crate::iir::SosStateWide::default(); sos.len()];
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
-        Processor::new(Major::new(&sos[..]), &mut state[..]).inplace(xy);
+        Stateful::new(Major::new(&sos[..]), &mut state[..]).inplace(xy);
         Ok(())
     }
 
@@ -143,7 +143,7 @@ mod _idsp {
             ([WdfState<2>; 2], [WdfState<2>; 3]),
         ) = Default::default();
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
-        Processor::new(f, s).as_mut().inplace(xy);
+        Stateful::new(f, s).as_mut().inplace(xy);
         Ok(())
     }
 }
