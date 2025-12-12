@@ -1,22 +1,23 @@
 //! Sample processing, filtering, combination of filters.
-use core::marker::PhantomData;
-use core::ops::{Add, Mul, Neg};
+use core::{
+    marker::PhantomData,
+    ops::{Add, Mul, Neg},
+};
 
 /// Processing block
 ///
 /// Single input, single output
 ///
 /// Process impls can be cascaded in (homogeneous) `[C; N]` arrays/`[C]` slices, and heterogeneous
-/// `(C1, C2)` tuples. They can be used as configuration-major ([`Major`]) or
-/// configuration-minor ([`Minor`]) or in [`Pair`]s on complementary allpasses and polyphase banks.
+/// `(C1, C2)` tuples. They can be used as configuration-major or
+/// configuration-minor (through [`Minor`]) or in [`Sum`]s on complementary allpasses and polyphase banks.
+/// Tuples, arrays, and Pairs, and Minor can be mixed and nested ad lib.
 ///
 /// For a given filter configuration `C` and state `S` pair the trait is usually implemented
 /// through [`Stateful<&'a C, &mut S>`] (created ad-hoc from by borrowing configuration and state)
 /// or [`Stateful<C, S>`] (owned configuration and state).
-/// Stateless filters should implement `Process` on `&Self` or `Stateful<&'a Self, &mut ()>` for composability.
-///
-/// Tuples, arrays, and Pairs, and Chain can be mixed and nested ad lib. The corresponding
-/// [`Stateful`] will implement `Process`.
+/// Stateless filters should implement `Process` on `&Self` for composability through
+/// `Stateful<&Stateless<Self>, &mut ()>`.
 pub trait Process<X: Copy, Y = X> {
     /// Update the state with a new input and obtain an output
     fn process(&mut self, x: X) -> Y;
@@ -63,48 +64,20 @@ impl<X: Copy, T: Inplace<X>> Inplace<X> for &mut T {
     }
 }
 
-/// Chain of large filters
-///
-/// These optimize well (especially for arrays) if the sizes obey
-/// configuration ~ state > sample.
-/// If not, use `Minor`.
-///
-/// Note that this only overrides the behavior for `block()` and `inplace()`.
-/// `process()` is unaffected.
-#[derive(Clone, Debug, Default)]
-#[repr(transparent)]
-pub struct Major<C> {
-    /// The inner configurations
-    pub inner: C,
-}
-
-impl<C> Major<C> {
-    /// Create a new chain
-    #[inline]
-    pub fn new(inner: C) -> Self {
-        Self { inner }
-    }
-}
-
-impl<C, const N: usize> Major<[C; N]> {
-    /// Borrowed Self
-    #[inline]
-    pub fn as_ref(&self) -> Major<&[C]> {
-        Major::new(&self.inner[..])
-    }
-
-    /// Mutably borrowed Self
-    #[inline]
-    pub fn as_mut(&mut self) -> Major<&mut [C]> {
-        Major::new(&mut self.inner[..])
-    }
-}
-
 /// Configuration-minor, sample-major
 ///
 /// The various Process tooling implementations for `Minor`
 /// place the sample loop as the outer-most loop (configuration-minor, sample-major).
 /// This is optimal for filters with small or no state and configuration.
+///
+/// Chain of large filters are implemented through tuples and slices/arrays.
+///
+/// These optimize well (especially for sample arrays) if the sizes obey
+/// configuration ~ state > sample.
+/// If they do not, use `Minor`.
+///
+/// Note that the major implementations only override the behavior
+/// for `block()` and `inplace()`. `process()` is unaffected.
 #[derive(Clone, Debug, Default)]
 #[repr(transparent)]
 pub struct Minor<C, U> {
@@ -150,25 +123,24 @@ impl<X: Copy, U: Copy, Y, P1: Process<X, U>, P2: Process<U, Y>> Process<X, Y>
 
 impl<X: Copy, U, P1, P2> Inplace<X> for Minor<(P1, P2), U> where Self: Process<X> {}
 
-impl<X: Copy, Y: Copy, P1: Process<X, Y>, P2: Inplace<Y>> Process<X, Y> for Major<(P1, P2)> {
+impl<X: Copy, Y: Copy, P1: Process<X, Y>, P2: Inplace<Y>> Process<X, Y> for (P1, P2) {
     #[inline]
     fn process(&mut self, x: X) -> Y {
-        // TODO: defer to Minor
-        self.inner.1.process(self.inner.0.process(x))
+        self.1.process(self.0.process(x))
     }
 
     #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
-        self.inner.0.block(x, y);
-        self.inner.1.inplace(y);
+        self.0.block(x, y);
+        self.1.inplace(y);
     }
 }
 
-impl<X: Copy, P1: Inplace<X>, P2: Inplace<X>> Inplace<X> for Major<(P1, P2)> {
+impl<X: Copy, P1: Inplace<X>, P2: Inplace<X>> Inplace<X> for (P1, P2) {
     #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
-        self.inner.0.inplace(xy);
-        self.inner.1.inplace(xy);
+        self.0.inplace(xy);
+        self.1.inplace(xy);
     }
 }
 
@@ -181,16 +153,16 @@ impl<X: Copy, P: Process<X>> Process<X> for Minor<&mut [P], X> {
 
 impl<X: Copy, P> Inplace<X> for Minor<&mut [P], X> where Self: Process<X> {}
 
-impl<X: Copy, P: Inplace<X>> Process<X> for Major<&mut [P]> {
+impl<X: Copy, P: Inplace<X>> Process<X> for [P] {
     #[inline]
     fn process(&mut self, x: X) -> X {
-        Minor::new(&mut *self.inner).process(x)
+        Minor::new(&mut self[..]).process(x)
     }
 
     #[inline]
     fn block(&mut self, x: &[X], y: &mut [X]) {
         debug_assert_eq!(x.len(), y.len());
-        if let Some((p0, p)) = self.inner.split_first_mut() {
+        if let Some((p0, p)) = self.split_first_mut() {
             p0.block(x, y);
             for p in p.iter_mut() {
                 p.inplace(y);
@@ -201,10 +173,10 @@ impl<X: Copy, P: Inplace<X>> Process<X> for Major<&mut [P]> {
     }
 }
 
-impl<X: Copy, P: Inplace<X>> Inplace<X> for Major<&mut [P]> {
+impl<X: Copy, P: Inplace<X>> Inplace<X> for [P] {
     #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
-        for p in self.inner.iter_mut() {
+        for p in self.iter_mut() {
             p.inplace(xy)
         }
     }
@@ -223,12 +195,13 @@ impl<X: Copy, P: Process<X>, const N: usize> Process<X> for Minor<[P; N], X> {
 }
 
 impl<X: Copy, P: Process<X>, const N: usize> Inplace<X> for Minor<[P; N], X> {
+    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         self.as_mut().inplace(xy)
     }
 }
 
-impl<X: Copy, P: Inplace<X>, const N: usize> Process<X> for Major<[P; N]> {
+impl<X: Copy, P: Inplace<X>, const N: usize> Process<X> for [P; N] {
     #[inline]
     fn process(&mut self, x: X) -> X {
         self.as_mut().process(x)
@@ -240,7 +213,7 @@ impl<X: Copy, P: Inplace<X>, const N: usize> Process<X> for Major<[P; N]> {
     }
 }
 
-impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for Major<[P; N]> {
+impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for [P; N] {
     #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         self.as_mut().inplace(xy)
@@ -343,7 +316,7 @@ where
 /// Iterations are sample-major, and filter-minor. This is good if at least
 /// one of the filters with has no or small state and configuration.
 ///
-/// For large filters/state, use [`Chain`].
+/// For large filters/state, use tuples, arrays, and slices.
 impl<X, U, Y, C1, C2, S1, S2> Process<X, Y> for Stateful<&Minor<(C1, C2), U>, &mut (S1, S2)>
 where
     X: Copy,
@@ -366,7 +339,7 @@ where
 }
 
 /// Chain of two different large filters
-impl<X, Y, C1, C2, S1, S2> Process<X, Y> for Stateful<&Major<(C1, C2)>, &mut (S1, S2)>
+impl<X, Y, C1, C2, S1, S2> Process<X, Y> for Stateful<&(C1, C2), &mut (S1, S2)>
 where
     X: Copy,
     Y: Copy,
@@ -376,18 +349,18 @@ where
     #[inline]
     fn process(&mut self, x: X) -> Y {
         // TODO: defer to Minor
-        let u = Stateful::new(&self.config.inner.0, &mut self.state.0).process(x);
-        Stateful::new(&self.config.inner.1, &mut self.state.1).process(u)
+        let u = Stateful::new(&self.config.0, &mut self.state.0).process(x);
+        Stateful::new(&self.config.1, &mut self.state.1).process(u)
     }
 
     #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
-        Stateful::new(&self.config.inner.0, &mut self.state.0).block(x, y);
-        Stateful::new(&self.config.inner.1, &mut self.state.1).inplace(y);
+        Stateful::new(&self.config.0, &mut self.state.0).block(x, y);
+        Stateful::new(&self.config.1, &mut self.state.1).inplace(y);
     }
 }
 
-impl<X, C1, C2, S1, S2> Inplace<X> for Stateful<&Major<(C1, C2)>, &mut (S1, S2)>
+impl<X, C1, C2, S1, S2> Inplace<X> for Stateful<&(C1, C2), &mut (S1, S2)>
 where
     X: Copy,
     for<'a> Stateful<&'a C1, &'a mut S1>: Inplace<X>,
@@ -395,8 +368,8 @@ where
 {
     #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
-        Stateful::new(&self.config.inner.0, &mut self.state.0).inplace(xy);
-        Stateful::new(&self.config.inner.1, &mut self.state.1).inplace(xy);
+        Stateful::new(&self.config.0, &mut self.state.0).inplace(xy);
+        Stateful::new(&self.config.1, &mut self.state.1).inplace(xy);
     }
 }
 
@@ -425,24 +398,21 @@ where
 }
 
 /// A chain of multiple large filters of the same type
-impl<X, C, S> Process<X> for Stateful<Major<&[C]>, &mut [S]>
+impl<X, C, S> Process<X> for Stateful<&[C], &mut [S]>
 where
     X: Copy,
     for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
 {
     #[inline]
     fn process(&mut self, x: X) -> X {
-        Stateful::new(Minor::new(self.config.inner), &mut *self.state).process(x)
+        Stateful::new(Minor::new(self.config), &mut *self.state).process(x)
     }
 
     #[inline]
     fn block(&mut self, x: &[X], y: &mut [X]) {
-        debug_assert_eq!(self.config.inner.len(), self.state.len());
-        if let Some(((c0, c), (s0, s))) = self
-            .config
-            .inner
-            .split_first()
-            .zip(self.state.split_first_mut())
+        debug_assert_eq!(self.config.len(), self.state.len());
+        if let Some(((c0, c), (s0, s))) =
+            self.config.split_first().zip(self.state.split_first_mut())
         {
             Stateful::new(c0, s0).block(x, y);
             for (c, s) in c.iter().zip(s) {
@@ -454,15 +424,15 @@ where
     }
 }
 
-impl<X, C, S> Inplace<X> for Stateful<Major<&[C]>, &mut [S]>
+impl<X, C, S> Inplace<X> for Stateful<&[C], &mut [S]>
 where
     X: Copy,
     for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
 {
     #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
-        debug_assert_eq!(self.config.inner.len(), self.state.len());
-        for (c, s) in self.config.inner.iter().zip(self.state.iter_mut()) {
+        debug_assert_eq!(self.config.len(), self.state.len());
+        for (c, s) in self.config.iter().zip(self.state.iter_mut()) {
             Stateful::new(c, s).inplace(xy);
         }
     }
@@ -476,11 +446,12 @@ where
 {
     #[inline]
     fn process(&mut self, x: X) -> X {
-        Stateful::new(self.config.as_ref(), &mut self.state[..]).process(x)
+        Stateful::new(self.config.as_ref(), self.state.as_mut()).process(x)
     }
 
+    #[inline]
     fn block(&mut self, x: &[X], y: &mut [X]) {
-        Stateful::new(self.config.as_ref(), &mut self.state[..]).block(x, y)
+        Stateful::new(self.config.as_ref(), self.state.as_mut()).block(x, y)
     }
 }
 
@@ -489,36 +460,37 @@ where
     X: Copy,
     for<'a> Stateful<Minor<&'a [C], X>, &'a mut [S]>: Inplace<X>,
 {
+    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
-        Stateful::new(self.config.as_ref(), &mut self.state[..]).inplace(xy)
+        Stateful::new(self.config.as_ref(), self.state.as_mut()).inplace(xy)
     }
 }
 
 /// A chain of multiple large filters of the same type
-impl<X, C, S, const N: usize> Process<X> for Stateful<&Major<[C; N]>, &mut [S; N]>
+impl<X, C, S, const N: usize> Process<X> for Stateful<&[C; N], &mut [S; N]>
 where
     X: Copy,
-    for<'a> Stateful<Major<&'a [C]>, &'a mut [S]>: Process<X>,
+    for<'a> Stateful<&'a [C], &'a mut [S]>: Process<X>,
 {
     #[inline]
     fn process(&mut self, x: X) -> X {
-        Stateful::new(self.config.as_ref(), &mut self.state[..]).process(x)
+        Stateful::new(self.config.as_ref(), self.state.as_mut()).process(x)
     }
 
     #[inline]
     fn block(&mut self, x: &[X], y: &mut [X]) {
-        Stateful::new(self.config.as_ref(), &mut self.state[..]).block(x, y)
+        Stateful::new(self.config.as_ref(), self.state.as_mut()).block(x, y)
     }
 }
 
-impl<X, C, S, const N: usize> Inplace<X> for Stateful<&Major<[C; N]>, &mut [S; N]>
+impl<X, C, S, const N: usize> Inplace<X> for Stateful<&[C; N], &mut [S; N]>
 where
     X: Copy,
-    for<'a> Stateful<Major<&'a [C]>, &'a mut [S]>: Inplace<X>,
+    for<'a> Stateful<&'a [C], &'a mut [S]>: Inplace<X>,
 {
     #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
-        Stateful::new(self.config.as_ref(), &mut self.state[..]).inplace(xy)
+        Stateful::new(self.config.as_ref(), self.state.as_mut()).inplace(xy)
     }
 }
 
@@ -721,6 +693,7 @@ where
 }
 
 impl<X: Copy, const N: usize> Process<X> for Delay<X, N> {
+    #[inline]
     fn process(&mut self, x: X) -> X {
         self.idx = (self.idx + 1) % N;
         core::mem::replace(&mut self.buffer[self.idx], x)
@@ -758,12 +731,13 @@ where
     [X; N]: Default,
     C: Process<[X; N], Y>,
 {
+    #[inline]
     fn process(&mut self, x: X) -> Option<Y> {
         self.buffer[self.idx] = x;
         self.idx += 1;
         (self.idx == N).then(|| {
             self.idx = 0;
-            self.inner.process(core::mem::take(&mut self.buffer))
+            self.inner.process(self.buffer)
         })
     }
 
@@ -771,6 +745,8 @@ where
 }
 
 /// Buffer output
+///
+/// Panics on underflow
 #[derive(Debug, Clone)]
 pub struct Demux<C, Y, const N: usize> {
     inner: C,
@@ -796,6 +772,7 @@ impl<X: Copy, Y: Copy, C, const N: usize> Process<Option<X>, Y> for Demux<C, Y, 
 where
     C: Process<X, [Y; N]>,
 {
+    #[inline]
     fn process(&mut self, x: Option<X>) -> Y {
         if let Some(x) = x {
             self.buffer = self.inner.process(x);

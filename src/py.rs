@@ -1,6 +1,6 @@
 #[pyo3::pymodule]
 mod _idsp {
-    use crate::iir::{Inplace, Major, Minor, Stateful};
+    use crate::iir::{Inplace, Minor, Stateful};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
@@ -68,7 +68,7 @@ mod _idsp {
             .collect::<Result<Vec<_>, PyErr>>()?;
         let mut state = vec![crate::iir::SosState::default(); sos.len()];
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
-        Stateful::new(Major::new(&sos[..]), &mut state[..]).inplace(xy);
+        Stateful::new(&sos[..], &mut state[..]).inplace(xy);
         Ok(())
     }
 
@@ -100,7 +100,7 @@ mod _idsp {
             .collect::<Result<Vec<_>, PyErr>>()?;
         let mut state = vec![crate::iir::SosStateWide::default(); sos.len()];
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
-        Stateful::new(Major::new(&sos[..]), &mut state[..]).inplace(xy);
+        Stateful::new(&sos[..], &mut state[..]).inplace(xy);
         Ok(())
     }
 
@@ -109,13 +109,13 @@ mod _idsp {
     /// Gazsi 1985, Example 5
     #[pyfunction]
     fn wdf<'py>(mut xy: PyReadwriteArray1<'py, i32>) -> PyResult<()> {
-        use crate::iir::{Pair, Wdf, WdfState};
+        use crate::iir::{Sum, Wdf, WdfState};
 
         // With constant coefficients and fixed block size 4, already with O2, this
         // is fully unrolled and inlined on e.g. thubv7em-none-eabi and about 36 insns per sample,
         // i.e. less than 2 insn per order and sample.
-        let f = Pair(
-            Major::new((
+        let f = Sum(
+            (
                 Minor::new((
                     Wdf::<1, 0x1>::default(),
                     Wdf::<2, 0x1c>::quantize(&[-0.226119, 0.0]).unwrap(),
@@ -125,8 +125,8 @@ mod _idsp {
                     Wdf::quantize(&[-0.839323, 0.0]).unwrap(),
                     Wdf::quantize(&[-0.950847, 0.0]).unwrap(),
                 ]),
-            )),
-            Major::new((
+            ),
+            (
                 Minor::new([
                     Wdf::<2, 0x1c>::quantize(&[-0.063978, 0.0]).unwrap(),
                     Wdf::quantize(&[-0.423068, 0.0]).unwrap(),
@@ -136,7 +136,7 @@ mod _idsp {
                     Wdf::quantize(&[-0.905567, 0.0]).unwrap(),
                     Wdf::quantize(&[-0.984721, 0.0]).unwrap(),
                 ]),
-            )),
+            ),
         );
         let s: (
             ((WdfState<1>, WdfState<2>), [WdfState<2>; 3]),

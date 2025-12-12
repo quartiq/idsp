@@ -128,13 +128,7 @@ impl<const Q: u8> Process<i32> for Stateful<&SosClamp<Q>, &mut SosState> {
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
         acc += xy[3] as i64 * ba[4] as i64;
-        let mut y0 = (acc >> Q) as i32 + self.config.u;
-        // clamp() is slower
-        if y0 < self.config.min {
-            y0 = self.config.min;
-        } else if y0 > self.config.max {
-            y0 = self.config.max;
-        }
+        let y0 = ((acc >> Q) as i32 + self.config.u).clamp(self.config.min, self.config.max);
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
@@ -175,13 +169,7 @@ impl<const Q: u8> Process<i32> for Stateful<&SosClamp<Q>, &mut SosStateWide> {
         acc += (y[1] as u32 as i64 * ba[4] as i64) >> 32;
         acc += (y[1] >> 32) * ba[4] as i64;
         acc <<= 32 - Q;
-        let mut y0 = (acc >> 32) as i32 + self.config.u;
-        // clamp() is slower
-        if y0 < self.config.min {
-            y0 = self.config.min;
-        } else if y0 > self.config.max {
-            y0 = self.config.max;
-        }
+        let y0 = ((acc >> 32) as i32 + self.config.u).clamp(self.config.min, self.config.max);
         *y = [((y0 as i64) << 32) | acc as u32 as i64, y[0]];
         y0
     }
@@ -219,12 +207,7 @@ impl<const Q: u8> Process<i32> for Stateful<&SosClamp<Q>, &mut SosStateDither> {
         acc += xy[3] as i64 * ba[4] as i64;
         acc <<= 32 - Q;
         *e = acc as _;
-        let mut y0 = (acc >> 32) as i32 + self.config.u;
-        if y0 < self.config.min {
-            y0 = self.config.min;
-        } else if y0 > self.config.max {
-            y0 = self.config.max;
-        }
+        let y0 = ((acc >> 32) as i32 + self.config.u).clamp(self.config.min, self.config.max);
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
@@ -283,7 +266,7 @@ impl<const Q: u8> From<[i32; 5]> for SosClamp<Q> {
 mod test {
     #![allow(dead_code)]
     use super::*;
-    use crate::iir::{Inplace, Major};
+    use crate::iir::Inplace;
     // No manual tuning needed here.
     // Compiler knows best how and when:
     //   unroll loops
@@ -294,7 +277,7 @@ mod test {
 
     // cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
 
-    pub struct Casc(Major<[Sos<29>; 4]>);
+    pub struct Casc([Sos<29>; 4]);
     impl Casc {
         pub fn block(&self, state: &mut [SosState; 4], xy0: &mut [i32; 8]) {
             Stateful::new(&self.0, state).inplace(xy0);
