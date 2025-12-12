@@ -557,14 +557,7 @@ where
 
 /// Process samples from multiple channels with a common configuration
 ///
-/// Note that this may result in suboptimal code because the data ordering is channel-minor.
-/// The Process block loops are implemented channel-major to give better cache/register usage patterns
-/// but they are not implemented configuration-major and require indexing/striding.
-/// The layout still is transposed relative to channel-major blocks.
-///
-/// To avoid a potential penalty, implement the channel loop explicitly on channel-major data.
-///
-/// TODO: play with as_chunks::<N>()
+/// Note that block() and inplace() reinterpret the data as transposed: __not__ in as `[[X; N]]` but as `[[X]; N]`.
 impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]> for Processor<&C, &mut Channels<S, N>>
 where
     X: Copy,
@@ -583,11 +576,14 @@ where
     #[inline]
     fn block(&mut self, x: &[[X; N]], y: &mut [[Y; N]]) {
         debug_assert_eq!(x.len(), y.len());
-        for (i, state) in self.state.0.iter_mut().enumerate() {
-            let mut p = Processor::new(self.config, state);
-            for (x, y) in x.iter().zip(y.iter_mut()) {
-                y[i] = p.process(x[i]);
-            }
+        let n = x.len();
+        for ((x, y), state) in x
+            .as_flattened()
+            .chunks_exact(n)
+            .zip(y.as_flattened_mut().chunks_exact_mut(n))
+            .zip(self.state.0.iter_mut())
+        {
+            Processor::new(self.config, state).block(x, y)
         }
     }
 }
@@ -596,15 +592,17 @@ impl<X, C, S, const N: usize> Inplace<[X; N]> for Processor<&C, &mut Channels<S,
 where
     X: Copy,
     [X; N]: Default,
-    for<'a> Processor<&'a C, &'a mut S>: Process<X>,
+    for<'a> Processor<&'a C, &'a mut S>: Inplace<X>,
 {
     #[inline]
     fn inplace(&mut self, xy: &mut [[X; N]]) {
-        for (i, state) in self.state.0.iter_mut().enumerate() {
-            let mut p = Processor::new(self.config, state);
-            for xy in xy.iter_mut() {
-                xy[i] = p.process(xy[i]);
-            }
+        let n = xy.len();
+        for (xy, state) in xy
+            .as_flattened_mut()
+            .chunks_exact_mut(n)
+            .zip(self.state.0.iter_mut())
+        {
+            Processor::new(self.config, state).inplace(xy)
         }
     }
 }
