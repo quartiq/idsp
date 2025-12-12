@@ -2,7 +2,7 @@ use miniconf::Tree;
 #[cfg(not(feature = "std"))]
 use num_traits::float::Float as _;
 
-use super::{Process, ProcessorRef, SosState};
+use super::{Inplace, Process, Processor, SosState};
 
 /// Normal form second order section
 ///
@@ -25,13 +25,13 @@ pub struct Normal<const Q: u8> {
     pub p: [i32; 2],
 }
 
-impl<const Q: u8> Process<i32> for ProcessorRef<'_, Normal<Q>, SosState> {
-    fn process(&mut self, x0: &i32) -> i32 {
+impl<const Q: u8> Process<i32> for Processor<&Normal<Q>, &mut SosState> {
+    fn process(&mut self, x0: i32) -> i32 {
         let b = &self.config.b;
         let p = &self.config.p;
         let xy = &mut self.state.xy;
         let mut acc = 0;
-        acc += *x0 as i64 * b[0] as i64;
+        acc += x0 as i64 * b[0] as i64;
         acc += xy[0] as i64 * b[1] as i64;
         acc += xy[1] as i64 * b[2] as i64;
         acc += xy[3] as i64 * p[0] as i64;
@@ -41,10 +41,12 @@ impl<const Q: u8> Process<i32> for ProcessorRef<'_, Normal<Q>, SosState> {
         acc += xy[3] as i64 * p[1] as i64;
         acc += xy[2] as i64 * p[0] as i64;
         let y0 = (acc >> Q) as i32;
-        *xy = [*x0, xy[0], y0, y1];
+        *xy = [x0, xy[0], y0, y1];
         y0
     }
 }
+
+impl<const Q: u8> Inplace<i32> for Processor<&Normal<Q>, &mut SosState> {}
 
 impl<const Q: u8> From<&[[f64; 3]; 2]> for Normal<Q> {
     fn from(ba: &[[f64; 3]; 2]) -> Self {

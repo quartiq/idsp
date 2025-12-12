@@ -1,7 +1,7 @@
 #[cfg(not(feature = "std"))]
 use num_traits::float::FloatCore as _;
 
-use super::{Process, ProcessorRef};
+use super::{Inplace, Process, Processor};
 
 /// Two port adapter architecture
 ///
@@ -151,12 +151,12 @@ impl<const N: usize> Default for WdfState<N> {
     }
 }
 
-impl<const N: usize, const M: u32> Process<i32> for ProcessorRef<'_, Wdf<N, M>, WdfState<N>> {
+impl<const N: usize, const M: u32> Process<i32> for Processor<&Wdf<N, M>, &mut WdfState<N>> {
     #[inline]
-    fn process(&mut self, x0: &i32) -> i32 {
+    fn process(&mut self, x0: i32) -> i32 {
         let mut y = 0;
         let (_, x, z) = self.config.a.iter().zip(self.state.z.iter_mut()).fold(
-            (M, *x0, &mut y),
+            (M, x0, &mut y),
             |(m, x, y), (a, z0)| {
                 let z1;
                 [*y, z1] = Tpa::from((m & 0xf) as u8).adapt([x, *z0], *a);
@@ -167,3 +167,5 @@ impl<const N: usize, const M: u32> Process<i32> for ProcessorRef<'_, Wdf<N, M>, 
         y
     }
 }
+
+impl<const N: usize, const M: u32> Inplace<i32> for Processor<&Wdf<N, M>, &mut WdfState<N>> {}

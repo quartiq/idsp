@@ -1,4 +1,4 @@
-use super::{Process, ProcessorRef};
+use super::{Inplace, Process, Processor};
 use miniconf::Tree;
 #[cfg(not(feature = "std"))]
 use num_traits::float::FloatCore as _;
@@ -102,28 +102,28 @@ pub struct SosStateDither {
     pub e: u32,
 }
 
-impl<const Q: u8> Process<i32> for ProcessorRef<'_, Sos<Q>, SosState> {
-    fn process(&mut self, x0: &i32) -> i32 {
+impl<const Q: u8> Process<i32> for Processor<&Sos<Q>, &mut SosState> {
+    fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.state.xy;
         let ba = &self.config.ba;
         let mut acc = 0;
-        acc += *x0 as i64 * ba[0] as i64;
+        acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
         acc += xy[3] as i64 * ba[4] as i64;
         let y0 = (acc >> Q) as i32;
-        *xy = [*x0, xy[0], y0, xy[2]];
+        *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
-impl<const Q: u8> Process<i32> for ProcessorRef<'_, SosClamp<Q>, SosState> {
-    fn process(&mut self, x0: &i32) -> i32 {
+impl<const Q: u8> Process<i32> for Processor<&SosClamp<Q>, &mut SosState> {
+    fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.state.xy;
         let ba = &self.config.ba;
         let mut acc = 0;
-        acc += *x0 as i64 * ba[0] as i64;
+        acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
@@ -135,21 +135,21 @@ impl<const Q: u8> Process<i32> for ProcessorRef<'_, SosClamp<Q>, SosState> {
         } else if y0 > self.config.max {
             y0 = self.config.max;
         }
-        *xy = [*x0, xy[0], y0, xy[2]];
+        *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
-impl<const Q: u8> Process<i32> for ProcessorRef<'_, Sos<Q>, SosStateWide> {
-    fn process(&mut self, x0: &i32) -> i32 {
+impl<const Q: u8> Process<i32> for Processor<&Sos<Q>, &mut SosStateWide> {
+    fn process(&mut self, x0: i32) -> i32 {
         let x = &mut self.state.x;
         let y = &mut self.state.y;
         let ba = &self.config.ba;
         let mut acc = 0;
-        acc += *x0 as i64 * ba[0] as i64;
+        acc += x0 as i64 * ba[0] as i64;
         acc += x[0] as i64 * ba[1] as i64;
         acc += x[1] as i64 * ba[2] as i64;
-        *x = [*x0, x[0]];
+        *x = [x0, x[0]];
         acc += (y[0] as u32 as i64 * ba[3] as i64) >> 32;
         acc += (y[0] >> 32) * ba[3] as i64;
         acc += (y[1] as u32 as i64 * ba[4] as i64) >> 32;
@@ -160,16 +160,16 @@ impl<const Q: u8> Process<i32> for ProcessorRef<'_, Sos<Q>, SosStateWide> {
     }
 }
 
-impl<const Q: u8> Process<i32> for ProcessorRef<'_, SosClamp<Q>, SosStateWide> {
-    fn process(&mut self, x0: &i32) -> i32 {
+impl<const Q: u8> Process<i32> for Processor<&SosClamp<Q>, &mut SosStateWide> {
+    fn process(&mut self, x0: i32) -> i32 {
         let x = &mut self.state.x;
         let y = &mut self.state.y;
         let ba = &self.config.ba;
         let mut acc = 0;
-        acc += *x0 as i64 * ba[0] as i64;
+        acc += x0 as i64 * ba[0] as i64;
         acc += x[0] as i64 * ba[1] as i64;
         acc += x[1] as i64 * ba[2] as i64;
-        *x = [*x0, x[0]];
+        *x = [x0, x[0]];
         acc += (y[0] as u32 as i64 * ba[3] as i64) >> 32;
         acc += (y[0] >> 32) * ba[3] as i64;
         acc += (y[1] as u32 as i64 * ba[4] as i64) >> 32;
@@ -187,13 +187,13 @@ impl<const Q: u8> Process<i32> for ProcessorRef<'_, SosClamp<Q>, SosStateWide> {
     }
 }
 
-impl<const Q: u8> Process<i32> for ProcessorRef<'_, Sos<Q>, SosStateDither> {
-    fn process(&mut self, x0: &i32) -> i32 {
+impl<const Q: u8> Process<i32> for Processor<&Sos<Q>, &mut SosStateDither> {
+    fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.state.xy;
         let e = &mut self.state.e;
         let ba = &self.config.ba;
         let mut acc = *e as i64;
-        acc += *x0 as i64 * ba[0] as i64;
+        acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
@@ -201,18 +201,18 @@ impl<const Q: u8> Process<i32> for ProcessorRef<'_, Sos<Q>, SosStateDither> {
         acc <<= 32 - Q;
         *e = acc as _;
         let y0 = (acc >> 32) as i32;
-        *xy = [*x0, xy[0], y0, xy[2]];
+        *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
-impl<const Q: u8> Process<i32> for ProcessorRef<'_, SosClamp<Q>, SosStateDither> {
-    fn process(&mut self, x0: &i32) -> i32 {
+impl<const Q: u8> Process<i32> for Processor<&SosClamp<Q>, &mut SosStateDither> {
+    fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.state.xy;
         let e = &mut self.state.e;
         let ba = &self.config.ba;
         let mut acc = *e as i64;
-        acc += *x0 as i64 * ba[0] as i64;
+        acc += x0 as i64 * ba[0] as i64;
         acc += xy[0] as i64 * ba[1] as i64;
         acc += xy[1] as i64 * ba[2] as i64;
         acc += xy[2] as i64 * ba[3] as i64;
@@ -225,10 +225,17 @@ impl<const Q: u8> Process<i32> for ProcessorRef<'_, SosClamp<Q>, SosStateDither>
         } else if y0 > self.config.max {
             y0 = self.config.max;
         }
-        *xy = [*x0, xy[0], y0, xy[2]];
+        *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
 }
+
+impl<const Q: u8> Inplace<i32> for Processor<&Sos<Q>, &mut SosState> {}
+impl<const Q: u8> Inplace<i32> for Processor<&Sos<Q>, &mut SosStateWide> {}
+impl<const Q: u8> Inplace<i32> for Processor<&Sos<Q>, &mut SosStateDither> {}
+impl<const Q: u8> Inplace<i32> for Processor<&SosClamp<Q>, &mut SosState> {}
+impl<const Q: u8> Inplace<i32> for Processor<&SosClamp<Q>, &mut SosStateWide> {}
+impl<const Q: u8> Inplace<i32> for Processor<&SosClamp<Q>, &mut SosStateDither> {}
 
 fn quantize(ba: &[[f64; 3]; 2], q: u8) -> [i32; 5] {
     let a0 = (1u64 << q) as f64 / ba[1][0];
@@ -276,6 +283,7 @@ impl<const Q: u8> From<[i32; 5]> for SosClamp<Q> {
 mod test {
     #![allow(dead_code)]
     use super::*;
+    use crate::iir::{Inplace, Major};
     // No manual tuning needed here.
     // Compiler knows best how and when:
     //   unroll loops
@@ -286,10 +294,10 @@ mod test {
 
     // cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
 
-    pub struct Casc([Sos<29>; 4]);
+    pub struct Casc(Major<[Sos<29>; 4]>);
     impl Casc {
         pub fn block(&self, state: &mut [SosState; 4], xy0: &mut [i32; 8]) {
-            ProcessorRef::new(&self.0, state).in_place(xy0);
+            Processor::new(&self.0, state).inplace(xy0);
         }
     }
 }
