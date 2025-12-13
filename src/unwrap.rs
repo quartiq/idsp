@@ -10,6 +10,8 @@ use num_traits::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::iir::Process;
+
 /// Subtract `y - x` with signed overflow.
 ///
 /// This is very similar to `i32::overflowing_sub(y, x)` except that the
@@ -64,23 +66,6 @@ impl<Q> Unwrapper<Q>
 where
     Q: 'static + WrappingAdd + Copy,
 {
-    /// Feed a new sample..
-    ///
-    /// Args:
-    /// * `x`: New sample
-    ///
-    /// Returns:
-    /// The (wrapped) difference `x - x_old`
-    pub fn update<P>(&mut self, x: P) -> P
-    where
-        P: 'static + WrappingSub + Copy + AsPrimitive<Q>,
-        Q: AsPrimitive<P>,
-    {
-        let dx = x.wrapping_sub(&self.y.as_());
-        self.y = self.y.wrapping_add(&dx.as_());
-        dx
-    }
-
     /// The current number of wraps
     pub fn wraps<P, const S: u32>(&self) -> P
     where
@@ -104,6 +89,25 @@ where
     /// Current output including wraps
     pub fn y(&self) -> Q {
         self.y
+    }
+}
+
+impl<P, Q> Process<P> for Unwrapper<Q>
+where
+    P: WrappingSub + Copy + AsPrimitive<Q>,
+    Q: AsPrimitive<P> + WrappingAdd,
+{
+    /// Feed a new sample..
+    ///
+    /// Args:
+    /// * `x`: New sample
+    ///
+    /// Returns:
+    /// The (wrapped) difference `x - x_old`
+    fn process(&mut self, x: P) -> P {
+        let dx = x.wrapping_sub(&self.y.as_());
+        self.y = self.y.wrapping_add(&dx.as_());
+        dx
     }
 }
 
@@ -165,7 +169,7 @@ pub struct Clamp<Q> {
     pub clamp: Wrap,
 }
 
-impl<Q> Clamp<Q>
+impl<Q> Process<Q> for Clamp<Q>
 where
     Q: 'static + Zero + PartialOrd + WrappingSub + Copy + Bounded,
 {
@@ -176,7 +180,7 @@ where
     /// OR no wrap and no clamp): output the input.
     /// ELSE IF negative wrap: clamp minimum,
     /// ELSE IF positive wrap: clamp maximum.
-    pub fn update(&mut self, x: Q) -> Q {
+    fn process(&mut self, x: Q) -> Q {
         let (_dx, wrap) = overflowing_sub(x, self.x0);
         self.x0 = x;
         match self.clamp as i32 + wrap as i32 {

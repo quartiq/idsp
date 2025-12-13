@@ -3,6 +3,8 @@
 use num_traits::{Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
+use crate::iir::{Process, Stateful};
+
 /// Second order state variable filter state
 pub struct State<T> {
     /// Lowpass output
@@ -41,14 +43,19 @@ impl<T: Float + FloatConst> Svf<T> {
     pub fn set_q(&mut self, q: T) {
         self.q = T::one() / q;
     }
+}
 
+impl<T> Process<T, ()> for Stateful<&Svf<T>, &mut State<T>>
+where
+    T: Float + FloatConst + Copy,
+{
     /// Update the filter
     ///
     /// Ingest an input sample and update state correspondingly.
     /// Selected output(s) are available from [`State`].
-    pub fn update(&self, s: &mut State<T>, x0: T) {
-        s.lp = s.bp * self.f + s.lp;
-        s.hp = x0 - s.lp - s.bp * self.q;
-        s.bp = s.hp * self.f + s.bp;
+    fn process(&mut self, x: T) {
+        self.state.lp = self.state.bp * self.config.f + self.state.lp;
+        self.state.hp = x - self.state.lp - self.state.bp * self.config.q;
+        self.state.bp = self.state.hp * self.config.f + self.state.bp;
     }
 }

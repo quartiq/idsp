@@ -1,3 +1,5 @@
+use crate::iir::Process;
+
 /// Delta-sigma modulator
 ///
 /// * MASH-(1)^K architecture
@@ -7,11 +9,11 @@
 /// * The noise goes up as `K * 20 dB/decade`.
 ///
 /// ```
-/// # use idsp::Dsm;
+/// # use idsp::{Dsm, iir::Process};
 /// let mut d = Dsm::<3>::default();
 /// let x = 0x87654321;
 /// let n = 1 << 20;
-/// let y = (0..n).map(|_| d.update(x) as f32).sum::<f32>() / n as f32;
+/// let y = (0..n).map(|_| d.process(x) as f32).sum::<f32>() / n as f32;
 /// let m = x as f32 / (1u64 << 32) as f32;
 /// assert!((y / m - 1.0).abs() < (1.0 / n as f32).sqrt(), "{y} != {m}");
 /// ```
@@ -30,7 +32,7 @@ impl<const K: usize> Default for Dsm<K> {
     }
 }
 
-impl<const K: usize> Dsm<K> {
+impl<const K: usize> Process<u32, i8> for Dsm<K> {
     /// Ingest input sample, emit new output.
     ///
     /// # Arguments
@@ -38,7 +40,7 @@ impl<const K: usize> Dsm<K> {
     ///
     /// # Returns
     /// New output
-    pub fn update(&mut self, x: u32) -> i8 {
+    fn process(&mut self, x: u32) -> i8 {
         let mut d = 0i8;
         let mut c = false;
         self.a.iter_mut().fold(x, |x, a| {

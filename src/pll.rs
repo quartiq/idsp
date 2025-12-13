@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::iir::{Process, Stateful};
+
 /// Type-II, sampled phase, discrete time PLL
 ///
 /// This PLL tracks the frequency and phase of an input signal with respect to the sampling clock.
@@ -49,7 +51,7 @@ pub struct PLL {
     y: i64,
 }
 
-impl PLL {
+impl Process<Option<i32>, ()> for Stateful<&i32, &mut PLL> {
     /// Update the PLL with a new phase sample. This needs to be called (sampled) periodically.
     /// The signal's phase/frequency is reconstructed relative to the sampling period.
     ///
@@ -59,27 +61,29 @@ impl PLL {
     ///
     /// Returns:
     /// A tuple of instantaneous phase and frequency estimates.
-    pub fn update(&mut self, x: Option<i32>, k: i32) {
+    fn process(&mut self, x: Option<i32>) {
         if let Some(x) = x {
-            let dx = x.wrapping_sub(self.x);
-            self.x = x;
-            let df = dx.wrapping_sub((self.f >> 32) as i32) as i64 * k as i64;
-            self.f = self.f.wrapping_add(df);
-            self.y = self.y.wrapping_add(self.f);
-            self.f = self.f.wrapping_add(df);
-            let dy = x.wrapping_sub((self.y >> 32) as i32) as i64 * k as i64;
-            self.y = self.y.wrapping_add(dy);
-            let y = (self.y >> 32) as i32;
-            self.y = self.y.wrapping_add(dy);
-            self.f0 = y.wrapping_sub(self.y0);
-            self.y0 = y;
+            let dx = x.wrapping_sub(self.state.x);
+            self.state.x = x;
+            let df = dx.wrapping_sub((self.state.f >> 32) as i32) as i64 * *self.config as i64;
+            self.state.f = self.state.f.wrapping_add(df);
+            self.state.y = self.state.y.wrapping_add(self.state.f);
+            self.state.f = self.state.f.wrapping_add(df);
+            let dy = x.wrapping_sub((self.state.y >> 32) as i32) as i64 * *self.config as i64;
+            self.state.y = self.state.y.wrapping_add(dy);
+            let y = (self.state.y >> 32) as i32;
+            self.state.y = self.state.y.wrapping_add(dy);
+            self.state.f0 = y.wrapping_sub(self.state.y0);
+            self.state.y0 = y;
         } else {
-            self.y = self.y.wrapping_add(self.f);
-            self.x = self.x.wrapping_add(self.f0);
-            self.y0 = self.y0.wrapping_add(self.f0);
+            self.state.y = self.state.y.wrapping_add(self.state.f);
+            self.state.x = self.state.x.wrapping_add(self.state.f0);
+            self.state.y0 = self.state.y0.wrapping_add(self.state.f0);
         }
     }
+}
 
+impl PLL {
     /// Return the current phase estimate
     pub fn phase(&self) -> i32 {
         self.y0
@@ -96,11 +100,10 @@ mod tests {
     use super::*;
     #[test]
     fn mini() {
-        let mut p = PLL::default();
-        let k = 1 << 24;
-        p.update(Some(0x10000), k);
-        assert_eq!(p.phase(), 0x1ff);
-        assert_eq!(p.frequency(), 0x1ff);
+        let mut p = Stateful::new(1 << 24, PLL::default());
+        p.as_mut().process(Some(0x10000));
+        assert_eq!(p.state.phase(), 0x1ff);
+        assert_eq!(p.state.frequency(), 0x1ff);
     }
 
     #[test]
@@ -112,7 +115,7 @@ mod tests {
         let mut x = 0i32;
         for i in 0..n {
             x = x.wrapping_add(f0);
-            p.update(Some(x), k);
+            Stateful::new(&k, &mut p).process(Some(x));
             if i > n / 4 {
                 assert_eq!(p.frequency().wrapping_sub(f0).abs() <= 1, true);
             }
