@@ -1,7 +1,7 @@
 //! Sample processing, filtering, combination of filters.
 use core::{
     marker::PhantomData,
-    ops::{Add, Mul, Neg},
+    ops::{Add, Mul, Neg, Sub},
 };
 
 /// Processing block
@@ -81,10 +81,10 @@ impl<X: Copy, T: Inplace<X>> Inplace<X> for &mut T {
 #[derive(Clone, Debug, Default)]
 #[repr(transparent)]
 pub struct Minor<C, U> {
-    /// The intermediate type
-    intermediate: PhantomData<U>,
     /// The inner configurations
     pub inner: C,
+    /// The intermediate type
+    intermediate: PhantomData<U>,
 }
 
 impl<C, U> Minor<C, U> {
@@ -314,9 +314,9 @@ where
 /// This then automatically covers any nested tuple.
 ///
 /// Iterations are sample-major, and filter-minor. This is good if at least
-/// one of the filters with has no or small state and configuration.
+/// one of the filters has no or small state and configuration.
 ///
-/// For large filters/state, use tuples, arrays, and slices.
+/// For large filters/state, use straight tuples, arrays, and slices.
 impl<X, U, Y, C1, C2, S1, S2> Process<X, Y> for Stateful<&Minor<(C1, C2), U>, &mut (S1, S2)>
 where
     X: Copy,
@@ -494,48 +494,211 @@ where
     }
 }
 
+/// Fan out the same input to multiple processors
+#[derive(Clone, Debug, Default)]
+pub struct FanOut<C>(pub C);
+
+impl<X, Y1, Y2, C1, C2> Process<X, (Y1, Y2)> for FanOut<(C1, C2)>
+where
+    X: Copy,
+    C1: Process<X, Y1>,
+    C2: Process<X, Y2>,
+{
+    fn process(&mut self, x: X) -> (Y1, Y2) {
+        (self.0.0.process(x), self.0.1.process(x))
+    }
+}
+
+impl<X, Y, C1, C2> Process<X, [Y; 2]> for FanOut<(C1, C2)>
+where
+    X: Copy,
+    C1: Process<X, Y>,
+    C2: Process<X, Y>,
+{
+    fn process(&mut self, x: X) -> [Y; 2] {
+        [self.0.0.process(x), self.0.1.process(x)]
+    }
+}
+
+impl<X, Y, C, const N: usize> Process<X, [Y; N]> for FanOut<[C; N]>
+where
+    X: Copy,
+    [Y; N]: Default,
+    C: Process<X, Y>,
+{
+    fn process(&mut self, x: X) -> [Y; N] {
+        let mut y = <[Y; N]>::default();
+        for (c, y) in self.0.iter_mut().zip(y.iter_mut()) {
+            *y = c.process(x);
+        }
+        y
+    }
+}
+
+impl<X, Y1, Y2, C1, C2, S1, S2> Process<X, (Y1, Y2)> for Stateful<&FanOut<(C1, C2)>, &mut (S1, S2)>
+where
+    X: Copy,
+    for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y1>,
+    for<'a> Stateful<&'a C2, &'a mut S2>: Process<X, Y2>,
+{
+    #[inline]
+    fn process(&mut self, x: X) -> (Y1, Y2) {
+        (
+            Stateful::new(&self.config.0.0, &mut self.state.0).process(x),
+            Stateful::new(&self.config.0.1, &mut self.state.1).process(x),
+        )
+    }
+}
+
+impl<X, Y, C1, C2, S1, S2> Process<X, [Y; 2]> for Stateful<&FanOut<(C1, C2)>, &mut (S1, S2)>
+where
+    X: Copy,
+    for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y>,
+    for<'a> Stateful<&'a C2, &'a mut S2>: Process<X, Y>,
+{
+    #[inline]
+    fn process(&mut self, x: X) -> [Y; 2] {
+        [
+            Stateful::new(&self.config.0.0, &mut self.state.0).process(x),
+            Stateful::new(&self.config.0.1, &mut self.state.1).process(x),
+        ]
+    }
+}
+
+impl<X, Y, C, S, const N: usize> Process<X, [Y; N]> for Stateful<&FanOut<[C; N]>, &mut [S; N]>
+where
+    X: Copy,
+    [Y; N]: Default,
+    for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y>,
+{
+    #[inline]
+    fn process(&mut self, x: X) -> [Y; N] {
+        let mut y = <[Y; N]>::default();
+        for ((c, s), y) in self
+            .config
+            .0
+            .iter()
+            .zip(self.state.iter_mut())
+            .zip(y.iter_mut())
+        {
+            *y = Stateful::new(c, s).process(x);
+        }
+        y
+    }
+}
+
+/// Summ outputs of two filters
+///
+/// Fan in.
+#[derive(Debug, Clone, Default)]
+pub struct Sum;
+impl<X: Copy + Add<Output = X>> Process<[X; 2], X> for &Sum {
+    #[inline]
+    fn process(&mut self, x: [X; 2]) -> X {
+        x[0] + x[1]
+    }
+}
+
+/// Difference of outputs of two filters
+///
+/// Fan in.
+#[derive(Debug, Clone, Default)]
+pub struct Diff;
+impl<X: Copy + Sub<Output = X>> Process<[X; 2], X> for &Diff {
+    #[inline]
+    fn process(&mut self, x: [X; 2]) -> X {
+        x[0] - x[1]
+    }
+}
+
+/// Sum and difference of outputs of two filters
+#[derive(Debug, Clone, Default)]
+pub struct Butterfly;
+impl<X: Copy + Add<Output = X> + Sub<Output = X>> Process<[X; 2], [X; 2]> for &Butterfly {
+    #[inline]
+    fn process(&mut self, x: [X; 2]) -> [X; 2] {
+        [x[0] + x[1], x[0] - x[1]]
+    }
+}
+
+impl<X: Copy> Inplace<X> for &Butterfly where Self: Process<X> {}
+
 /// Parallel filter pair
 ///
 /// This can be viewed as digital lattice filter or butterfly filter or complementary allpass pair
 /// or polyphase interpolator.
 /// Candidates for the branches are allpasses like Wdf or Ldi, polyphase banks for resampling or Hilbert filters.
-#[derive(Clone, Debug, Default)]
-pub struct Sum<C1, C2>(
-    /// Top filter
-    pub C1,
-    /// Bottom filter
-    pub C2,
-);
-
-/// Pair of parallel filter using the same input
-///
-/// `process` returns the sum of the two branches.
-/// Use an inverter in the bottom branch to form the highpass difference.
 ///
 /// Potentially required scaling with 0.5 gain is to be performed ahead of the filter or within each branch.
 ///
 /// This uses the default sample-major implementation
 /// and may lead to suboptimal cashing and register thrashing for large branches.
 /// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
-impl<X, Y, C1, C2, S1, S2> Process<X, Y> for Stateful<&Sum<C1, C2>, &mut (S1, S2)>
+pub type Pair<C1, C2, X> = Minor<(FanOut<(C1, C2)>, Stateless<Sum>), [X; 2]>;
+
+/// Multiple channels to be processed with the same configuration
+#[derive(Clone, Debug)]
+pub struct Channels<S, const N: usize>(pub [S; N]);
+
+impl<S, const N: usize> Default for Channels<S, N>
 where
-    Y: Add<Output = Y>,
-    X: Copy,
-    for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y>,
-    for<'a> Stateful<&'a C2, &'a mut S2>: Process<X, Y>,
+    [S; N]: Default,
 {
-    #[inline]
-    fn process(&mut self, x: X) -> Y {
-        Stateful::new(&self.config.0, &mut self.state.0).process(x)
-            + Stateful::new(&self.config.1, &mut self.state.1).process(x)
+    fn default() -> Self {
+        Self(Default::default())
     }
 }
 
-impl<X, C1, C2, S1, S2> Inplace<X> for Stateful<&Sum<C1, C2>, &mut (S1, S2)>
+/// Process samples from multiple channels with a common configuration
+///
+/// Note that block() and inplace() reinterpret the data as transposed: __not__ in as `[[X; N]]` but as `[[X]; N]`.
+impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]> for Stateful<&C, &mut Channels<S, N>>
 where
     X: Copy,
-    Self: Process<X>,
+    [Y; N]: Default,
+    for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y>,
 {
+    #[inline]
+    fn process(&mut self, x: [X; N]) -> [Y; N] {
+        let mut y = <[Y; N]>::default();
+        for ((x, y), state) in x.into_iter().zip(y.iter_mut()).zip(self.state.0.iter_mut()) {
+            *y = Stateful::new(self.config, state).process(x);
+        }
+        y
+    }
+
+    #[inline]
+    fn block(&mut self, x: &[[X; N]], y: &mut [[Y; N]]) {
+        debug_assert_eq!(x.len(), y.len());
+        let n = x.len();
+        for ((x, y), state) in x
+            .as_flattened()
+            .chunks_exact(n)
+            .zip(y.as_flattened_mut().chunks_exact_mut(n))
+            .zip(self.state.0.iter_mut())
+        {
+            Stateful::new(self.config, state).block(x, y)
+        }
+    }
+}
+
+impl<X, C, S, const N: usize> Inplace<[X; N]> for Stateful<&C, &mut Channels<S, N>>
+where
+    X: Copy,
+    [X; N]: Default,
+    for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
+{
+    #[inline]
+    fn inplace(&mut self, xy: &mut [[X; N]]) {
+        let n = xy.len();
+        for (xy, state) in xy
+            .as_flattened_mut()
+            .chunks_exact_mut(n)
+            .zip(self.state.0.iter_mut())
+        {
+            Stateful::new(self.config, state).inplace(xy)
+        }
+    }
 }
 
 /// Identity using [`Copy`]
