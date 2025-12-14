@@ -651,7 +651,7 @@ where
 
 /// Process samples from multiple channels with a common configuration
 ///
-/// Note that block() and inplace() reinterpret the data as transposed: __not__ in as `[[X; N]]` but as `[[X]; N]`.
+/// Note that block() and inplace() reinterpret the data as transposed: __not__ as `[[X; N]]` but as `[[X]; N]`.
 impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]> for Stateful<&C, &mut Channels<S, N>>
 where
     X: Copy,
@@ -836,109 +836,64 @@ where
     }
 }
 
-/// Fixed delay line
+/// Buffer input or output, or fixed delay line
 #[derive(Debug, Clone)]
-pub struct Delay<X, const N: usize> {
+pub struct Buffer<X, const N: usize> {
     buffer: [X; N],
     idx: usize,
 }
 
-impl<X, const N: usize> Default for Delay<X, N>
+impl<X, const N: usize> Buffer<X, N> {
+    /// The buffer is empty
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.idx == 0
+    }
+}
+
+impl<X, const N: usize> Default for Buffer<X, N>
 where
     [X; N]: Default,
 {
     fn default() -> Self {
         Self {
             buffer: Default::default(),
-            idx: Default::default(),
+            idx: 0,
         }
     }
 }
 
-impl<X: Copy, const N: usize> Process<X> for Delay<X, N> {
+impl<X: Copy, const N: usize> Process<X> for Buffer<X, N> {
     #[inline]
     fn process(&mut self, x: X) -> X {
         self.idx = (self.idx + 1) % N;
         core::mem::replace(&mut self.buffer[self.idx], x)
     }
 
-    // TODO: block(), inplace()
+    // TODO: block(), inplace(), Process<[X; M]>
 }
 
-impl<X: Copy, const N: usize> Inplace<X> for Delay<X, N> where Self: Process<X> {}
+impl<X: Copy, const N: usize> Inplace<X> for Buffer<X, N> where Self: Process<X> {}
 
-/// Buffer input
-#[derive(Debug, Clone)]
-pub struct Mux<C, X, const N: usize> {
-    inner: C,
-    buffer: [X; N],
-    idx: usize,
-}
-
-impl<C, X, const N: usize> Mux<C, X, N>
-where
-    [X; N]: Default,
-{
-    /// Create a new mux
-    pub fn new(inner: C) -> Self {
-        Self {
-            inner,
-            buffer: Default::default(),
-            idx: 0,
-        }
-    }
-}
-
-impl<X: Copy, Y, C, const N: usize> Process<X, Option<Y>> for Mux<C, X, N>
-where
-    [X; N]: Default,
-    C: Process<[X; N], Y>,
-{
+impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<X, N> {
     #[inline]
-    fn process(&mut self, x: X) -> Option<Y> {
+    fn process(&mut self, x: X) -> Option<[X; N]> {
         self.buffer[self.idx] = x;
         self.idx += 1;
         (self.idx == N).then(|| {
             self.idx = 0;
-            self.inner.process(self.buffer)
+            self.buffer
         })
     }
 
     // TODO: block()
 }
 
-/// Buffer output
-///
-/// Panics on underflow
-#[derive(Debug, Clone)]
-pub struct Demux<C, Y, const N: usize> {
-    inner: C,
-    buffer: [Y; N],
-    idx: usize,
-}
-
-impl<C, Y, const N: usize> Demux<C, Y, N>
-where
-    [Y; N]: Default,
-{
-    /// Create a new demux
-    pub fn new(inner: C) -> Self {
-        Self {
-            inner,
-            buffer: Default::default(),
-            idx: 0,
-        }
-    }
-}
-
-impl<X: Copy, Y: Copy, C, const N: usize> Process<Option<X>, Y> for Demux<C, Y, N>
-where
-    C: Process<X, [Y; N]>,
-{
+impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<X, N> {
     #[inline]
-    fn process(&mut self, x: Option<X>) -> Y {
+    fn process(&mut self, x: Option<[X; N]>) -> X {
         if let Some(x) = x {
-            self.buffer = self.inner.process(x);
+            self.buffer = x;
             self.idx = 0;
         } else {
             self.idx += 1;
@@ -963,9 +918,10 @@ mod test {
         assert_eq!((&Adder(7)).process(9), 7 + 9);
         assert_eq!(Minor::new((&Adder(7), &Adder(1))).process(9), 7 + 1 + 9);
         let mut xy = [3, 0, 0];
-        let mut dly = Delay::<_, 2>::default();
+        let mut dly = Buffer::<_, 2>::default();
         dly.inplace(&mut xy);
         assert_eq!(xy, [0, 0, 3]);
-        assert_eq!(Stateful::new(&(), &mut dly).process(4), 0);
+        let y: i32 = Stateful::new(&(), &mut dly).process(4);
+        assert_eq!(y, 0);
     }
 }
