@@ -9,7 +9,7 @@ use core::{
 /// Single input, single output
 ///
 /// Process impls can be cascaded in (homogeneous) `[C; N]` arrays/`[C]` slices, and heterogeneous
-/// `(C1, C2)` tuples. They can be used as configuration-major or
+/// `(C0, C1)` tuples. They can be used as configuration-major or
 /// configuration-minor (through [`Minor`]) or in [`Sum`]s on complementary allpasses and polyphase banks.
 /// Tuples, arrays, and Pairs, and Minor can be mixed and nested ad lib.
 ///
@@ -104,17 +104,17 @@ impl<C, U, const N: usize> Minor<[C; N], U> {
     }
 }
 
-impl<X: Copy, U: Copy, Y, P1: Process<X, U>, P2: Process<U, Y>> Process<X, Y>
-    for Minor<(P1, P2), U>
+impl<X: Copy, U: Copy, Y, P0: Process<X, U>, P1: Process<U, Y>> Process<X, Y>
+    for Minor<(P0, P1), U>
 {
     fn process(&mut self, x: X) -> Y {
         self.inner.1.process(self.inner.0.process(x))
     }
 }
 
-impl<X: Copy, U, P1, P2> Inplace<X> for Minor<(P1, P2), U> where Self: Process<X> {}
+impl<X: Copy, U, P0, P1> Inplace<X> for Minor<(P0, P1), U> where Self: Process<X> {}
 
-impl<X: Copy, Y: Copy, P1: Process<X, Y>, P2: Inplace<Y>> Process<X, Y> for (P1, P2) {
+impl<X: Copy, Y: Copy, P0: Process<X, Y>, P1: Inplace<Y>> Process<X, Y> for (P0, P1) {
     fn process(&mut self, x: X) -> Y {
         self.1.process(self.0.process(x))
     }
@@ -125,7 +125,7 @@ impl<X: Copy, Y: Copy, P1: Process<X, Y>, P2: Inplace<Y>> Process<X, Y> for (P1,
     }
 }
 
-impl<X: Copy, P1: Inplace<X>, P2: Inplace<X>> Inplace<X> for (P1, P2) {
+impl<X: Copy, P0: Inplace<X>, P1: Inplace<X>> Inplace<X> for (P0, P1) {
     fn inplace(&mut self, xy: &mut [X]) {
         self.0.inplace(xy);
         self.1.inplace(xy);
@@ -295,12 +295,12 @@ where
 /// one of the filters has no or small state and configuration.
 ///
 /// For large filters/state, use straight tuples, arrays, and slices.
-impl<X, U, Y, C1, C2, S1, S2> Process<X, Y> for Stateful<&Minor<(C1, C2), U>, &mut (S1, S2)>
+impl<X, U, Y, C0, C1, S0, S1> Process<X, Y> for Stateful<&Minor<(C0, C1), U>, &mut (S0, S1)>
 where
     X: Copy,
     U: Copy,
-    for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, U>,
-    for<'a> Stateful<&'a C2, &'a mut S2>: Process<U, Y>,
+    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X, U>,
+    for<'a> Stateful<&'a C1, &'a mut S1>: Process<U, Y>,
 {
     fn process(&mut self, x: X) -> Y {
         let u = Stateful::new(&self.config.inner.0, &mut self.state.0).process(x);
@@ -308,7 +308,7 @@ where
     }
 }
 
-impl<X, U, C1, C2, S1, S2> Inplace<X> for Stateful<&Minor<(C1, C2), U>, &mut (S1, S2)>
+impl<X, U, C0, C1, S0, S1> Inplace<X> for Stateful<&Minor<(C0, C1), U>, &mut (S0, S1)>
 where
     X: Copy,
     Self: Process<X>,
@@ -316,12 +316,12 @@ where
 }
 
 /// Chain of two different large filters
-impl<X, Y, C1, C2, S1, S2> Process<X, Y> for Stateful<&(C1, C2), &mut (S1, S2)>
+impl<X, Y, C0, C1, S0, S1> Process<X, Y> for Stateful<&(C0, C1), &mut (S0, S1)>
 where
     X: Copy,
     Y: Copy,
-    for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y>,
-    for<'a> Stateful<&'a C2, &'a mut S2>: Inplace<Y>,
+    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X, Y>,
+    for<'a> Stateful<&'a C1, &'a mut S1>: Inplace<Y>,
 {
     fn process(&mut self, x: X) -> Y {
         // TODO: defer to Minor
@@ -335,11 +335,11 @@ where
     }
 }
 
-impl<X, C1, C2, S1, S2> Inplace<X> for Stateful<&(C1, C2), &mut (S1, S2)>
+impl<X, C0, C1, S0, S1> Inplace<X> for Stateful<&(C0, C1), &mut (S0, S1)>
 where
     X: Copy,
+    for<'a> Stateful<&'a C0, &'a mut S0>: Inplace<X>,
     for<'a> Stateful<&'a C1, &'a mut S1>: Inplace<X>,
-    for<'a> Stateful<&'a C2, &'a mut S2>: Inplace<X>,
 {
     fn inplace(&mut self, xy: &mut [X]) {
         Stateful::new(&self.config.0, &mut self.state.0).inplace(xy);
@@ -485,22 +485,22 @@ where
 #[derive(Clone, Debug, Default)]
 pub struct FanOut<C>(pub C);
 
-impl<X, Y1, Y2, C1, C2> Process<X, (Y1, Y2)> for FanOut<(C1, C2)>
+impl<X, Y0, Y1, C0, C1> Process<X, (Y0, Y1)> for FanOut<(C0, C1)>
 where
     X: Copy,
+    C0: Process<X, Y0>,
     C1: Process<X, Y1>,
-    C2: Process<X, Y2>,
 {
-    fn process(&mut self, x: X) -> (Y1, Y2) {
+    fn process(&mut self, x: X) -> (Y0, Y1) {
         (self.0.0.process(x), self.0.1.process(x))
     }
 }
 
-impl<X, Y, C1, C2> Process<X, [Y; 2]> for FanOut<(C1, C2)>
+impl<X, Y, C0, C1> Process<X, [Y; 2]> for FanOut<(C0, C1)>
 where
     X: Copy,
+    C0: Process<X, Y>,
     C1: Process<X, Y>,
-    C2: Process<X, Y>,
 {
     fn process(&mut self, x: X) -> [Y; 2] {
         [self.0.0.process(x), self.0.1.process(x)]
@@ -522,13 +522,13 @@ where
     }
 }
 
-impl<X, Y1, Y2, C1, C2, S1, S2> Process<X, (Y1, Y2)> for Stateful<&FanOut<(C1, C2)>, &mut (S1, S2)>
+impl<X, Y0, Y1, C0, C1, S0, S1> Process<X, (Y0, Y1)> for Stateful<&FanOut<(C0, C1)>, &mut (S0, S1)>
 where
     X: Copy,
+    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X, Y0>,
     for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y1>,
-    for<'a> Stateful<&'a C2, &'a mut S2>: Process<X, Y2>,
 {
-    fn process(&mut self, x: X) -> (Y1, Y2) {
+    fn process(&mut self, x: X) -> (Y0, Y1) {
         (
             Stateful::new(&self.config.0.0, &mut self.state.0).process(x),
             Stateful::new(&self.config.0.1, &mut self.state.1).process(x),
@@ -536,11 +536,11 @@ where
     }
 }
 
-impl<X, Y, C1, C2, S1, S2> Process<X, [Y; 2]> for Stateful<&FanOut<(C1, C2)>, &mut (S1, S2)>
+impl<X, Y, C0, C1, S0, S1> Process<X, [Y; 2]> for Stateful<&FanOut<(C0, C1)>, &mut (S0, S1)>
 where
     X: Copy,
+    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X, Y>,
     for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y>,
-    for<'a> Stateful<&'a C2, &'a mut S2>: Process<X, Y>,
 {
     fn process(&mut self, x: X) -> [Y; 2] {
         [
@@ -581,8 +581,8 @@ impl<X: Copy + core::iter::Sum, const N: usize> Process<[X; N], X> for &Sum {
         x.iter().copied().sum()
     }
 }
-impl<X1: Copy + Add<X2, Output = Y>, X2: Copy, Y> Process<(X1, X2), Y> for &Sum {
-    fn process(&mut self, x: (X1, X2)) -> Y {
+impl<X0: Copy + Add<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Sum {
+    fn process(&mut self, x: (X0, X1)) -> Y {
         x.0 + x.1
     }
 }
@@ -597,8 +597,8 @@ impl<X: Copy + Sub<Output = X>> Process<[X; 2], X> for &Diff {
         x[0] - x[1]
     }
 }
-impl<X1: Copy + Sub<X2, Output = Y>, X2: Copy, Y> Process<(X1, X2), Y> for &Diff {
-    fn process(&mut self, x: (X1, X2)) -> Y {
+impl<X0: Copy + Sub<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Diff {
+    fn process(&mut self, x: (X0, X1)) -> Y {
         x.0 - x.1
     }
 }
@@ -626,8 +626,8 @@ impl<X: Copy> Inplace<X> for &Butterfly where Self: Process<X> {}
 /// and may lead to suboptimal cashing and register thrashing for large branches.
 /// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
 ///
-/// The corresponding state for this is `((S1, S2), ())`.
-pub type Pair<C1, C2, X, J = Sum> = Minor<(FanOut<(C1, C2)>, Stateless<J>), [X; 2]>;
+/// The corresponding state for this is `((S0, S1), ())`.
+pub type Pair<C0, C1, X, J = Sum> = Minor<(FanOut<(C0, C1)>, Stateless<J>), [X; 2]>;
 
 /// Multiple channels to be processed with the same configuration
 #[derive(Clone, Debug)]
