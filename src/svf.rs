@@ -3,7 +3,7 @@
 use num_traits::{Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
-use crate::iir::{Process, Stateful};
+use crate::process::{Process, Split};
 
 /// Second order state variable filter state
 pub struct State<T> {
@@ -45,7 +45,7 @@ impl<T: Float + FloatConst> Svf<T> {
     }
 }
 
-impl<T> Process<T, ()> for Stateful<&Svf<T>, &mut State<T>>
+impl<T> Process<T, ()> for Split<&Svf<T>, &mut State<T>>
 where
     T: Float + FloatConst + Copy,
 {

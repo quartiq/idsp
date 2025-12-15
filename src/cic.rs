@@ -2,7 +2,7 @@ use core::ops::AddAssign;
 
 use num_traits::{AsPrimitive, Num, Pow, WrappingAdd, WrappingSub};
 
-use crate::iir::Process;
+use crate::process::Process;
 
 /// Cascaded integrator comb structure
 ///

@@ -14,10 +14,12 @@ use core::{
 /// Tuples, arrays, and Pairs, and Minor can be mixed and nested ad lib.
 ///
 /// For a given filter configuration `C` and state `S` pair the trait is usually implemented
-/// through [`Stateful<&'a C, &mut S>`] (created ad-hoc from by borrowing configuration and state)
-/// or [`Stateful<C, S>`] (owned configuration and state).
-/// Stateless filters should implement `Process` on `&Self` for composability through
-/// `Stateful<&Stateless<Self>, &mut ()>`.
+/// through [`Split<&'a C, &mut S>`] (created ad-hoc from by borrowing configuration and state)
+/// or [`Split<C, S>`] (owned configuration and state).
+/// Stateless filters should implement `Process for &Self` for composability through
+/// [`Split<Stateless<Self>, ()>`].
+/// Configuration-less filters or filters that include their configuration should implement
+/// `Process for Self` and can be used in split configurations through [`Split<(), Stateful<Self>>`].
 pub trait Process<X: Copy, Y = X> {
     /// Update the state with a new input and obtain an output
     fn process(&mut self, x: X) -> Y;
@@ -166,8 +168,10 @@ impl<X: Copy, P: Inplace<X>> Inplace<X> for [P] {
     }
 }
 
+/// Binary const assertions
 struct Assert<const A: usize, const B: usize>;
 impl<const A: usize, const B: usize> Assert<A, B> {
+    /// Assert A>B
     const GREATER: () = assert!(A > B);
 }
 
@@ -220,14 +224,14 @@ impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for [P; N] {
 ///   (e.g. IQ data, multiple channels) guaranteeding consistency,
 ///   reducing memory usage, improving caching.
 #[derive(Debug, Clone, Default)]
-pub struct Stateful<C, S> {
+pub struct Split<C, S> {
     /// Processor configuration
     pub config: C,
     /// Processor state
     pub state: S,
 }
 
-impl<C, S> Stateful<C, S> {
+impl<C, S> Split<C, S> {
     /// Create a new stateful processor
     pub fn new(config: C, state: S) -> Self {
         Self { config, state }
@@ -236,21 +240,114 @@ impl<C, S> Stateful<C, S> {
     /// Obtain a borrowed processor
     ///
     /// Stateful `Process` is typically implemented on the borrowed processor.
-    pub fn as_mut(&mut self) -> Stateful<&C, &mut S> {
-        Stateful {
+    pub fn as_mut(&mut self) -> Split<&C, &mut S> {
+        Split {
             config: &self.config,
             state: &mut self.state,
         }
     }
 }
 
+impl<C> Split<Stateless<C>, ()> {
+    /// Create a stateless processor
+    pub fn stateless(config: C) -> Self {
+        Self::new(Stateless(config), ())
+    }
+}
+
+impl<S> Split<(), Stateful<S>> {
+    /// Create a state-only processor
+    pub fn stateful(state: S) -> Self {
+        Self::new((), Stateful(state))
+    }
+}
+
+/// Unzip two splits into one (config major)
+impl<C0, C1, S0, S1> Mul<Split<C1, S1>> for Split<C0, S0> {
+    type Output = Split<(C0, C1), (S0, S1)>;
+
+    fn mul(self, rhs: Split<C1, S1>) -> Self::Output {
+        Split::from((self, rhs))
+    }
+}
+
+impl<C0, C1, S0, S1> From<(Split<C0, S0>, Split<C1, S1>)> for Split<(C0, C1), (S0, S1)> {
+    fn from(value: (Split<C0, S0>, Split<C1, S1>)) -> Self {
+        Split::new(
+            (value.0.config, value.1.config),
+            (value.0.state, value.1.state),
+        )
+    }
+}
+
+/// Unzip multiple splits
+impl<C, S, const N: usize> From<[Split<C, S>; N]> for Split<[C; N], [S; N]> {
+    fn from(splits: [Split<C, S>; N]) -> Self {
+        // Not efficient or nice, but this is usually not a hot path
+        let mut splits = splits.map(|s| (Some(s.config), Some(s.state)));
+        Self::new(
+            core::array::from_fn(|i| splits[i].0.take().unwrap()),
+            core::array::from_fn(|i| splits[i].1.take().unwrap()),
+        )
+    }
+}
+
+impl<C, S> Split<C, S> {
+    /// Convert to a configuration-minor split
+    pub fn minor<U>(self) -> Split<Minor<C, U>, S> {
+        Split::new(Minor::new(self.config), self.state)
+    }
+
+    /// Convert to parallel filters
+    pub fn parallel(self) -> Split<Parallel<C>, S> {
+        Split::new(Parallel(self.config), self.state)
+    }
+}
+
+impl<C, S, U> Split<Minor<C, U>, S> {
+    /// Convert to a configuration-major split
+    pub fn major(self) -> Split<C, S> {
+        Split::new(self.config.inner, self.state)
+    }
+}
+
+impl<C, S> Split<Parallel<C>, S> {
+    /// Convert to serial filters
+    pub fn serial(self) -> Split<C, S> {
+        Split::new(self.config.0, self.state)
+    }
+}
+
+impl<C0, C1, S0, S1> Split<(C0, C1), (S0, S1)> {
+    /// Zip up a split
+    pub fn zip(self) -> (Split<C0, S0>, Split<C1, S1>) {
+        (
+            Split::new(self.config.0, self.state.0),
+            Split::new(self.config.1, self.state.1),
+        )
+    }
+}
+
+impl<C, S, const N: usize> Split<[C; N], [S; N]> {
+    /// Zip up a split
+    pub fn zip(self) -> [Split<C, S>; N] {
+        let mut it = self.config.into_iter().zip(self.state);
+        core::array::from_fn(|_| {
+            let (c, s) = it.next().unwrap();
+            Split::new(c, s)
+        })
+    }
+}
+
 /// Stateless marker
+///
+/// To be used in `Split<Stateless<C>, ()>`
 #[derive(Debug, Clone, Default)]
 #[repr(transparent)]
 pub struct Stateless<C>(pub C);
 
 /// Stateless filters
-impl<X, Y, C> Process<X, Y> for Stateful<&Stateless<C>, &mut ()>
+impl<X, Y, C> Process<X, Y> for Split<&Stateless<C>, &mut ()>
 where
     X: Copy,
     for<'a> &'a C: Process<X, Y>,
@@ -264,7 +361,7 @@ where
     }
 }
 
-impl<X, C> Inplace<X> for Stateful<&Stateless<C>, &mut ()>
+impl<X, C> Inplace<X> for Split<&Stateless<C>, &mut ()>
 where
     X: Copy,
     for<'a> &'a C: Inplace<X>,
@@ -274,45 +371,52 @@ where
     }
 }
 
+/// State-only marker
+///
+/// To be used in `Split<(), Stateful<S>>`
+#[derive(Debug, Clone, Default)]
+#[repr(transparent)]
+pub struct Stateful<S>(pub S);
+
 /// Configuration-less filters
-impl<X, Y, S> Process<X, Y> for Stateful<&(), &mut S>
+impl<X, Y, S> Process<X, Y> for Split<&(), &mut Stateful<S>>
 where
     X: Copy,
-    for<'a> &'a mut S: Process<X, Y>,
+    S: Process<X, Y>,
 {
     fn process(&mut self, x: X) -> Y {
-        self.state.process(x)
+        self.state.0.process(x)
     }
 
     fn block(&mut self, x: &[X], y: &mut [Y]) {
-        self.state.block(x, y)
+        self.state.0.block(x, y)
     }
 }
 
-impl<X, S> Inplace<X> for Stateful<&(), &mut S>
+impl<X, S> Inplace<X> for Split<&(), &mut Stateful<S>>
 where
     X: Copy,
-    for<'a> &'a mut S: Inplace<X>,
+    S: Inplace<X>,
 {
     fn inplace(&mut self, xy: &mut [X]) {
-        self.state.inplace(xy)
+        self.state.0.inplace(xy)
     }
 }
 
-impl<X, U, Y, C0, C1, S0, S1> Process<X, Y> for Stateful<&Minor<(C0, C1), U>, &mut (S0, S1)>
+impl<X, U, Y, C0, C1, S0, S1> Process<X, Y> for Split<&Minor<(C0, C1), U>, &mut (S0, S1)>
 where
     X: Copy,
     U: Copy,
-    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X, U>,
-    for<'a> Stateful<&'a C1, &'a mut S1>: Process<U, Y>,
+    for<'a> Split<&'a C0, &'a mut S0>: Process<X, U>,
+    for<'a> Split<&'a C1, &'a mut S1>: Process<U, Y>,
 {
     fn process(&mut self, x: X) -> Y {
-        let u = Stateful::new(&self.config.inner.0, &mut self.state.0).process(x);
-        Stateful::new(&self.config.inner.1, &mut self.state.1).process(u)
+        let u = Split::new(&self.config.inner.0, &mut self.state.0).process(x);
+        Split::new(&self.config.inner.1, &mut self.state.1).process(u)
     }
 }
 
-impl<X, U, C0, C1, S0, S1> Inplace<X> for Stateful<&Minor<(C0, C1), U>, &mut (S0, S1)>
+impl<X, U, C0, C1, S0, S1> Inplace<X> for Split<&Minor<(C0, C1), U>, &mut (S0, S1)>
 where
     X: Copy,
     Self: Process<X>,
@@ -320,42 +424,42 @@ where
 }
 
 /// Chain of two different large filters
-impl<X, Y, C0, C1, S0, S1> Process<X, Y> for Stateful<&(C0, C1), &mut (S0, S1)>
+impl<X, Y, C0, C1, S0, S1> Process<X, Y> for Split<&(C0, C1), &mut (S0, S1)>
 where
     X: Copy,
     Y: Copy,
-    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X, Y>,
-    for<'a> Stateful<&'a C1, &'a mut S1>: Inplace<Y>,
+    for<'a> Split<&'a C0, &'a mut S0>: Process<X, Y>,
+    for<'a> Split<&'a C1, &'a mut S1>: Inplace<Y>,
 {
     fn process(&mut self, x: X) -> Y {
         // TODO: defer to Minor
-        let u = Stateful::new(&self.config.0, &mut self.state.0).process(x);
-        Stateful::new(&self.config.1, &mut self.state.1).process(u)
+        let u = Split::new(&self.config.0, &mut self.state.0).process(x);
+        Split::new(&self.config.1, &mut self.state.1).process(u)
     }
 
     fn block(&mut self, x: &[X], y: &mut [Y]) {
-        Stateful::new(&self.config.0, &mut self.state.0).block(x, y);
-        Stateful::new(&self.config.1, &mut self.state.1).inplace(y);
+        Split::new(&self.config.0, &mut self.state.0).block(x, y);
+        Split::new(&self.config.1, &mut self.state.1).inplace(y);
     }
 }
 
-impl<X, C0, C1, S0, S1> Inplace<X> for Stateful<&(C0, C1), &mut (S0, S1)>
+impl<X, C0, C1, S0, S1> Inplace<X> for Split<&(C0, C1), &mut (S0, S1)>
 where
     X: Copy,
-    for<'a> Stateful<&'a C0, &'a mut S0>: Inplace<X>,
-    for<'a> Stateful<&'a C1, &'a mut S1>: Inplace<X>,
+    for<'a> Split<&'a C0, &'a mut S0>: Inplace<X>,
+    for<'a> Split<&'a C1, &'a mut S1>: Inplace<X>,
 {
     fn inplace(&mut self, xy: &mut [X]) {
-        Stateful::new(&self.config.0, &mut self.state.0).inplace(xy);
-        Stateful::new(&self.config.1, &mut self.state.1).inplace(xy);
+        Split::new(&self.config.0, &mut self.state.0).inplace(xy);
+        Split::new(&self.config.1, &mut self.state.1).inplace(xy);
     }
 }
 
 /// A chain of multiple small filters of the same type
-impl<X, C, S> Process<X> for Stateful<Minor<&[C], X>, &mut [S]>
+impl<X, C, S> Process<X> for Split<Minor<&[C], X>, &mut [S]>
 where
     X: Copy,
-    for<'a> Stateful<&'a C, &'a mut S>: Process<X>,
+    for<'a> Split<&'a C, &'a mut S>: Process<X>,
 {
     fn process(&mut self, x: X) -> X {
         debug_assert_eq!(self.config.inner.len(), self.state.len());
@@ -363,11 +467,11 @@ where
             .inner
             .iter()
             .zip(self.state.iter_mut())
-            .fold(x, |x, (f, s)| Stateful::new(f, s).process(x))
+            .fold(x, |x, (f, s)| Split::new(f, s).process(x))
     }
 }
 
-impl<X, C, S> Inplace<X> for Stateful<Minor<&[C], X>, &mut [S]>
+impl<X, C, S> Inplace<X> for Split<Minor<&[C], X>, &mut [S]>
 where
     X: Copy,
     Self: Process<X>,
@@ -375,13 +479,13 @@ where
 }
 
 /// A chain of multiple large filters of the same type
-impl<X, C, S> Process<X> for Stateful<&[C], &mut [S]>
+impl<X, C, S> Process<X> for Split<&[C], &mut [S]>
 where
     X: Copy,
-    for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
+    for<'a> Split<&'a C, &'a mut S>: Inplace<X>,
 {
     fn process(&mut self, x: X) -> X {
-        Stateful::new(Minor::new(self.config), &mut *self.state).process(x)
+        Split::new(Minor::new(self.config), &mut *self.state).process(x)
     }
 
     fn block(&mut self, x: &[X], y: &mut [X]) {
@@ -389,9 +493,9 @@ where
         if let Some(((c0, c), (s0, s))) =
             self.config.split_first().zip(self.state.split_first_mut())
         {
-            Stateful::new(c0, s0).block(x, y);
+            Split::new(c0, s0).block(x, y);
             for (c, s) in c.iter().zip(s) {
-                Stateful::new(c, s).inplace(y);
+                Split::new(c, s).inplace(y);
             }
         } else {
             y.copy_from_slice(x);
@@ -399,25 +503,25 @@ where
     }
 }
 
-impl<X, C, S> Inplace<X> for Stateful<&[C], &mut [S]>
+impl<X, C, S> Inplace<X> for Split<&[C], &mut [S]>
 where
     X: Copy,
-    for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
+    for<'a> Split<&'a C, &'a mut S>: Inplace<X>,
 {
     fn inplace(&mut self, xy: &mut [X]) {
         debug_assert_eq!(self.config.len(), self.state.len());
         for (c, s) in self.config.iter().zip(self.state.iter_mut()) {
-            Stateful::new(c, s).inplace(xy);
+            Split::new(c, s).inplace(xy);
         }
     }
 }
 
 /// A chain of multiple small filters of the same type
-impl<X, Y, C, S, const N: usize> Process<X, Y> for Stateful<&Minor<[C; N], Y>, &mut [S; N]>
+impl<X, Y, C, S, const N: usize> Process<X, Y> for Split<&Minor<[C; N], Y>, &mut [S; N]>
 where
     X: Copy,
     Y: Copy,
-    for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y> + Process<Y>,
+    for<'a> Split<&'a C, &'a mut S>: Process<X, Y> + Process<Y>,
 {
     fn process(&mut self, x: X) -> Y {
         let _ = Assert::<N, 0>::GREATER;
@@ -429,23 +533,23 @@ where
             .unwrap();
         c.iter()
             .zip(s.iter_mut())
-            .fold(Stateful::new(c0, s0).process(x), |x, (c, s)| {
-                Stateful::new(c, s).process(x)
+            .fold(Split::new(c0, s0).process(x), |x, (c, s)| {
+                Split::new(c, s).process(x)
             })
     }
 }
 
-impl<X: Copy, C, S, const N: usize> Inplace<X> for Stateful<&Minor<[C; N], X>, &mut [S; N]> where
+impl<X: Copy, C, S, const N: usize> Inplace<X> for Split<&Minor<[C; N], X>, &mut [S; N]> where
     Self: Process<X>
 {
 }
 
 /// A chain of multiple large filters of the same type
-impl<X, Y, C, S, const N: usize> Process<X, Y> for Stateful<&[C; N], &mut [S; N]>
+impl<X, Y, C, S, const N: usize> Process<X, Y> for Split<&[C; N], &mut [S; N]>
 where
     X: Copy,
     Y: Copy,
-    for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y> + Inplace<Y>,
+    for<'a> Split<&'a C, &'a mut S>: Process<X, Y> + Inplace<Y>,
 {
     fn process(&mut self, x: X) -> Y {
         let _ = Assert::<N, 0>::GREATER;
@@ -456,8 +560,8 @@ where
             .unwrap();
         c.iter()
             .zip(s.iter_mut())
-            .fold(Stateful::new(c0, s0).process(x), |x, (c, s)| {
-                Stateful::new(c, s).process(x)
+            .fold(Split::new(c0, s0).process(x), |x, (c, s)| {
+                Split::new(c, s).process(x)
             })
     }
 
@@ -468,20 +572,20 @@ where
             .split_first()
             .zip(self.state.split_first_mut())
             .unwrap();
-        Stateful::new(c0, s0).block(x, y);
+        Split::new(c0, s0).block(x, y);
         for (c, s) in c.iter().zip(s.iter_mut()) {
-            Stateful::new(c, s).inplace(y)
+            Split::new(c, s).inplace(y)
         }
     }
 }
 
-impl<X, C, S, const N: usize> Inplace<X> for Stateful<&[C; N], &mut [S; N]>
+impl<X, C, S, const N: usize> Inplace<X> for Split<&[C; N], &mut [S; N]>
 where
     X: Copy,
-    for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
+    for<'a> Split<&'a C, &'a mut S>: Inplace<X>,
 {
     fn inplace(&mut self, xy: &mut [X]) {
-        Stateful::new(self.config.as_ref(), self.state.as_mut()).inplace(xy)
+        Split::new(self.config.as_ref(), self.state.as_mut()).inplace(xy)
     }
 }
 
@@ -530,41 +634,40 @@ where
 impl<X: Copy, C> Inplace<X> for Parallel<C> where Self: Process<X> {}
 
 impl<X0, X1, Y0, Y1, C0, C1, S0, S1> Process<(X0, X1), (Y0, Y1)>
-    for Stateful<&Parallel<(C0, C1)>, &mut (S0, S1)>
+    for Split<&Parallel<(C0, C1)>, &mut (S0, S1)>
 where
     X0: Copy,
     X1: Copy,
-    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X0, Y0>,
-    for<'a> Stateful<&'a C1, &'a mut S1>: Process<X1, Y1>,
+    for<'a> Split<&'a C0, &'a mut S0>: Process<X0, Y0>,
+    for<'a> Split<&'a C1, &'a mut S1>: Process<X1, Y1>,
 {
     fn process(&mut self, x: (X0, X1)) -> (Y0, Y1) {
         (
-            Stateful::new(&self.config.0.0, &mut self.state.0).process(x.0),
-            Stateful::new(&self.config.0.1, &mut self.state.1).process(x.1),
+            Split::new(&self.config.0.0, &mut self.state.0).process(x.0),
+            Split::new(&self.config.0.1, &mut self.state.1).process(x.1),
         )
     }
 }
 
-impl<X, Y, C0, C1, S0, S1> Process<[X; 2], [Y; 2]> for Stateful<&Parallel<(C0, C1)>, &mut (S0, S1)>
+impl<X, Y, C0, C1, S0, S1> Process<[X; 2], [Y; 2]> for Split<&Parallel<(C0, C1)>, &mut (S0, S1)>
 where
     X: Copy,
-    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X, Y>,
-    for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y>,
+    for<'a> Split<&'a C0, &'a mut S0>: Process<X, Y>,
+    for<'a> Split<&'a C1, &'a mut S1>: Process<X, Y>,
 {
     fn process(&mut self, x: [X; 2]) -> [Y; 2] {
         [
-            Stateful::new(&self.config.0.0, &mut self.state.0).process(x[0]),
-            Stateful::new(&self.config.0.1, &mut self.state.1).process(x[1]),
+            Split::new(&self.config.0.0, &mut self.state.0).process(x[0]),
+            Split::new(&self.config.0.1, &mut self.state.1).process(x[1]),
         ]
     }
 }
 
-impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]>
-    for Stateful<&Parallel<[C; N]>, &mut [S; N]>
+impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]> for Split<&Parallel<[C; N]>, &mut [S; N]>
 where
     X: Copy,
     [Y; N]: Default,
-    for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y>,
+    for<'a> Split<&'a C, &'a mut S>: Process<X, Y>,
 {
     fn process(&mut self, x: [X; N]) -> [Y; N] {
         let mut y = <[Y; N]>::default();
@@ -575,20 +678,13 @@ where
             .zip(self.state.iter_mut())
             .zip(x.iter().zip(y.iter_mut()))
         {
-            *y = Stateful::new(c, s).process(*x);
+            *y = Split::new(c, s).process(*x);
         }
         y
     }
 }
 
-impl<X: Copy, C0, C1, S0, S1> Inplace<X> for Stateful<&Parallel<(C0, C1)>, &mut (S0, S1)> where
-    Self: Process<X>
-{
-}
-impl<X: Copy, C, S, const N: usize> Inplace<X> for Stateful<&Parallel<[C; N]>, &mut [S; N]> where
-    Self: Process<X>
-{
-}
+impl<X: Copy, C, S> Inplace<X> for Split<&Parallel<C>, &mut S> where Self: Process<X> {}
 
 /// Sum outputs of filters
 ///
@@ -664,7 +760,7 @@ impl<X: Copy> Inplace<X> for &Butterfly where Self: Process<X> {}
 /// and may lead to suboptimal cashing and register thrashing for large branches.
 /// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
 ///
-/// The corresponding state for this is `((S0, S1), ())`.
+/// The corresponding state for this is `(((), (S0, S1)), ())`.
 pub type Pair<C0, C1, X, J = Sum> =
     Minor<((Stateless<Identity>, Parallel<(C0, C1)>), Stateless<J>), [X; 2]>;
 
@@ -672,22 +768,22 @@ pub type Pair<C0, C1, X, J = Sum> =
 
 /// Multiple channels to be processed with the same configuration
 #[derive(Clone, Debug, Default)]
-pub struct Channels<S>(pub S);
+pub struct Channels<C>(pub C);
 
 /// Process samples from multiple channels with a common configuration
 ///
 /// Note that block() and inplace() reinterpret the data as transposed: __not__ as `[[X; N]]` but as `[[X]; N]`.
 /// Use `x.as_flattened().chunks_exact(x.len())` etc. to match that.
-impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]> for Stateful<&C, &mut Channels<[S; N]>>
+impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]> for Split<&Channels<C>, &mut [S; N]>
 where
     X: Copy,
     [Y; N]: Default,
-    for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y>,
+    for<'a> Split<&'a C, &'a mut S>: Process<X, Y>,
 {
     fn process(&mut self, x: [X; N]) -> [Y; N] {
         let mut y = <[Y; N]>::default();
-        for ((x, y), state) in x.into_iter().zip(y.iter_mut()).zip(self.state.0.iter_mut()) {
-            *y = Stateful::new(self.config, state).process(x);
+        for ((x, y), state) in x.into_iter().zip(y.iter_mut()).zip(self.state.iter_mut()) {
+            *y = Split::new(&self.config.0, state).process(x);
         }
         y
     }
@@ -699,27 +795,27 @@ where
             .as_flattened()
             .chunks_exact(n)
             .zip(y.as_flattened_mut().chunks_exact_mut(n))
-            .zip(self.state.0.iter_mut())
+            .zip(self.state.iter_mut())
         {
-            Stateful::new(self.config, state).block(x, y)
+            Split::new(&self.config.0, state).block(x, y)
         }
     }
 }
 
-impl<X, C, S, const N: usize> Inplace<[X; N]> for Stateful<&C, &mut Channels<[S; N]>>
+impl<X, C, S, const N: usize> Inplace<[X; N]> for Split<&Channels<C>, &mut [S; N]>
 where
     X: Copy,
     [X; N]: Default,
-    for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
+    for<'a> Split<&'a C, &'a mut S>: Inplace<X>,
 {
     fn inplace(&mut self, xy: &mut [[X; N]]) {
         let n = xy.len();
         for (xy, state) in xy
             .as_flattened_mut()
             .chunks_exact_mut(n)
-            .zip(self.state.0.iter_mut())
+            .zip(self.state.iter_mut())
         {
-            Stateful::new(self.config, state).inplace(xy)
+            Split::new(&self.config.0, state).inplace(xy)
         }
     }
 }
@@ -979,7 +1075,7 @@ mod test {
     fn stateless() {
         let y: i32 = (&Identity).process(3);
         assert_eq!(y, 3);
-        assert_eq!(Stateful::new(Stateless(Invert), ()).as_mut().process(9), -9);
+        assert_eq!(Split::stateless(Invert).as_mut().process(9), -9);
         assert_eq!((&Q::<i32, 3>(32)).process(9), 9 * 4);
         assert_eq!((&Adder(7)).process(9), 7 + 9);
         assert_eq!(Minor::new((&Adder(7), &Adder(1))).process(9), 7 + 1 + 9);
@@ -987,7 +1083,20 @@ mod test {
         let mut dly = Buffer::<_, 2>::default();
         dly.inplace(&mut xy);
         assert_eq!(xy, [0, 0, 3]);
-        let y: i32 = Stateful::new(&(), &mut dly).process(4);
+        let y: i32 = Split::stateful(dly).as_mut().process(4);
         assert_eq!(y, 0);
+        let f = Pair::<_, _, i32>::new((
+            (
+                Default::default(),
+                Parallel((Stateless(Adder(3)), Stateless(Q::<i32, 1>(4)))),
+            ),
+            Default::default(),
+        ));
+        let y: i32 = Split::new(&f, &mut (((), ((), ())), ())).process(5);
+        assert_eq!(y, (5 + 3) + ((5 * 4) >> 1));
+        let y: [i32; 5] = Split::new(Channels(f), [(((), ((), ())), ()); _])
+            .as_mut()
+            .process([5; _]);
+        assert_eq!(y, [(5 + 3) + ((5 * 4) >> 1); 5]);
     }
 }

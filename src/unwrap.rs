@@ -10,7 +10,7 @@ use num_traits::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::iir::Process;
+use crate::process::{Inplace, Process};
 
 /// Subtract `y - x` with signed overflow.
 ///
@@ -111,6 +111,8 @@ where
     }
 }
 
+impl<P: Copy, Q> Inplace<P> for Unwrapper<Q> where Self: Process<P> {}
+
 /// Wrap classification
 #[repr(i8)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -199,6 +201,8 @@ where
         }
     }
 }
+
+impl<Q: Copy> Inplace<Q> for Clamp<Q> where Self: Process<Q> {}
 
 #[cfg(test)]
 mod tests {

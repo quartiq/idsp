@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::iir::{Process, Stateful};
+use crate::process::{Process, Split};
 
 /// Type-II, sampled phase, discrete time PLL
 ///
@@ -51,7 +51,7 @@ pub struct PLL {
     y: i64,
 }
 
-impl Process<Option<i32>, ()> for Stateful<&i32, &mut PLL> {
+impl Process<Option<i32>, ()> for Split<&i32, &mut PLL> {
     /// Update the PLL with a new phase sample. This needs to be called (sampled) periodically.
     /// The signal's phase/frequency is reconstructed relative to the sampling period.
     ///
@@ -100,7 +100,7 @@ mod tests {
     use super::*;
     #[test]
     fn mini() {
-        let mut p = Stateful::new(1 << 24, PLL::default());
+        let mut p = Split::new(1 << 24, PLL::default());
         p.as_mut().process(Some(0x10000));
         assert_eq!(p.state.phase(), 0x1ff);
         assert_eq!(p.state.frequency(), 0x1ff);
@@ -115,7 +115,7 @@ mod tests {
         let mut x = 0i32;
         for i in 0..n {
             x = x.wrapping_add(f0);
-            Stateful::new(&k, &mut p).process(Some(x));
+            Split::new(&k, &mut p).process(Some(x));
             if i > n / 4 {
                 assert_eq!(p.frequency().wrapping_sub(f0).abs() <= 1, true);
             }

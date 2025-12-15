@@ -1,7 +1,7 @@
 #[cfg(not(feature = "std"))]
 use num_traits::float::FloatCore as _;
 
-use super::{Inplace, Process, Stateful};
+use crate::process::{Inplace, Process, Split};
 
 /// Two port adapter architecture
 ///
@@ -151,7 +151,7 @@ impl<const N: usize> Default for WdfState<N> {
     }
 }
 
-impl<const N: usize, const M: u32> Process<i32> for Stateful<&Wdf<N, M>, &mut WdfState<N>> {
+impl<const N: usize, const M: u32> Process<i32> for Split<&Wdf<N, M>, &mut WdfState<N>> {
     #[inline]
     fn process(&mut self, x0: i32) -> i32 {
         let mut y = 0;
@@ -168,4 +168,4 @@ impl<const N: usize, const M: u32> Process<i32> for Stateful<&Wdf<N, M>, &mut Wd
     }
 }
 
-impl<const N: usize, const M: u32> Inplace<i32> for Stateful<&Wdf<N, M>, &mut WdfState<N>> {}
+impl<const N: usize, const M: u32> Inplace<i32> for Split<&Wdf<N, M>, &mut WdfState<N>> {}

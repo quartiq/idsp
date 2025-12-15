@@ -1,4 +1,5 @@
-use super::{Inplace, Process, Stateful};
+use crate::process::{Inplace, Process, Split};
+
 use miniconf::Tree;
 #[cfg(not(feature = "std"))]
 use num_traits::float::FloatCore as _;
@@ -102,7 +103,7 @@ pub struct SosStateDither {
     pub e: u32,
 }
 
-impl<const Q: u8> Process<i32> for Stateful<&Sos<Q>, &mut SosState> {
+impl<const Q: u8> Process<i32> for Split<&Sos<Q>, &mut SosState> {
     fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.state.xy;
         let ba = &self.config.ba;
@@ -118,7 +119,7 @@ impl<const Q: u8> Process<i32> for Stateful<&Sos<Q>, &mut SosState> {
     }
 }
 
-impl<const Q: u8> Process<i32> for Stateful<&SosClamp<Q>, &mut SosState> {
+impl<const Q: u8> Process<i32> for Split<&SosClamp<Q>, &mut SosState> {
     fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.state.xy;
         let ba = &self.config.ba;
@@ -134,7 +135,7 @@ impl<const Q: u8> Process<i32> for Stateful<&SosClamp<Q>, &mut SosState> {
     }
 }
 
-impl<const Q: u8> Process<i32> for Stateful<&Sos<Q>, &mut SosStateWide> {
+impl<const Q: u8> Process<i32> for Split<&Sos<Q>, &mut SosStateWide> {
     fn process(&mut self, x0: i32) -> i32 {
         let x = &mut self.state.x;
         let y = &mut self.state.y;
@@ -154,7 +155,7 @@ impl<const Q: u8> Process<i32> for Stateful<&Sos<Q>, &mut SosStateWide> {
     }
 }
 
-impl<const Q: u8> Process<i32> for Stateful<&SosClamp<Q>, &mut SosStateWide> {
+impl<const Q: u8> Process<i32> for Split<&SosClamp<Q>, &mut SosStateWide> {
     fn process(&mut self, x0: i32) -> i32 {
         let x = &mut self.state.x;
         let y = &mut self.state.y;
@@ -175,7 +176,7 @@ impl<const Q: u8> Process<i32> for Stateful<&SosClamp<Q>, &mut SosStateWide> {
     }
 }
 
-impl<const Q: u8> Process<i32> for Stateful<&Sos<Q>, &mut SosStateDither> {
+impl<const Q: u8> Process<i32> for Split<&Sos<Q>, &mut SosStateDither> {
     fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.state.xy;
         let e = &mut self.state.e;
@@ -194,7 +195,7 @@ impl<const Q: u8> Process<i32> for Stateful<&Sos<Q>, &mut SosStateDither> {
     }
 }
 
-impl<const Q: u8> Process<i32> for Stateful<&SosClamp<Q>, &mut SosStateDither> {
+impl<const Q: u8> Process<i32> for Split<&SosClamp<Q>, &mut SosStateDither> {
     fn process(&mut self, x0: i32) -> i32 {
         let xy = &mut self.state.xy;
         let e = &mut self.state.e;
@@ -213,12 +214,12 @@ impl<const Q: u8> Process<i32> for Stateful<&SosClamp<Q>, &mut SosStateDither> {
     }
 }
 
-impl<const Q: u8> Inplace<i32> for Stateful<&Sos<Q>, &mut SosState> {}
-impl<const Q: u8> Inplace<i32> for Stateful<&Sos<Q>, &mut SosStateWide> {}
-impl<const Q: u8> Inplace<i32> for Stateful<&Sos<Q>, &mut SosStateDither> {}
-impl<const Q: u8> Inplace<i32> for Stateful<&SosClamp<Q>, &mut SosState> {}
-impl<const Q: u8> Inplace<i32> for Stateful<&SosClamp<Q>, &mut SosStateWide> {}
-impl<const Q: u8> Inplace<i32> for Stateful<&SosClamp<Q>, &mut SosStateDither> {}
+impl<const Q: u8> Inplace<i32> for Split<&Sos<Q>, &mut SosState> {}
+impl<const Q: u8> Inplace<i32> for Split<&Sos<Q>, &mut SosStateWide> {}
+impl<const Q: u8> Inplace<i32> for Split<&Sos<Q>, &mut SosStateDither> {}
+impl<const Q: u8> Inplace<i32> for Split<&SosClamp<Q>, &mut SosState> {}
+impl<const Q: u8> Inplace<i32> for Split<&SosClamp<Q>, &mut SosStateWide> {}
+impl<const Q: u8> Inplace<i32> for Split<&SosClamp<Q>, &mut SosStateDither> {}
 
 fn quantize(ba: &[[f64; 3]; 2], q: u8) -> [i32; 5] {
     let a0 = (1u64 << q) as f64 / ba[1][0];
@@ -266,7 +267,7 @@ impl<const Q: u8> From<[i32; 5]> for SosClamp<Q> {
 mod test {
     #![allow(dead_code)]
     use super::*;
-    use crate::iir::Inplace;
+    use crate::process::Inplace;
     // No manual tuning needed here.
     // Compiler knows best how and when:
     //   unroll loops
@@ -280,7 +281,7 @@ mod test {
     pub struct Casc([Sos<29>; 4]);
     impl Casc {
         pub fn block(&self, state: &mut [SosState; 4], xy0: &mut [i32; 8]) {
-            Stateful::new(&self.0, state).inplace(xy0);
+            Split::new(&self.0, state).inplace(xy0);
         }
     }
 }
