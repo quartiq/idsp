@@ -78,7 +78,7 @@ impl<X: Copy, T: Inplace<X>> Inplace<X> for &mut T {
 pub struct Minor<C, U> {
     /// The inner configurations
     pub inner: C,
-    /// An intermediate type
+    /// An intermediate data type
     _intermediate: PhantomData<U>,
 }
 
@@ -207,6 +207,18 @@ impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for [P; N] {
 }
 
 /// A stateful processor
+///
+/// Splitting configuration (the part of the filter that is unaffected
+/// by processing inputs, e.g. "coefficients"), from state (the part
+/// that is modified by processing) allows:
+///
+/// * Separating mutable from immutable state guarantees consistency
+///   (configuration can not change state and processing can
+///   not change configuration)
+/// * Reduces memory traffic when swapping configuration
+/// * Allows the same filter to be applied to multiple states
+///   (e.g. IQ data, multiple channels) guaranteeding consistency,
+///   reducing memory usage, improving caching.
 #[derive(Debug, Clone, Default)]
 pub struct Stateful<C, S> {
     /// Processor configuration
@@ -287,14 +299,6 @@ where
     }
 }
 
-/// A chain of two small filters of different type.
-///
-/// This then automatically covers any nested tuple.
-///
-/// Iterations are sample-major, and filter-minor. This is good if at least
-/// one of the filters has no or small state and configuration.
-///
-/// For large filters/state, use straight tuples, arrays, and slices.
 impl<X, U, Y, C0, C1, S0, S1> Process<X, Y> for Stateful<&Minor<(C0, C1), U>, &mut (S0, S1)>
 where
     X: Copy,
@@ -481,103 +485,118 @@ where
     }
 }
 
-/// Fan out the same input to multiple processors
+/// Fan out parallel input to parallel processors
 #[derive(Clone, Debug, Default)]
-pub struct FanOut<C>(pub C);
+pub struct Parallel<C>(pub C);
 
-impl<X, Y0, Y1, C0, C1> Process<X, (Y0, Y1)> for FanOut<(C0, C1)>
+impl<X0, X1, Y0, Y1, C0, C1> Process<(X0, X1), (Y0, Y1)> for Parallel<(C0, C1)>
 where
-    X: Copy,
-    C0: Process<X, Y0>,
-    C1: Process<X, Y1>,
+    X0: Copy,
+    X1: Copy,
+    C0: Process<X0, Y0>,
+    C1: Process<X1, Y1>,
 {
-    fn process(&mut self, x: X) -> (Y0, Y1) {
-        (self.0.0.process(x), self.0.1.process(x))
+    fn process(&mut self, x: (X0, X1)) -> (Y0, Y1) {
+        (self.0.0.process(x.0), self.0.1.process(x.1))
     }
 }
 
-impl<X, Y, C0, C1> Process<X, [Y; 2]> for FanOut<(C0, C1)>
+impl<X, Y, C0, C1> Process<[X; 2], [Y; 2]> for Parallel<(C0, C1)>
 where
     X: Copy,
     C0: Process<X, Y>,
     C1: Process<X, Y>,
 {
-    fn process(&mut self, x: X) -> [Y; 2] {
-        [self.0.0.process(x), self.0.1.process(x)]
+    fn process(&mut self, x: [X; 2]) -> [Y; 2] {
+        [self.0.0.process(x[0]), self.0.1.process(x[1])]
     }
 }
 
-impl<X, Y, C, const N: usize> Process<X, [Y; N]> for FanOut<[C; N]>
+impl<X, Y, C, const N: usize> Process<[X; N], [Y; N]> for Parallel<[C; N]>
 where
     X: Copy,
     [Y; N]: Default,
     C: Process<X, Y>,
 {
-    fn process(&mut self, x: X) -> [Y; N] {
+    fn process(&mut self, x: [X; N]) -> [Y; N] {
         let mut y = <[Y; N]>::default();
-        for (c, y) in self.0.iter_mut().zip(y.iter_mut()) {
-            *y = c.process(x);
+        for (c, (x, y)) in self.0.iter_mut().zip(x.iter().zip(y.iter_mut())) {
+            *y = c.process(*x);
         }
         y
     }
 }
 
-impl<X, Y0, Y1, C0, C1, S0, S1> Process<X, (Y0, Y1)> for Stateful<&FanOut<(C0, C1)>, &mut (S0, S1)>
+impl<X: Copy, C> Inplace<X> for Parallel<C> where Self: Process<X> {}
+
+impl<X0, X1, Y0, Y1, C0, C1, S0, S1> Process<(X0, X1), (Y0, Y1)>
+    for Stateful<&Parallel<(C0, C1)>, &mut (S0, S1)>
 where
-    X: Copy,
-    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X, Y0>,
-    for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y1>,
+    X0: Copy,
+    X1: Copy,
+    for<'a> Stateful<&'a C0, &'a mut S0>: Process<X0, Y0>,
+    for<'a> Stateful<&'a C1, &'a mut S1>: Process<X1, Y1>,
 {
-    fn process(&mut self, x: X) -> (Y0, Y1) {
+    fn process(&mut self, x: (X0, X1)) -> (Y0, Y1) {
         (
-            Stateful::new(&self.config.0.0, &mut self.state.0).process(x),
-            Stateful::new(&self.config.0.1, &mut self.state.1).process(x),
+            Stateful::new(&self.config.0.0, &mut self.state.0).process(x.0),
+            Stateful::new(&self.config.0.1, &mut self.state.1).process(x.1),
         )
     }
 }
 
-impl<X, Y, C0, C1, S0, S1> Process<X, [Y; 2]> for Stateful<&FanOut<(C0, C1)>, &mut (S0, S1)>
+impl<X, Y, C0, C1, S0, S1> Process<[X; 2], [Y; 2]> for Stateful<&Parallel<(C0, C1)>, &mut (S0, S1)>
 where
     X: Copy,
     for<'a> Stateful<&'a C0, &'a mut S0>: Process<X, Y>,
     for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y>,
 {
-    fn process(&mut self, x: X) -> [Y; 2] {
+    fn process(&mut self, x: [X; 2]) -> [Y; 2] {
         [
-            Stateful::new(&self.config.0.0, &mut self.state.0).process(x),
-            Stateful::new(&self.config.0.1, &mut self.state.1).process(x),
+            Stateful::new(&self.config.0.0, &mut self.state.0).process(x[0]),
+            Stateful::new(&self.config.0.1, &mut self.state.1).process(x[1]),
         ]
     }
 }
 
-impl<X, Y, C, S, const N: usize> Process<X, [Y; N]> for Stateful<&FanOut<[C; N]>, &mut [S; N]>
+impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]>
+    for Stateful<&Parallel<[C; N]>, &mut [S; N]>
 where
     X: Copy,
     [Y; N]: Default,
     for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y>,
 {
-    fn process(&mut self, x: X) -> [Y; N] {
+    fn process(&mut self, x: [X; N]) -> [Y; N] {
         let mut y = <[Y; N]>::default();
-        for ((c, s), y) in self
+        for ((c, s), (x, y)) in self
             .config
             .0
             .iter()
             .zip(self.state.iter_mut())
-            .zip(y.iter_mut())
+            .zip(x.iter().zip(y.iter_mut()))
         {
-            *y = Stateful::new(c, s).process(x);
+            *y = Stateful::new(c, s).process(*x);
         }
         y
     }
 }
 
-/// Summ outputs of filters
+impl<X: Copy, C0, C1, S0, S1> Inplace<X> for Stateful<&Parallel<(C0, C1)>, &mut (S0, S1)> where
+    Self: Process<X>
+{
+}
+impl<X: Copy, C, S, const N: usize> Inplace<X> for Stateful<&Parallel<[C; N]>, &mut [S; N]> where
+    Self: Process<X>
+{
+}
+
+/// Sum outputs of filters
 ///
 /// Fan in.
 #[derive(Debug, Clone, Default)]
 pub struct Sum;
-impl<X: Copy + core::iter::Sum, const N: usize> Process<[X; N], X> for &Sum {
-    fn process(&mut self, x: [X; N]) -> X {
+impl<X: Copy, Y: core::iter::Sum<X>, const N: usize> Process<[X; N], Y> for &Sum {
+    fn process(&mut self, x: [X; N]) -> Y {
         x.iter().copied().sum()
     }
 }
@@ -586,14 +605,32 @@ impl<X0: Copy + Add<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Sum 
         x.0 + x.1
     }
 }
+impl<X: Copy> Inplace<X> for &Sum where Self: Process<X> {}
+
+/// Product of outputs of filters
+///
+/// Fan in.
+#[derive(Debug, Clone, Default)]
+pub struct Product;
+impl<X: Copy, Y: core::iter::Product<X>, const N: usize> Process<[X; N], Y> for &Product {
+    fn process(&mut self, x: [X; N]) -> Y {
+        x.iter().copied().product()
+    }
+}
+impl<X0: Copy + Mul<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Product {
+    fn process(&mut self, x: (X0, X1)) -> Y {
+        x.0 * x.1
+    }
+}
+impl<X: Copy> Inplace<X> for &Product where Self: Process<X> {}
 
 /// Difference of outputs of two filters
 ///
 /// Fan in.
 #[derive(Debug, Clone, Default)]
 pub struct Diff;
-impl<X: Copy + Sub<Output = X>> Process<[X; 2], X> for &Diff {
-    fn process(&mut self, x: [X; 2]) -> X {
+impl<X: Copy + Sub<Output = Y>, Y> Process<[X; 2], Y> for &Diff {
+    fn process(&mut self, x: [X; 2]) -> Y {
         x[0] - x[1]
     }
 }
@@ -602,6 +639,7 @@ impl<X0: Copy + Sub<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Diff
         x.0 - x.1
     }
 }
+impl<X: Copy> Inplace<X> for &Diff where Self: Process<X> {}
 
 /// Sum and difference of outputs of two filters
 #[derive(Debug, Clone, Default)]
@@ -627,25 +665,20 @@ impl<X: Copy> Inplace<X> for &Butterfly where Self: Process<X> {}
 /// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
 ///
 /// The corresponding state for this is `((S0, S1), ())`.
-pub type Pair<C0, C1, X, J = Sum> = Minor<(FanOut<(C0, C1)>, Stateless<J>), [X; 2]>;
+pub type Pair<C0, C1, X, J = Sum> =
+    Minor<((Stateless<Identity>, Parallel<(C0, C1)>), Stateless<J>), [X; 2]>;
+
+// const fn assert_process<T: Process<X, Y>, X: Copy, Y>() {}
 
 /// Multiple channels to be processed with the same configuration
-#[derive(Clone, Debug)]
-pub struct Channels<S, const N: usize>(pub [S; N]);
-
-impl<S, const N: usize> Default for Channels<S, N>
-where
-    [S; N]: Default,
-{
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
+#[derive(Clone, Debug, Default)]
+pub struct Channels<S>(pub S);
 
 /// Process samples from multiple channels with a common configuration
 ///
 /// Note that block() and inplace() reinterpret the data as transposed: __not__ as `[[X; N]]` but as `[[X]; N]`.
-impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]> for Stateful<&C, &mut Channels<S, N>>
+/// Use `x.as_flattened().chunks_exact(x.len())` etc. to match that.
+impl<X, Y, C, S, const N: usize> Process<[X; N], [Y; N]> for Stateful<&C, &mut Channels<[S; N]>>
 where
     X: Copy,
     [Y; N]: Default,
@@ -673,7 +706,7 @@ where
     }
 }
 
-impl<X, C, S, const N: usize> Inplace<[X; N]> for Stateful<&C, &mut Channels<S, N>>
+impl<X, C, S, const N: usize> Inplace<[X; N]> for Stateful<&C, &mut Channels<[S; N]>>
 where
     X: Copy,
     [X; N]: Default,
@@ -708,6 +741,18 @@ impl<T: Copy> Inplace<T> for &Identity {
     fn inplace(&mut self, _xy: &mut [T]) {}
 }
 
+impl<X: Copy> Process<X, (X, X)> for &Identity {
+    fn process(&mut self, x: X) -> (X, X) {
+        (x, x)
+    }
+}
+
+impl<X: Copy, const N: usize> Process<X, [X; N]> for &Identity {
+    fn process(&mut self, x: X) -> [X; N] {
+        core::array::repeat(x)
+    }
+}
+
 /// Inversion using [`Neg`].
 #[derive(Debug, Clone, Default)]
 pub struct Invert;
@@ -729,7 +774,7 @@ impl<T: Copy> Inplace<T> for &Invert where Self: Process<T> {}
 pub struct Q<T, const F: u8>(pub T);
 
 macro_rules! impl_mul_q {
-    ($q:ty, $t:ty, $a:ty) => {
+    (($q:ty, $a:ty), $($t:ty),*) => { $(
         /// Multiplication with truncation
         impl<const F: u8> Mul<$t> for Q<$q, F> {
             type Output = $t;
@@ -738,12 +783,16 @@ macro_rules! impl_mul_q {
                 ((self.0 as $a * rhs as $a) >> F) as _
             }
         }
-    };
+    )* };
 }
-impl_mul_q!(i8, i8, i16);
-impl_mul_q!(i16, i16, i32);
-impl_mul_q!(i32, i32, i64);
-impl_mul_q!(i64, i64, i128);
+impl_mul_q!((i8, i16), i8);
+impl_mul_q!((i16, i32), i16, i8, u16, u8);
+impl_mul_q!((i32, i64), i32, i16, i8, u32, u16, u8);
+impl_mul_q!((i64, i128), i64, i32, i16, i8, u64, u32, u16, u8);
+impl_mul_q!((u8, u16), u8);
+impl_mul_q!((u16, u32), u16, u8);
+impl_mul_q!((u32, u64), u32, u16, u8);
+impl_mul_q!((u64, u128), u64, u32, u16, u8);
 
 /// Addition of a constant
 #[derive(Debug, Clone, Copy, Default)]
@@ -815,6 +864,7 @@ where
         y
     }
 }
+impl<X: Copy> Inplace<X> for &Rate where Self: Process<X> {}
 
 /// Buffer input or output, or fixed delay line
 #[derive(Debug, Clone)]
@@ -901,10 +951,12 @@ where
         y
     }
 }
+impl<X: Copy, P> Inplace<X> for Interpolator<P> where Self: Process<X> {}
 
 /// Adapts a decimator to input chunk mode
 ///
-/// Synchronizes to the inner tick, discards samples after tick, panics if tick does not match N
+/// Synchronizes to the inner tick bu discarding samples after tick.
+/// Panics if tick does not match N
 pub struct Decimator<P>(pub P);
 impl<X, Y, P, const N: usize> Process<[X; N], Y> for Decimator<P>
 where
@@ -915,6 +967,7 @@ where
         x.iter().find_map(|x| self.0.process(*x)).unwrap()
     }
 }
+impl<X: Copy, P> Inplace<X> for Decimator<P> where Self: Process<X> {}
 
 // TODO: Nyquist, Integrator, Derivative
 
@@ -924,7 +977,8 @@ mod test {
 
     #[test]
     fn stateless() {
-        assert_eq!((&Identity).process(3), 3);
+        let y: i32 = (&Identity).process(3);
+        assert_eq!(y, 3);
         assert_eq!(Stateful::new(Stateless(Invert), ()).as_mut().process(9), -9);
         assert_eq!((&Q::<i32, 3>(32)).process(9), 9 * 4);
         assert_eq!((&Adder(7)).process(9), 7 + 9);

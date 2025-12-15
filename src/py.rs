@@ -109,42 +109,48 @@ mod _idsp {
     /// Gazsi 1985, Example 5
     #[pyfunction]
     fn wdf<'py>(mut xy: PyReadwriteArray1<'py, i32>) -> PyResult<()> {
-        use crate::iir::{FanOut, Pair, Stateless, Sum, Wdf, WdfState};
+        use crate::iir::{Pair, Parallel, Wdf, WdfState};
 
         // With constant coefficients and fixed block size 4, already with O2, this
         // is fully unrolled and inlined on e.g. thubv7em-none-eabi and about 36 insns per sample,
         // i.e. less than 2 insn per order and sample.
-        let f = Pair::new((
-            FanOut((
-                (
+        let f = Pair::<_, _, i32>::new((
+            (
+                Default::default(),
+                Parallel((
                     (
-                        Wdf::<1, 0x1>::default(),
-                        Wdf::<2, 0x1c>::quantize(&[-0.226119, 0.0]).unwrap(),
+                        (
+                            Wdf::<1, 0x1>::default(),
+                            Wdf::<2, 0x1c>::quantize(&[-0.226119, 0.0]).unwrap(),
+                        ),
+                        [
+                            Wdf::<2, 0x1d>::quantize(&[-0.602422, 0.0]).unwrap(),
+                            Wdf::quantize(&[-0.839323, 0.0]).unwrap(),
+                            Wdf::quantize(&[-0.950847, 0.0]).unwrap(),
+                        ],
                     ),
-                    [
-                        Wdf::<2, 0x1d>::quantize(&[-0.602422, 0.0]).unwrap(),
-                        Wdf::quantize(&[-0.839323, 0.0]).unwrap(),
-                        Wdf::quantize(&[-0.950847, 0.0]).unwrap(),
-                    ],
-                ),
-                (
-                    [
-                        Wdf::<2, 0x1c>::quantize(&[-0.063978, 0.0]).unwrap(),
-                        Wdf::quantize(&[-0.423068, 0.0]).unwrap(),
-                    ],
-                    [
-                        Wdf::<2, 0x1d>::quantize(&[-0.741327, 0.0]).unwrap(),
-                        Wdf::quantize(&[-0.905567, 0.0]).unwrap(),
-                        Wdf::quantize(&[-0.984721, 0.0]).unwrap(),
-                    ],
-                ),
-            )),
-            Stateless(Sum),
+                    (
+                        [
+                            Wdf::<2, 0x1c>::quantize(&[-0.063978, 0.0]).unwrap(),
+                            Wdf::quantize(&[-0.423068, 0.0]).unwrap(),
+                        ],
+                        [
+                            Wdf::<2, 0x1d>::quantize(&[-0.741327, 0.0]).unwrap(),
+                            Wdf::quantize(&[-0.905567, 0.0]).unwrap(),
+                            Wdf::quantize(&[-0.984721, 0.0]).unwrap(),
+                        ],
+                    ),
+                )),
+            ),
+            Default::default(),
         ));
         let s: (
             (
-                ((WdfState<1>, WdfState<2>), [WdfState<2>; 3]),
-                ([WdfState<2>; 2], [WdfState<2>; 3]),
+                (),
+                (
+                    ((WdfState<1>, WdfState<2>), [WdfState<2>; 3]),
+                    ([WdfState<2>; 2], [WdfState<2>; 3]),
+                ),
             ),
             (),
         ) = Default::default();
