@@ -83,8 +83,8 @@ impl<X: Copy, T: Inplace<X>> Inplace<X> for &mut T {
 pub struct Minor<C, U> {
     /// The inner configurations
     pub inner: C,
-    /// The intermediate type
-    intermediate: PhantomData<U>,
+    /// An intermediate type
+    _intermediate: PhantomData<U>,
 }
 
 impl<C, U> Minor<C, U> {
@@ -93,7 +93,7 @@ impl<C, U> Minor<C, U> {
     pub fn new(inner: C) -> Self {
         Self {
             inner,
-            intermediate: PhantomData,
+            _intermediate: PhantomData,
         }
     }
 }
@@ -102,13 +102,13 @@ impl<C, U, const N: usize> Minor<[C; N], U> {
     /// Borrowed Self
     #[inline]
     pub fn as_ref(&self) -> Minor<&[C], U> {
-        Minor::new(&self.inner[..])
+        Minor::new(self.inner.as_ref())
     }
 
     /// Mutably borrowed Self
     #[inline]
     pub fn as_mut(&mut self) -> Minor<&mut [C], U> {
-        Minor::new(&mut self.inner[..])
+        Minor::new(self.inner.as_mut())
     }
 }
 
@@ -182,34 +182,40 @@ impl<X: Copy, P: Inplace<X>> Inplace<X> for [P] {
     }
 }
 
-impl<X: Copy, P: Process<X>, const N: usize> Process<X> for Minor<[P; N], X> {
-    #[inline]
-    fn process(&mut self, x: X) -> X {
-        self.as_mut().process(x)
-    }
+struct Assert<const A: usize, const B: usize>;
+impl<const A: usize, const B: usize> Assert<A, B> {
+    const GREATER: () = assert!(A > B);
+}
 
+impl<X: Copy, Y: Copy, P: Process<X, Y> + Process<Y>, const N: usize> Process<X, Y>
+    for Minor<[P; N], Y>
+{
     #[inline]
-    fn block(&mut self, x: &[X], y: &mut [X]) {
-        self.as_mut().block(x, y)
+    fn process(&mut self, x: X) -> Y {
+        let _ = Assert::<N, 0>::GREATER;
+        let (p0, p) = self.inner.split_first_mut().unwrap();
+        p.iter_mut().fold(p0.process(x), |x, p| p.process(x))
     }
 }
 
-impl<X: Copy, P: Process<X>, const N: usize> Inplace<X> for Minor<[P; N], X> {
-    #[inline]
-    fn inplace(&mut self, xy: &mut [X]) {
-        self.as_mut().inplace(xy)
-    }
-}
+impl<X: Copy, P, const N: usize> Inplace<X> for Minor<[P; N], X> where Self: Process<X> {}
 
-impl<X: Copy, P: Inplace<X>, const N: usize> Process<X> for [P; N] {
+impl<X: Copy, Y: Copy, P: Process<X, Y> + Inplace<Y>, const N: usize> Process<X, Y> for [P; N] {
     #[inline]
-    fn process(&mut self, x: X) -> X {
-        self.as_mut().process(x)
+    fn process(&mut self, x: X) -> Y {
+        let _ = Assert::<N, 0>::GREATER;
+        let (p0, p) = self.split_first_mut().unwrap();
+        p.iter_mut().fold(p0.process(x), |x, p| p.process(x))
     }
 
     #[inline]
-    fn block(&mut self, x: &[X], y: &mut [X]) {
-        self.as_mut().block(x, y)
+    fn block(&mut self, x: &[X], y: &mut [Y]) {
+        let _ = Assert::<N, 0>::GREATER;
+        let (p0, p) = self.split_first_mut().unwrap();
+        p0.block(x, y);
+        for p in p.iter_mut() {
+            p.inplace(y);
+        }
     }
 }
 
@@ -439,54 +445,75 @@ where
 }
 
 /// A chain of multiple small filters of the same type
-impl<X, C, S, const N: usize> Process<X> for Stateful<&Minor<[C; N], X>, &mut [S; N]>
+impl<X, Y, C, S, const N: usize> Process<X, Y> for Stateful<&Minor<[C; N], Y>, &mut [S; N]>
 where
     X: Copy,
-    for<'a> Stateful<Minor<&'a [C], X>, &'a mut [S]>: Process<X>,
+    Y: Copy,
+    for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y> + Process<Y>,
 {
     #[inline]
-    fn process(&mut self, x: X) -> X {
-        Stateful::new(self.config.as_ref(), self.state.as_mut()).process(x)
-    }
-
-    #[inline]
-    fn block(&mut self, x: &[X], y: &mut [X]) {
-        Stateful::new(self.config.as_ref(), self.state.as_mut()).block(x, y)
+    fn process(&mut self, x: X) -> Y {
+        let _ = Assert::<N, 0>::GREATER;
+        let ((c0, c), (s0, s)) = self
+            .config
+            .inner
+            .split_first()
+            .zip(self.state.split_first_mut())
+            .unwrap();
+        c.iter()
+            .zip(s.iter_mut())
+            .fold(Stateful::new(c0, s0).process(x), |x, (c, s)| {
+                Stateful::new(c, s).process(x)
+            })
     }
 }
 
-impl<X, C, S, const N: usize> Inplace<X> for Stateful<&Minor<[C; N], X>, &mut [S; N]>
-where
-    X: Copy,
-    for<'a> Stateful<Minor<&'a [C], X>, &'a mut [S]>: Inplace<X>,
+impl<X: Copy, C, S, const N: usize> Inplace<X> for Stateful<&Minor<[C; N], X>, &mut [S; N]> where
+    Self: Process<X>
 {
-    #[inline]
-    fn inplace(&mut self, xy: &mut [X]) {
-        Stateful::new(self.config.as_ref(), self.state.as_mut()).inplace(xy)
-    }
 }
 
 /// A chain of multiple large filters of the same type
-impl<X, C, S, const N: usize> Process<X> for Stateful<&[C; N], &mut [S; N]>
+impl<X, Y, C, S, const N: usize> Process<X, Y> for Stateful<&[C; N], &mut [S; N]>
 where
     X: Copy,
-    for<'a> Stateful<&'a [C], &'a mut [S]>: Process<X>,
+    Y: Copy,
+    for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y> + Inplace<Y>,
 {
     #[inline]
-    fn process(&mut self, x: X) -> X {
-        Stateful::new(self.config.as_ref(), self.state.as_mut()).process(x)
+    fn process(&mut self, x: X) -> Y {
+        let _ = Assert::<N, 0>::GREATER;
+        let ((c0, c), (s0, s)) = self
+            .config
+            .split_first()
+            .zip(self.state.split_first_mut())
+            .unwrap();
+        c.iter()
+            .zip(s.iter_mut())
+            .fold(Stateful::new(c0, s0).process(x), |x, (c, s)| {
+                Stateful::new(c, s).process(x)
+            })
     }
 
     #[inline]
-    fn block(&mut self, x: &[X], y: &mut [X]) {
-        Stateful::new(self.config.as_ref(), self.state.as_mut()).block(x, y)
+    fn block(&mut self, x: &[X], y: &mut [Y]) {
+        let _ = Assert::<N, 0>::GREATER;
+        let ((c0, c), (s0, s)) = self
+            .config
+            .split_first()
+            .zip(self.state.split_first_mut())
+            .unwrap();
+        Stateful::new(c0, s0).block(x, y);
+        for (c, s) in c.iter().zip(s.iter_mut()) {
+            Stateful::new(c, s).inplace(y)
+        }
     }
 }
 
 impl<X, C, S, const N: usize> Inplace<X> for Stateful<&[C; N], &mut [S; N]>
 where
     X: Copy,
-    for<'a> Stateful<&'a [C], &'a mut [S]>: Inplace<X>,
+    for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
 {
     #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
