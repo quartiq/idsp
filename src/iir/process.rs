@@ -25,7 +25,6 @@ pub trait Process<X: Copy, Y = X> {
     /// Process a block of inputs into a block of outputs
     ///
     /// Input and output must be of the same size.
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
         debug_assert_eq!(x.len(), y.len());
         for (x, y) in x.iter().zip(y) {
@@ -37,7 +36,6 @@ pub trait Process<X: Copy, Y = X> {
 /// Process a block in place.
 pub trait Inplace<X: Copy>: Process<X> {
     /// Process an input block into the same data as output
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         for xy in xy.iter_mut() {
             *xy = self.process(*xy);
@@ -46,19 +44,16 @@ pub trait Inplace<X: Copy>: Process<X> {
 }
 
 impl<X: Copy, Y, T: Process<X, Y>> Process<X, Y> for &mut T {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         (*self).process(x)
     }
 
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
         (*self).block(x, y)
     }
 }
 
 impl<X: Copy, T: Inplace<X>> Inplace<X> for &mut T {
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         (*self).inplace(xy)
     }
@@ -89,7 +84,6 @@ pub struct Minor<C, U> {
 
 impl<C, U> Minor<C, U> {
     /// Create a new chain
-    #[inline]
     pub fn new(inner: C) -> Self {
         Self {
             inner,
@@ -100,13 +94,11 @@ impl<C, U> Minor<C, U> {
 
 impl<C, U, const N: usize> Minor<[C; N], U> {
     /// Borrowed Self
-    #[inline]
     pub fn as_ref(&self) -> Minor<&[C], U> {
         Minor::new(self.inner.as_ref())
     }
 
     /// Mutably borrowed Self
-    #[inline]
     pub fn as_mut(&mut self) -> Minor<&mut [C], U> {
         Minor::new(self.inner.as_mut())
     }
@@ -115,7 +107,6 @@ impl<C, U, const N: usize> Minor<[C; N], U> {
 impl<X: Copy, U: Copy, Y, P1: Process<X, U>, P2: Process<U, Y>> Process<X, Y>
     for Minor<(P1, P2), U>
 {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         self.inner.1.process(self.inner.0.process(x))
     }
@@ -124,12 +115,10 @@ impl<X: Copy, U: Copy, Y, P1: Process<X, U>, P2: Process<U, Y>> Process<X, Y>
 impl<X: Copy, U, P1, P2> Inplace<X> for Minor<(P1, P2), U> where Self: Process<X> {}
 
 impl<X: Copy, Y: Copy, P1: Process<X, Y>, P2: Inplace<Y>> Process<X, Y> for (P1, P2) {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         self.1.process(self.0.process(x))
     }
 
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
         self.0.block(x, y);
         self.1.inplace(y);
@@ -137,7 +126,6 @@ impl<X: Copy, Y: Copy, P1: Process<X, Y>, P2: Inplace<Y>> Process<X, Y> for (P1,
 }
 
 impl<X: Copy, P1: Inplace<X>, P2: Inplace<X>> Inplace<X> for (P1, P2) {
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         self.0.inplace(xy);
         self.1.inplace(xy);
@@ -145,7 +133,6 @@ impl<X: Copy, P1: Inplace<X>, P2: Inplace<X>> Inplace<X> for (P1, P2) {
 }
 
 impl<X: Copy, P: Process<X>> Process<X> for Minor<&mut [P], X> {
-    #[inline]
     fn process(&mut self, x: X) -> X {
         self.inner.iter_mut().fold(x, |x, p| p.process(x))
     }
@@ -154,12 +141,10 @@ impl<X: Copy, P: Process<X>> Process<X> for Minor<&mut [P], X> {
 impl<X: Copy, P> Inplace<X> for Minor<&mut [P], X> where Self: Process<X> {}
 
 impl<X: Copy, P: Inplace<X>> Process<X> for [P] {
-    #[inline]
     fn process(&mut self, x: X) -> X {
         Minor::new(&mut self[..]).process(x)
     }
 
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [X]) {
         debug_assert_eq!(x.len(), y.len());
         if let Some((p0, p)) = self.split_first_mut() {
@@ -174,7 +159,6 @@ impl<X: Copy, P: Inplace<X>> Process<X> for [P] {
 }
 
 impl<X: Copy, P: Inplace<X>> Inplace<X> for [P] {
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         for p in self.iter_mut() {
             p.inplace(xy)
@@ -190,7 +174,6 @@ impl<const A: usize, const B: usize> Assert<A, B> {
 impl<X: Copy, Y: Copy, P: Process<X, Y> + Process<Y>, const N: usize> Process<X, Y>
     for Minor<[P; N], Y>
 {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         let _ = Assert::<N, 0>::GREATER;
         let (p0, p) = self.inner.split_first_mut().unwrap();
@@ -201,14 +184,12 @@ impl<X: Copy, Y: Copy, P: Process<X, Y> + Process<Y>, const N: usize> Process<X,
 impl<X: Copy, P, const N: usize> Inplace<X> for Minor<[P; N], X> where Self: Process<X> {}
 
 impl<X: Copy, Y: Copy, P: Process<X, Y> + Inplace<Y>, const N: usize> Process<X, Y> for [P; N] {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         let _ = Assert::<N, 0>::GREATER;
         let (p0, p) = self.split_first_mut().unwrap();
         p.iter_mut().fold(p0.process(x), |x, p| p.process(x))
     }
 
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
         let _ = Assert::<N, 0>::GREATER;
         let (p0, p) = self.split_first_mut().unwrap();
@@ -220,7 +201,6 @@ impl<X: Copy, Y: Copy, P: Process<X, Y> + Inplace<Y>, const N: usize> Process<X,
 }
 
 impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for [P; N] {
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         self.as_mut().inplace(xy)
     }
@@ -237,7 +217,6 @@ pub struct Stateful<C, S> {
 
 impl<C, S> Stateful<C, S> {
     /// Create a new stateful processor
-    #[inline]
     pub fn new(config: C, state: S) -> Self {
         Self { config, state }
     }
@@ -245,7 +224,6 @@ impl<C, S> Stateful<C, S> {
     /// Obtain a borrowed processor
     ///
     /// Stateful `Process` is typically implemented on the borrowed processor.
-    #[inline]
     pub fn as_mut(&mut self) -> Stateful<&C, &mut S> {
         Stateful {
             config: &self.config,
@@ -265,12 +243,10 @@ where
     X: Copy,
     for<'a> &'a C: Process<X, Y>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         (&self.config.0).process(x)
     }
 
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
         (&self.config.0).block(x, y)
     }
@@ -281,7 +257,6 @@ where
     X: Copy,
     for<'a> &'a C: Inplace<X>,
 {
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         (&self.config.0).inplace(xy)
     }
@@ -293,12 +268,10 @@ where
     X: Copy,
     for<'a> &'a mut S: Process<X, Y>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         self.state.process(x)
     }
 
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
         self.state.block(x, y)
     }
@@ -309,7 +282,6 @@ where
     X: Copy,
     for<'a> &'a mut S: Inplace<X>,
 {
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         self.state.inplace(xy)
     }
@@ -330,7 +302,6 @@ where
     for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, U>,
     for<'a> Stateful<&'a C2, &'a mut S2>: Process<U, Y>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         let u = Stateful::new(&self.config.inner.0, &mut self.state.0).process(x);
         Stateful::new(&self.config.inner.1, &mut self.state.1).process(u)
@@ -352,14 +323,12 @@ where
     for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y>,
     for<'a> Stateful<&'a C2, &'a mut S2>: Inplace<Y>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         // TODO: defer to Minor
         let u = Stateful::new(&self.config.0, &mut self.state.0).process(x);
         Stateful::new(&self.config.1, &mut self.state.1).process(u)
     }
 
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
         Stateful::new(&self.config.0, &mut self.state.0).block(x, y);
         Stateful::new(&self.config.1, &mut self.state.1).inplace(y);
@@ -372,7 +341,6 @@ where
     for<'a> Stateful<&'a C1, &'a mut S1>: Inplace<X>,
     for<'a> Stateful<&'a C2, &'a mut S2>: Inplace<X>,
 {
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         Stateful::new(&self.config.0, &mut self.state.0).inplace(xy);
         Stateful::new(&self.config.1, &mut self.state.1).inplace(xy);
@@ -385,7 +353,6 @@ where
     X: Copy,
     for<'a> Stateful<&'a C, &'a mut S>: Process<X>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> X {
         debug_assert_eq!(self.config.inner.len(), self.state.len());
         self.config
@@ -409,12 +376,10 @@ where
     X: Copy,
     for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> X {
         Stateful::new(Minor::new(self.config), &mut *self.state).process(x)
     }
 
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [X]) {
         debug_assert_eq!(self.config.len(), self.state.len());
         if let Some(((c0, c), (s0, s))) =
@@ -435,7 +400,6 @@ where
     X: Copy,
     for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
 {
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         debug_assert_eq!(self.config.len(), self.state.len());
         for (c, s) in self.config.iter().zip(self.state.iter_mut()) {
@@ -451,7 +415,6 @@ where
     Y: Copy,
     for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y> + Process<Y>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         let _ = Assert::<N, 0>::GREATER;
         let ((c0, c), (s0, s)) = self
@@ -480,7 +443,6 @@ where
     Y: Copy,
     for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y> + Inplace<Y>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> Y {
         let _ = Assert::<N, 0>::GREATER;
         let ((c0, c), (s0, s)) = self
@@ -495,7 +457,6 @@ where
             })
     }
 
-    #[inline]
     fn block(&mut self, x: &[X], y: &mut [Y]) {
         let _ = Assert::<N, 0>::GREATER;
         let ((c0, c), (s0, s)) = self
@@ -515,7 +476,6 @@ where
     X: Copy,
     for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
 {
-    #[inline]
     fn inplace(&mut self, xy: &mut [X]) {
         Stateful::new(self.config.as_ref(), self.state.as_mut()).inplace(xy)
     }
@@ -568,7 +528,6 @@ where
     for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y1>,
     for<'a> Stateful<&'a C2, &'a mut S2>: Process<X, Y2>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> (Y1, Y2) {
         (
             Stateful::new(&self.config.0.0, &mut self.state.0).process(x),
@@ -583,7 +542,6 @@ where
     for<'a> Stateful<&'a C1, &'a mut S1>: Process<X, Y>,
     for<'a> Stateful<&'a C2, &'a mut S2>: Process<X, Y>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> [Y; 2] {
         [
             Stateful::new(&self.config.0.0, &mut self.state.0).process(x),
@@ -598,7 +556,6 @@ where
     [Y; N]: Default,
     for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y>,
 {
-    #[inline]
     fn process(&mut self, x: X) -> [Y; N] {
         let mut y = <[Y; N]>::default();
         for ((c, s), y) in self
@@ -614,15 +571,19 @@ where
     }
 }
 
-/// Summ outputs of two filters
+/// Summ outputs of filters
 ///
 /// Fan in.
 #[derive(Debug, Clone, Default)]
 pub struct Sum;
-impl<X: Copy + Add<Output = X>> Process<[X; 2], X> for &Sum {
-    #[inline]
-    fn process(&mut self, x: [X; 2]) -> X {
-        x[0] + x[1]
+impl<X: Copy + core::iter::Sum, const N: usize> Process<[X; N], X> for &Sum {
+    fn process(&mut self, x: [X; N]) -> X {
+        x.iter().copied().sum()
+    }
+}
+impl<X1: Copy + Add<X2, Output = Y>, X2: Copy, Y> Process<(X1, X2), Y> for &Sum {
+    fn process(&mut self, x: (X1, X2)) -> Y {
+        x.0 + x.1
     }
 }
 
@@ -632,18 +593,21 @@ impl<X: Copy + Add<Output = X>> Process<[X; 2], X> for &Sum {
 #[derive(Debug, Clone, Default)]
 pub struct Diff;
 impl<X: Copy + Sub<Output = X>> Process<[X; 2], X> for &Diff {
-    #[inline]
     fn process(&mut self, x: [X; 2]) -> X {
         x[0] - x[1]
+    }
+}
+impl<X1: Copy + Sub<X2, Output = Y>, X2: Copy, Y> Process<(X1, X2), Y> for &Diff {
+    fn process(&mut self, x: (X1, X2)) -> Y {
+        x.0 - x.1
     }
 }
 
 /// Sum and difference of outputs of two filters
 #[derive(Debug, Clone, Default)]
 pub struct Butterfly;
-impl<X: Copy + Add<Output = X> + Sub<Output = X>> Process<[X; 2], [X; 2]> for &Butterfly {
-    #[inline]
-    fn process(&mut self, x: [X; 2]) -> [X; 2] {
+impl<X: Copy + Add<Output = Y> + Sub<Output = Y>, Y> Process<[X; 2], [Y; 2]> for &Butterfly {
+    fn process(&mut self, x: [X; 2]) -> [Y; 2] {
         [x[0] + x[1], x[0] - x[1]]
     }
 }
@@ -661,7 +625,9 @@ impl<X: Copy> Inplace<X> for &Butterfly where Self: Process<X> {}
 /// This uses the default sample-major implementation
 /// and may lead to suboptimal cashing and register thrashing for large branches.
 /// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
-pub type Pair<C1, C2, X> = Minor<(FanOut<(C1, C2)>, Stateless<Sum>), [X; 2]>;
+///
+/// The corresponding state for this is `((S1, S2), ())`.
+pub type Pair<C1, C2, X, J = Sum> = Minor<(FanOut<(C1, C2)>, Stateless<J>), [X; 2]>;
 
 /// Multiple channels to be processed with the same configuration
 #[derive(Clone, Debug)]
@@ -685,7 +651,6 @@ where
     [Y; N]: Default,
     for<'a> Stateful<&'a C, &'a mut S>: Process<X, Y>,
 {
-    #[inline]
     fn process(&mut self, x: [X; N]) -> [Y; N] {
         let mut y = <[Y; N]>::default();
         for ((x, y), state) in x.into_iter().zip(y.iter_mut()).zip(self.state.0.iter_mut()) {
@@ -694,7 +659,6 @@ where
         y
     }
 
-    #[inline]
     fn block(&mut self, x: &[[X; N]], y: &mut [[Y; N]]) {
         debug_assert_eq!(x.len(), y.len());
         let n = x.len();
@@ -715,7 +679,6 @@ where
     [X; N]: Default,
     for<'a> Stateful<&'a C, &'a mut S>: Inplace<X>,
 {
-    #[inline]
     fn inplace(&mut self, xy: &mut [[X; N]]) {
         let n = xy.len();
         for (xy, state) in xy
@@ -732,19 +695,16 @@ where
 #[derive(Debug, Clone, Default)]
 pub struct Identity;
 impl<T: Copy> Process<T> for &Identity {
-    #[inline]
     fn process(&mut self, x: T) -> T {
         x
     }
 
-    #[inline]
     fn block(&mut self, x: &[T], y: &mut [T]) {
         y.copy_from_slice(x);
     }
 }
 
 impl<T: Copy> Inplace<T> for &Identity {
-    #[inline]
     fn inplace(&mut self, _xy: &mut [T]) {}
 }
 
@@ -752,7 +712,6 @@ impl<T: Copy> Inplace<T> for &Identity {
 #[derive(Debug, Clone, Default)]
 pub struct Invert;
 impl<T: Copy + Neg<Output = T>> Process<T> for &Invert {
-    #[inline]
     fn process(&mut self, x: T) -> T {
         x.neg()
     }
@@ -775,7 +734,6 @@ macro_rules! impl_mul_q {
         impl<const F: u8> Mul<$t> for Q<$q, F> {
             type Output = $t;
 
-            #[inline]
             fn mul(self, rhs: $t) -> Self::Output {
                 ((self.0 as $a * rhs as $a) >> F) as _
             }
@@ -794,7 +752,6 @@ pub struct Adder<T>(pub T);
 
 /// Offset using `Add`
 impl<T: Copy, G: Add<T, Output = T> + Copy> Process<T> for &Adder<G> {
-    #[inline]
     fn process(&mut self, x: T) -> T {
         self.0 + x
     }
@@ -808,7 +765,6 @@ where
     Q<G, F>: Mul<T, Output = T> + Copy,
     T: Copy,
 {
-    #[inline]
     fn process(&mut self, x: T) -> T {
         **self * x
     }
@@ -829,7 +785,6 @@ impl<T> Process<T> for &Clamp<T>
 where
     T: Copy + Ord,
 {
-    #[inline]
     fn process(&mut self, x: T) -> T {
         x.clamp(self.min, self.max)
     }
@@ -844,7 +799,6 @@ where
     [X; N]: Copy,
     X: Copy,
 {
-    #[inline]
     fn process(&mut self, x: [X; N]) -> X {
         x[N - 1]
     }
@@ -855,7 +809,6 @@ where
     [X; N]: Default,
     X: Copy,
 {
-    #[inline]
     fn process(&mut self, x: X) -> [X; N] {
         let mut y = <[X; N]>::default();
         y[0] = x;
@@ -872,7 +825,7 @@ pub struct Buffer<X, const N: usize> {
 
 impl<X, const N: usize> Buffer<X, N> {
     /// The buffer is empty
-    #[inline]
+
     pub fn is_empty(&self) -> bool {
         self.idx == 0
     }
@@ -891,7 +844,6 @@ where
 }
 
 impl<X: Copy, const N: usize> Process<X> for Buffer<X, N> {
-    #[inline]
     fn process(&mut self, x: X) -> X {
         self.idx = (self.idx + 1) % N;
         core::mem::replace(&mut self.buffer[self.idx], x)
@@ -903,7 +855,6 @@ impl<X: Copy, const N: usize> Process<X> for Buffer<X, N> {
 impl<X: Copy, const N: usize> Inplace<X> for Buffer<X, N> where Self: Process<X> {}
 
 impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<X, N> {
-    #[inline]
     fn process(&mut self, x: X) -> Option<[X; N]> {
         self.buffer[self.idx] = x;
         self.idx += 1;
@@ -916,8 +867,8 @@ impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<X, N> {
     // TODO: block()
 }
 
+/// Panics on underflow
 impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<X, N> {
-    #[inline]
     fn process(&mut self, x: Option<[X; N]>) -> X {
         if let Some(x) = x {
             self.buffer = x;
@@ -929,6 +880,40 @@ impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<X, N> {
     }
 
     // TODO: block()
+}
+
+/// Adapts an interpolator to output chunk mode
+pub struct Interpolator<P>(pub P);
+impl<X, Y, P, const N: usize> Process<X, [Y; N]> for Interpolator<P>
+where
+    X: Copy,
+    [Y; N]: Default,
+    P: Process<Option<X>, Y>,
+{
+    fn process(&mut self, x: X) -> [Y; N] {
+        let mut y = <[Y; N]>::default();
+        if let Some((y0, yr)) = y.split_first_mut() {
+            *y0 = self.0.process(Some(x));
+            for y in yr.iter_mut() {
+                *y = self.0.process(None);
+            }
+        }
+        y
+    }
+}
+
+/// Adapts a decimator to input chunk mode
+///
+/// Synchronizes to the inner tick, discards samples after tick, panics if tick does not match N
+pub struct Decimator<P>(pub P);
+impl<X, Y, P, const N: usize> Process<[X; N], Y> for Decimator<P>
+where
+    X: Copy,
+    P: Process<X, Option<Y>>,
+{
+    fn process(&mut self, x: [X; N]) -> Y {
+        x.iter().find_map(|x| self.0.process(*x)).unwrap()
+    }
 }
 
 // TODO: Nyquist, Integrator, Derivative

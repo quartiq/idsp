@@ -1,6 +1,6 @@
 use core::ops::AddAssign;
 
-use num_traits::{AsPrimitive, Num, Pow, WrappingAdd, WrappingSub, Zero};
+use num_traits::{AsPrimitive, Num, Pow, WrappingAdd, WrappingSub};
 
 use crate::iir::Process;
 
@@ -150,7 +150,6 @@ impl<T, const N: usize, const M: usize> Process<Option<T>, T> for Cic<T, N, M>
 where
     T: Num + AddAssign + Copy,
 {
-    #[inline]
     fn process(&mut self, x: Option<T>) -> T {
         if let Some(x) = x {
             debug_assert_eq!(self.index, 0);
@@ -172,30 +171,11 @@ where
     }
 }
 
-impl<T, const N: usize, const M: usize, const R: usize> Process<T, [T; R]> for Cic<T, N, M>
-where
-    T: Num + AddAssign + Copy,
-    [T; R]: Default,
-{
-    #[inline]
-    fn process(&mut self, x: T) -> [T; R] {
-        let mut y = <[T; R]>::default();
-        if let Some((y0, yr)) = y.split_first_mut() {
-            *y0 = self.process(Some(x));
-            for y in yr.iter_mut() {
-                *y = self.process(None);
-            }
-        }
-        y
-    }
-}
-
 /// Ingest a new high-rate sample and optionally retrieve next output.
 impl<T, const N: usize, const M: usize> Process<T, Option<T>> for Cic<T, N, M>
 where
     T: WrappingAdd + WrappingSub + Copy,
 {
-    #[inline]
     fn process(&mut self, x: T) -> Option<T> {
         let x = self.integrators.iter_mut().fold(x, |x, i| {
             // Overflow is OK if bitwidth is sufficient (input * gain)
@@ -216,21 +196,6 @@ where
             });
             Some(self.zoh)
         }
-    }
-}
-
-impl<T, const N: usize, const M: usize, const R: usize> Process<[T; R], T> for Cic<T, N, M>
-where
-    T: WrappingAdd + WrappingSub + Copy + Zero,
-{
-    #[inline]
-    fn process(&mut self, x: [T; R]) -> T {
-        for x in x {
-            if let Some(y) = self.process(x) {
-                return y;
-            }
-        }
-        T::zero()
     }
 }
 

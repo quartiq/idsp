@@ -1,6 +1,6 @@
 #[pyo3::pymodule]
 mod _idsp {
-    use crate::iir::{Inplace, Minor, Stateful};
+    use crate::iir::{Inplace, Stateful};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
@@ -109,12 +109,12 @@ mod _idsp {
     /// Gazsi 1985, Example 5
     #[pyfunction]
     fn wdf<'py>(mut xy: PyReadwriteArray1<'py, i32>) -> PyResult<()> {
-        use crate::iir::{FanOut, Stateless, Sum, Wdf, WdfState};
+        use crate::iir::{FanOut, Pair, Stateless, Sum, Wdf, WdfState};
 
         // With constant coefficients and fixed block size 4, already with O2, this
         // is fully unrolled and inlined on e.g. thubv7em-none-eabi and about 36 insns per sample,
         // i.e. less than 2 insn per order and sample.
-        let f = Minor::new((
+        let f = Pair::new((
             FanOut((
                 (
                     (
