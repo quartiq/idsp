@@ -1,8 +1,5 @@
 //! Sample processing, filtering, combination of filters.
-use core::{
-    marker::PhantomData,
-    ops::{Add, Mul, Neg, Sub},
-};
+use core::marker::PhantomData;
 
 /// Binary const assertions
 struct Assert<const A: usize, const B: usize>;
@@ -19,7 +16,7 @@ impl<const A: usize, const B: usize> Assert<A, B> {
 ///
 /// Process impls can be cascaded in (homogeneous) `[C; N]` arrays/`[C]` slices, and heterogeneous
 /// `(C0, C1)` tuples. They can be used as configuration-major or
-/// configuration-minor (through [`Minor`]) or in [`Sum`]s on complementary allpasses and polyphase banks.
+/// configuration-minor (through [`Minor`]) or in [`Add`]s on complementary allpasses and polyphase banks.
 /// Tuples, arrays, and Pairs, and Minor can be mixed and nested ad lib.
 ///
 /// For a given filter configuration `C` and state `S` pair the trait is usually implemented
@@ -74,30 +71,6 @@ impl<X: Copy, T: Inplace<X>> Inplace<X> for &mut T {
 
 //////////// MAJOR ////////////
 
-/// Arrays must be non-empty but that first item can transform X->Y
-impl<X: Copy, Y: Copy, P: Process<X, Y> + Inplace<Y>, const N: usize> Process<X, Y> for [P; N] {
-    fn process(&mut self, x: X) -> Y {
-        let () = Assert::<N, 0>::GREATER;
-        let (p0, p) = self.split_first_mut().unwrap();
-        p.iter_mut().fold(p0.process(x), |x, p| p.process(x))
-    }
-
-    fn block(&mut self, x: &[X], y: &mut [Y]) {
-        let () = Assert::<N, 0>::GREATER;
-        let (p0, p) = self.split_first_mut().unwrap();
-        p0.block(x, y);
-        for p in p.iter_mut() {
-            p.inplace(y);
-        }
-    }
-}
-
-impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for [P; N] {
-    fn inplace(&mut self, xy: &mut [X]) {
-        self.as_mut().inplace(xy)
-    }
-}
-
 /// Type sequence must be X->Y->Y
 impl<X: Copy, Y: Copy, P0: Process<X, Y>, P1: Inplace<Y>> Process<X, Y> for (P0, P1) {
     fn process(&mut self, x: X) -> Y {
@@ -140,6 +113,30 @@ impl<X: Copy, P: Inplace<X>> Inplace<X> for [P] {
         for p in self.iter_mut() {
             p.inplace(xy)
         }
+    }
+}
+
+/// Arrays must be non-empty but that first item can transform X->Y
+impl<X: Copy, Y: Copy, P: Process<X, Y> + Inplace<Y>, const N: usize> Process<X, Y> for [P; N] {
+    fn process(&mut self, x: X) -> Y {
+        let () = Assert::<N, 0>::GREATER;
+        let (p0, p) = self.split_first_mut().unwrap();
+        p.iter_mut().fold(p0.process(x), |x, p| p.process(x))
+    }
+
+    fn block(&mut self, x: &[X], y: &mut [Y]) {
+        let () = Assert::<N, 0>::GREATER;
+        let (p0, p) = self.split_first_mut().unwrap();
+        p0.block(x, y);
+        for p in p.iter_mut() {
+            p.inplace(y);
+        }
+    }
+}
+
+impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for [P; N] {
+    fn inplace(&mut self, xy: &mut [X]) {
+        self.as_mut().inplace(xy)
     }
 }
 
@@ -220,25 +217,25 @@ impl<X: Copy, U, P> Inplace<X> for Minor<P, U> where Self: Process<X> {}
 
 /// Fan out parallel input to parallel processors
 #[derive(Clone, Debug, Default)]
-pub struct Parallel<C>(pub C);
+pub struct Parallel<P>(pub P);
 
-impl<X0: Copy, X1: Copy, Y0, Y1, C0: Process<X0, Y0>, C1: Process<X1, Y1>>
-    Process<(X0, X1), (Y0, Y1)> for Parallel<(C0, C1)>
+impl<X0: Copy, X1: Copy, Y0, Y1, P0: Process<X0, Y0>, P1: Process<X1, Y1>>
+    Process<(X0, X1), (Y0, Y1)> for Parallel<(P0, P1)>
 {
     fn process(&mut self, x: (X0, X1)) -> (Y0, Y1) {
         (self.0.0.process(x.0), self.0.1.process(x.1))
     }
 }
 
-impl<X: Copy, Y, C0: Process<X, Y>, C1: Process<X, Y>> Process<[X; 2], [Y; 2]>
-    for Parallel<(C0, C1)>
+impl<X: Copy, Y, P0: Process<X, Y>, P1: Process<X, Y>> Process<[X; 2], [Y; 2]>
+    for Parallel<(P0, P1)>
 {
     fn process(&mut self, x: [X; 2]) -> [Y; 2] {
         [self.0.0.process(x[0]), self.0.1.process(x[1])]
     }
 }
 
-impl<X: Copy, Y, C: Process<X, Y>, const N: usize> Process<[X; N], [Y; N]> for Parallel<[C; N]>
+impl<X: Copy, Y, P: Process<X, Y>, const N: usize> Process<[X; N], [Y; N]> for Parallel<[P; N]>
 where
     [Y; N]: Default,
 {
@@ -251,7 +248,7 @@ where
     }
 }
 
-impl<X: Copy, C> Inplace<X> for Parallel<C> where Self: Process<X> {}
+impl<X: Copy, P> Inplace<X> for Parallel<P> where Self: Process<X> {}
 
 //////////// SPLIT ////////////
 
@@ -308,7 +305,7 @@ impl<S> Split<(), Stateful<S>> {
 }
 
 /// Unzip two splits into one (config major)
-impl<C0, C1, S0, S1> Mul<Split<C1, S1>> for Split<C0, S0> {
+impl<C0, C1, S0, S1> core::ops::Mul<Split<C1, S1>> for Split<C0, S0> {
     type Output = Split<(C0, C1), (S0, S1)>;
 
     fn mul(self, rhs: Split<C1, S1>) -> Self::Output {
@@ -317,7 +314,7 @@ impl<C0, C1, S0, S1> Mul<Split<C1, S1>> for Split<C0, S0> {
 }
 
 /// Unzip two splits into one parallel
-impl<C0, C1, S0, S1> Add<Split<C1, S1>> for Split<C0, S0> {
+impl<C0, C1, S0, S1> core::ops::Add<Split<C1, S1>> for Split<C0, S0> {
     type Output = Split<Parallel<(C0, C1)>, (S0, S1)>;
 
     fn add(self, rhs: Split<C1, S1>) -> Self::Output {
@@ -728,57 +725,59 @@ where
 ///
 /// Fan in.
 #[derive(Debug, Clone, Default)]
-pub struct Sum;
-impl<X: Copy, Y: core::iter::Sum<X>, const N: usize> Process<[X; N], Y> for &Sum {
+pub struct Add;
+impl<X: Copy, Y: core::iter::Sum<X>, const N: usize> Process<[X; N], Y> for &Add {
     fn process(&mut self, x: [X; N]) -> Y {
         x.into_iter().sum()
     }
 }
-impl<X0: Copy + Add<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Sum {
+impl<X0: Copy + core::ops::Add<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Add {
     fn process(&mut self, x: (X0, X1)) -> Y {
         x.0 + x.1
     }
 }
-impl<X: Copy> Inplace<X> for &Sum where Self: Process<X> {}
+impl<X: Copy> Inplace<X> for &Add where Self: Process<X> {}
 
 /// Product of outputs of filters
 ///
 /// Fan in.
 #[derive(Debug, Clone, Default)]
-pub struct Product;
-impl<X: Copy, Y: core::iter::Product<X>, const N: usize> Process<[X; N], Y> for &Product {
+pub struct Mul;
+impl<X: Copy, Y: core::iter::Product<X>, const N: usize> Process<[X; N], Y> for &Mul {
     fn process(&mut self, x: [X; N]) -> Y {
         x.into_iter().product()
     }
 }
-impl<X0: Copy + Mul<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Product {
+impl<X0: Copy + core::ops::Mul<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Mul {
     fn process(&mut self, x: (X0, X1)) -> Y {
         x.0 * x.1
     }
 }
-impl<X: Copy> Inplace<X> for &Product where Self: Process<X> {}
+impl<X: Copy> Inplace<X> for &Mul where Self: Process<X> {}
 
 /// Difference of outputs of two filters
 ///
 /// Fan in.
 #[derive(Debug, Clone, Default)]
-pub struct Diff;
-impl<X: Copy + Sub<Output = Y>, Y> Process<[X; 2], Y> for &Diff {
+pub struct Sub;
+impl<X: Copy + core::ops::Sub<Output = Y>, Y> Process<[X; 2], Y> for &Sub {
     fn process(&mut self, x: [X; 2]) -> Y {
         x[0] - x[1]
     }
 }
-impl<X0: Copy + Sub<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Diff {
+impl<X0: Copy + core::ops::Sub<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y> for &Sub {
     fn process(&mut self, x: (X0, X1)) -> Y {
         x.0 - x.1
     }
 }
-impl<X: Copy> Inplace<X> for &Diff where Self: Process<X> {}
+impl<X: Copy> Inplace<X> for &Sub where Self: Process<X> {}
 
 /// Sum and difference of outputs of two filters
 #[derive(Debug, Clone, Default)]
 pub struct Butterfly;
-impl<X: Copy + Add<Output = Y> + Sub<Output = Y>, Y> Process<[X; 2], [Y; 2]> for &Butterfly {
+impl<X: Copy + core::ops::Add<Output = Y> + core::ops::Sub<Output = Y>, Y> Process<[X; 2], [Y; 2]>
+    for &Butterfly
+{
     fn process(&mut self, x: [X; 2]) -> [Y; 2] {
         [x[0] + x[1], x[0] - x[1]]
     }
@@ -815,10 +814,10 @@ impl<X: Copy, const N: usize> Process<X, [X; N]> for &Identity {
     }
 }
 
-/// Inversion using [`Neg`].
+/// Inversion using `Neg`.
 #[derive(Debug, Clone, Default)]
 pub struct Invert;
-impl<T: Copy + Neg<Output = T>> Process<T> for &Invert {
+impl<T: Copy + core::ops::Neg<Output = T>> Process<T> for &Invert {
     fn process(&mut self, x: T) -> T {
         x.neg()
     }
@@ -829,60 +828,30 @@ impl<T: Copy> Inplace<T> for &Invert where Self: Process<T> {}
 /// Addition of a constant
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(transparent)]
-pub struct Adder<T>(pub T);
+pub struct Offset<T>(pub T);
 
 /// Offset using `Add`
-impl<X: Copy, Y, T: Add<X, Output = Y> + Copy> Process<X, Y> for &Adder<T> {
+impl<X: Copy, Y, T: core::ops::Add<X, Output = Y> + Copy> Process<X, Y> for &Offset<T> {
     fn process(&mut self, x: X) -> Y {
         self.0 + x
     }
 }
 
-impl<X: Copy, T> Inplace<X> for &Adder<T> where Self: Process<X> {}
-
-/// Fixed point with F fractional bits.
-///
-/// * Q<i32, 32> is [-0.5, 0.5[
-/// * Q<i16, 15> is [-1, 1[
-/// * Q<u8, 4> is [0, 16-1/16]
-#[derive(Debug, Clone, Copy, Default)]
-#[repr(transparent)]
-pub struct Q<T, const F: u8>(pub T);
-
-macro_rules! impl_mul_q {
-    (($q:ty, $a:ty), $($t:ty),*) => { $(
-        /// Multiplication with truncation
-        impl<const F: u8> Mul<$t> for Q<$q, F> {
-            type Output = $t;
-
-            fn mul(self, rhs: $t) -> Self::Output {
-                ((self.0 as $a * rhs as $a) >> F) as _
-            }
-        }
-    )* };
-}
-impl_mul_q!((i8, i16), i8);
-impl_mul_q!((i16, i32), i16, i8, u16, u8);
-impl_mul_q!((i32, i64), i32, i16, i8, u32, u16, u8);
-impl_mul_q!((i64, i128), i64, i32, i16, i8, u64, u32, u16, u8);
-impl_mul_q!((u8, u16), u8);
-impl_mul_q!((u16, u32), u16, u8);
-impl_mul_q!((u32, u64), u32, u16, u8);
-impl_mul_q!((u64, u128), u64, u32, u16, u8);
+impl<X: Copy, T> Inplace<X> for &Offset<T> where Self: Process<X> {}
 
 /// Multiply by constant
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(transparent)]
-pub struct Mixer<T>(pub T);
+pub struct Gain<T>(pub T);
 
 /// Gain using `Mul`
-impl<X: Copy, Y, T: Mul<X, Output = Y> + Copy> Process<X, Y> for &Mixer<T> {
+impl<X: Copy, Y, T: core::ops::Mul<X, Output = Y> + Copy> Process<X, Y> for &Gain<T> {
     fn process(&mut self, x: X) -> Y {
         self.0 * x
     }
 }
 
-impl<X: Copy, T> Inplace<X> for &Mixer<T> where Self: Process<X> {}
+impl<X: Copy, T> Inplace<X> for &Gain<T> where Self: Process<X> {}
 
 /// Clamp between min and max using `Ord`
 #[derive(Debug, Clone, Default)]
@@ -1032,12 +1001,13 @@ impl<X: Copy, P> Inplace<X> for Decimator<P> where Self: Process<X> {}
 /// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
 ///
 /// The corresponding state for this is `(((), (S0, S1)), ())`.
-pub type Pair<C0, C1, X, I = Stateless<Identity>, J = Stateless<Sum>> =
+pub type Pair<C0, C1, X, I = Stateless<Identity>, J = Stateless<Add>> =
     Minor<((I, Parallel<(C0, C1)>), J), [X; 2]>;
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::Q32;
 
     #[allow(unused)]
     const fn assert_process<T: Process<X, Y>, X: Copy, Y>() {}
@@ -1047,9 +1017,9 @@ mod test {
         let y: i32 = (&Identity).process(3);
         assert_eq!(y, 3);
         assert_eq!(Split::stateless(Invert).as_mut().process(9), -9);
-        assert_eq!((&Mixer(Q::<i32, 3>(32))).process(9), 9 * 4);
-        assert_eq!((&Adder(7)).process(9), 7 + 9);
-        assert_eq!(Minor::new((&Adder(7), &Adder(1))).process(9), 7 + 1 + 9);
+        assert_eq!((&Gain(Q32::<3>::new(32))).process(9), 9 * 4);
+        assert_eq!((&Offset(7)).process(9), 7 + 9);
+        assert_eq!(Minor::new((&Offset(7), &Offset(1))).process(9), 7 + 1 + 9);
         let mut xy = [3, 0, 0];
         let mut dly = Buffer::<_, 2>::default();
         dly.inplace(&mut xy);
@@ -1059,7 +1029,7 @@ mod test {
         let f = Pair::<_, _, i32>::new((
             (
                 Default::default(),
-                Parallel((Stateless(Adder(3)), Stateless(Mixer(Q::<_, 1>(4))))),
+                Parallel((Stateless(Offset(3)), Stateless(Gain(Q32::<1>::new(4))))),
             ),
             Default::default(),
         ));

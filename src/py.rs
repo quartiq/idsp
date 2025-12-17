@@ -1,6 +1,6 @@
 #[pyo3::pymodule]
 mod _idsp {
-    use crate::process::{Identity, Inplace, Pair, Split, Sum};
+    use crate::process::{Add, Identity, Inplace, Split};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
@@ -118,21 +118,21 @@ mod _idsp {
             (
                 (
                     Wdf::<1, 0x1>::default(),
-                    Wdf::<2, 0x1c>::quantize(&[-0.226119, 0.0]).unwrap(),
+                    Wdf::<_, 0x1c>::quantize(&[-0.226119, 0.0]).unwrap(),
                 ),
                 [
-                    Wdf::<2, 0x1d>::quantize(&[-0.602422, 0.0]).unwrap(),
+                    Wdf::<_, 0x1d>::quantize(&[-0.602422, 0.0]).unwrap(),
                     Wdf::quantize(&[-0.839323, 0.0]).unwrap(),
                     Wdf::quantize(&[-0.950847, 0.0]).unwrap(),
                 ],
             ),
             (
                 [
-                    Wdf::<2, 0x1c>::quantize(&[-0.063978, 0.0]).unwrap(),
+                    Wdf::<_, 0x1c>::quantize(&[-0.063978, 0.0]).unwrap(),
                     Wdf::quantize(&[-0.423068, 0.0]).unwrap(),
                 ],
                 [
-                    Wdf::<2, 0x1d>::quantize(&[-0.741327, 0.0]).unwrap(),
+                    Wdf::<_, 0x1d>::quantize(&[-0.741327, 0.0]).unwrap(),
                     Wdf::quantize(&[-0.905567, 0.0]).unwrap(),
                     Wdf::quantize(&[-0.984721, 0.0]).unwrap(),
                 ],
@@ -141,7 +141,7 @@ mod _idsp {
 
         let mut f = (Split::stateless(Identity)
             * Split::new(p, Default::default()).parallel()
-            * Split::stateless(Sum))
+            * Split::stateless(Add))
         .minor::<[_; _]>();
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
         f.as_mut().inplace(xy);
