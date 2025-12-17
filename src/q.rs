@@ -29,7 +29,7 @@ impl<T, A, const F: i8> Q<T, A, F> {
 /// Signed shift (positive: left)
 ///
 /// `x*2**f`
-#[inline]
+#[inline(always)]
 fn ssh<T: Shl<i8, Output = T> + Shr<i8, Output = T>>(x: T, f: i8) -> T {
     if f >= 0 { x << f } else { x >> -f }
 }
@@ -41,8 +41,8 @@ impl<T: Shl<i8, Output = T> + Shr<i8, Output = T>, A, const F: i8> Q<T, A, F> {
     }
 
     /// Return the integer part
-    pub fn truncate(self) -> T {
-        ssh(self.inner, -F)
+    pub fn trunc(self) -> Self {
+        ssh(self.inner, -F).into()
     }
 }
 
@@ -113,14 +113,14 @@ impl<T: Sub<T, Output = T>, A, const F: i8> Sub for Q<T, A, F> {
 }
 
 macro_rules! impl_mul_q {
-    ($alias:ident, ($q:ty, $a:ty), $($t:ty),*) => {
+    ($alias:ident, $q:ty, $a:ty) => {
         /// Alias for fixed point integer T with accumulator A
         pub type $alias<const F: i8> = Q<$q, $a, F>;
 
         /// Integer truncation
         impl<A, const F: i8> From<Q<$q, A, F>> for $q {
             fn from(value: Q<$q, A, F>) -> $q {
-                value.truncate()
+                ssh(value.inner, -F)
             }
         }
 
@@ -138,7 +138,7 @@ macro_rules! impl_mul_q {
             type Output = Self;
 
             fn mul(self, rhs: Self) -> Self::Output {
-                Self::new(ssh(self.inner as $a * rhs.inner as $a, -F) as _)
+                Self::new(self * rhs.inner)
             }
         }
 
@@ -147,7 +147,11 @@ macro_rules! impl_mul_q {
             type Output = Self;
 
             fn div(self, rhs: Self) -> Self::Output {
-                Self::new((ssh(self.inner as $a, F) / rhs.inner as $a) as _)
+                Self::new(if F >= 0 {
+                    ssh(self.inner as $a, F) / rhs.inner as $a
+                } else {
+                    self.inner as $a / ssh(rhs.inner as $a, -F)
+                } as _)
             }
         }
 
@@ -159,27 +163,16 @@ macro_rules! impl_mul_q {
                 ssh(self.inner as $a * rhs as $a, -F) as _
             }
         }
-
-        $(
-            /// Q*I -> I
-            impl<const F: i8> Mul<$t> for Q<$q, $a, F> {
-                type Output = $t;
-
-                fn mul(self, rhs: $t) -> Self::Output {
-                    ssh(self.inner as $a * rhs as $a, -F) as _
-                }
-            }
-        )*
     };
 }
-impl_mul_q!(Q8, (i8, i16), u8);
-impl_mul_q!(Q16, (i16, i32), i8, u16, u8);
-impl_mul_q!(Q32, (i32, i64), i16, i8, u32, u16, u8);
-impl_mul_q!(Q64, (i64, i128), i32, i16, i8, u64, u32, u16, u8);
-impl_mul_q!(U8, (u8, u16),);
-impl_mul_q!(U16, (u16, u32), u8);
-impl_mul_q!(U32, (u32, u64), u16, u8);
-impl_mul_q!(U64, (u64, u128), u32, u16, u8);
+impl_mul_q!(Q8, i8, i16);
+impl_mul_q!(Q16, i16, i32);
+impl_mul_q!(Q32, i32, i64);
+impl_mul_q!(Q64, i64, i128);
+impl_mul_q!(U8, u8, u16);
+impl_mul_q!(U16, u16, u32);
+impl_mul_q!(U32, u32, u64);
+impl_mul_q!(U64, u64, u128);
 
 #[cfg(test)]
 mod test {
