@@ -1,6 +1,6 @@
 #[pyo3::pymodule]
 mod _idsp {
-    use crate::process::{Identity, Inplace, Split, Sum};
+    use crate::process::{Identity, Inplace, Pair, Split, Sum};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
