@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 use core::marker::PhantomData;
 use core::ops::{Add, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 

@@ -3,7 +3,7 @@ use miniconf::Tree;
 use num_traits::float::Float as _;
 
 use super::SosState;
-use crate::process::{Inplace, Process, Split};
+use dsp_process::{Inplace, Process, Split};
 
 /// Normal form second order section
 ///
@@ -26,7 +26,7 @@ pub struct Normal<const Q: u8> {
     pub p: [i32; 2],
 }
 
-impl<const Q: u8> Process<i32> for Split<&Normal<Q>, &mut SosState> {
+impl<const Q: u8> Process<i32> for (&Normal<Q>, &mut SosState) {
     fn process(&mut self, x0: i32) -> i32 {
         let b = &self.config.b;
         let p = &self.config.p;
