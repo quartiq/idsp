@@ -3,18 +3,6 @@ use crate::{Assert, Inplace, Minor, Parallel, Process, SplitInplace, SplitProces
 //////////// SPLIT ////////////
 
 /// A stateful processor with split state
-///
-/// Splitting configuration (the part of the filter that is unaffected
-/// by processing inputs, e.g. "coefficients"), from state (the part
-/// that is modified by processing) allows:
-///
-/// * Separating mutable from immutable state guarantees consistency
-///   (configuration can not change state and processing can
-///   not change configuration)
-/// * Reduces memory traffic when swapping configuration
-/// * Allows the same filter to be applied to multiple states
-///   (e.g. IQ data, multiple channels) guaranteeing consistency,
-///   reducing memory usage, and improving caching.
 #[derive(Debug, Clone, Default)]
 pub struct Split<C, S> {
     /// Processor configuration

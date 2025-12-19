@@ -14,6 +14,9 @@ dsp-fixedpoint = { path = "dsp-fixedpoint" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+rust_2018_compatibility = {level = "deny", priority = -1}
+rust_2018_idioms = {level = "deny", priority = -1}
+missing_docs = "warn"
 
 [package]
 name = "idsp"

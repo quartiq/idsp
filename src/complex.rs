@@ -8,7 +8,7 @@ pub struct Complex<T> {
 }
 
 impl<T: Copy> Complex<T> {
-    /// Create a new Complex<T>
+    /// Create a new `Complex<T>`
     pub fn new(re: T, im: T) -> Self {
         Self { xy: [re, im] }
     }
