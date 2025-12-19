@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::process::{Process, Split};
+use dsp_process::SplitProcess;
 
 /// Type-II, sampled phase, discrete time PLL
 ///
@@ -51,7 +51,7 @@ pub struct PLL {
     y: i64,
 }
 
-impl Process<Option<i32>, ()> for Split<&i32, &mut PLL> {
+impl SplitProcess<Option<i32>, (), PLL> for i32 {
     /// Update the PLL with a new phase sample. This needs to be called (sampled) periodically.
     /// The signal's phase/frequency is reconstructed relative to the sampling period.
     ///
@@ -61,24 +61,24 @@ impl Process<Option<i32>, ()> for Split<&i32, &mut PLL> {
     ///
     /// Returns:
     /// A tuple of instantaneous phase and frequency estimates.
-    fn process(&mut self, x: Option<i32>) {
+    fn process(&self, state: &mut PLL, x: Option<i32>) {
         if let Some(x) = x {
-            let dx = x.wrapping_sub(self.state.x);
-            self.state.x = x;
-            let df = dx.wrapping_sub((self.state.f >> 32) as i32) as i64 * *self.config as i64;
-            self.state.f = self.state.f.wrapping_add(df);
-            self.state.y = self.state.y.wrapping_add(self.state.f);
-            self.state.f = self.state.f.wrapping_add(df);
-            let dy = x.wrapping_sub((self.state.y >> 32) as i32) as i64 * *self.config as i64;
-            self.state.y = self.state.y.wrapping_add(dy);
-            let y = (self.state.y >> 32) as i32;
-            self.state.y = self.state.y.wrapping_add(dy);
-            self.state.f0 = y.wrapping_sub(self.state.y0);
-            self.state.y0 = y;
+            let dx = x.wrapping_sub(state.x);
+            state.x = x;
+            let df = dx.wrapping_sub((state.f >> 32) as i32) as i64 * *self as i64;
+            state.f = state.f.wrapping_add(df);
+            state.y = state.y.wrapping_add(state.f);
+            state.f = state.f.wrapping_add(df);
+            let dy = x.wrapping_sub((state.y >> 32) as i32) as i64 * *self as i64;
+            state.y = state.y.wrapping_add(dy);
+            let y = (state.y >> 32) as i32;
+            state.y = state.y.wrapping_add(dy);
+            state.f0 = y.wrapping_sub(state.y0);
+            state.y0 = y;
         } else {
-            self.state.y = self.state.y.wrapping_add(self.state.f);
-            self.state.x = self.state.x.wrapping_add(self.state.f0);
-            self.state.y0 = self.state.y0.wrapping_add(self.state.f0);
+            state.y = state.y.wrapping_add(state.f);
+            state.x = state.x.wrapping_add(state.f0);
+            state.y0 = state.y0.wrapping_add(state.f0);
         }
     }
 }
@@ -98,6 +98,7 @@ impl PLL {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dsp_process::{Process, Split};
     #[test]
     fn mini() {
         let mut p = Split::new(1 << 24, PLL::default());

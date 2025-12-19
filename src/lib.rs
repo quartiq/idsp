@@ -38,8 +38,6 @@ mod cic;
 pub use cic::*;
 mod cordic;
 pub use cordic::*;
-mod q;
-pub use q::*;
 
 #[cfg(feature = "py")]
 mod py;

@@ -1,5 +1,5 @@
+use crate::{Assert, Inplace, Process};
 use core::marker::PhantomData;
-use crate::{Process, Inplace, Assert};
 
 //////////// MAJOR ////////////
 
@@ -25,7 +25,7 @@ impl<X: Copy, P0: Inplace<X>, P1: Inplace<X>> Inplace<X> for (P0, P1) {
 /// Slices can be zero length but must have input and output types the same
 impl<X: Copy, P: Inplace<X>> Process<X> for [P] {
     fn process(&mut self, x: X) -> X {
-        Minor::new(self).process(x)
+        self.iter_mut().fold(x, |x, p| p.process(x))
     }
 
     fn block(&mut self, x: &[X], y: &mut [X]) {
@@ -88,11 +88,11 @@ impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for [P; N] {
 /// for `block()` and `inplace()`. `process()` is unaffected.
 #[derive(Clone, Debug, Default)]
 #[repr(transparent)]
-pub struct Minor<C, U> {
-    /// The inner configurations
-    pub inner: C,
+pub struct Minor<C: ?Sized, U> {
     /// An intermediate data type
     _intermediate: PhantomData<U>,
+    /// The inner configurations
+    pub inner: C,
 }
 
 impl<C, U> Minor<C, U> {
@@ -127,7 +127,7 @@ impl<X: Copy, U: Copy, Y, P0: Process<X, U>, P1: Process<U, Y>> Process<X, Y>
 }
 
 /// X->X->X...
-impl<X: Copy, P: Process<X>> Process<X> for Minor<&mut [P], X> {
+impl<X: Copy, P: Process<X>> Process<X> for Minor<[P], X> {
     fn process(&mut self, x: X) -> X {
         self.inner.iter_mut().fold(x, |x, p| p.process(x))
     }
@@ -182,4 +182,3 @@ where
 }
 
 impl<X: Copy, P> Inplace<X> for Parallel<P> where Self: Process<X> {}
-

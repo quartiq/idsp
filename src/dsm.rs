@@ -1,4 +1,4 @@
-use crate::process::Process;
+use dsp_process::Process;
 
 /// Delta-sigma modulator
 ///
@@ -9,7 +9,8 @@ use crate::process::Process;
 /// * The noise goes up as `K * 20 dB/decade`.
 ///
 /// ```
-/// # use idsp::{Dsm, process::Process};
+/// # use idsp::Dsm;
+/// # use dsp_process::Process;
 /// let mut d = Dsm::<3>::default();
 /// let x = 0x87654321;
 /// let n = 1 << 20;

@@ -1,7 +1,7 @@
 #[cfg(not(feature = "std"))]
 use num_traits::float::FloatCore as _;
 
-use crate::process::{Inplace, Process, Split};
+use dsp_process::{SplitInplace, SplitProcess};
 
 /// Two port adapter architecture
 ///
@@ -151,21 +151,22 @@ impl<const N: usize> Default for WdfState<N> {
     }
 }
 
-impl<const N: usize, const M: u32> Process<i32> for Split<&Wdf<N, M>, &mut WdfState<N>> {
+impl<const N: usize, const M: u32> SplitProcess<i32, i32, WdfState<N>> for Wdf<N, M> {
     #[inline]
-    fn process(&mut self, x0: i32) -> i32 {
+    fn process(&self, state: &mut WdfState<N>, x0: i32) -> i32 {
         let mut y = 0;
-        let (_, x, z) = self.config.a.iter().zip(self.state.z.iter_mut()).fold(
-            (M, x0, &mut y),
-            |(m, x, y), (a, z0)| {
-                let z1;
-                [*y, z1] = Tpa::from((m & 0xf) as u8).adapt([x, *z0], *a);
-                (m >> 4, z1, z0)
-            },
-        );
+        let (_, x, z) =
+            self.a
+                .iter()
+                .zip(state.z.iter_mut())
+                .fold((M, x0, &mut y), |(m, x, y), (a, z0)| {
+                    let z1;
+                    [*y, z1] = Tpa::from((m & 0xf) as u8).adapt([x, *z0], *a);
+                    (m >> 4, z1, z0)
+                });
         *z = x;
         y
     }
 }
 
-impl<const N: usize, const M: u32> Inplace<i32> for Split<&Wdf<N, M>, &mut WdfState<N>> {}
+impl<const N: usize, const M: u32> SplitInplace<i32, WdfState<N>> for Wdf<N, M> {}

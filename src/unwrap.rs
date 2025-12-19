@@ -10,7 +10,7 @@ use num_traits::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::process::{Inplace, Process};
+use dsp_process::{Inplace, Process};
 
 /// Subtract `y - x` with signed overflow.
 ///

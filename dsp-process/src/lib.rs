@@ -1,13 +1,26 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+//! Process impls can be cascaded in (homogeneous) `[C; N]` arrays/`[C]` slices, and heterogeneous
+//! `(C0, C1)` tuples. They can be used as configuration-major or
+//! configuration-minor (through [`Minor`]) or in [`Add`]s on complementary allpasses and polyphase banks.
+//! Tuples, arrays, and Pairs, and Minor can be mixed and nested ad lib.
+//!
+//! For a given filter configuration `C` and state `S` pair the trait is usually implemented
+//! through [`Split<&'a C, &mut S>`] (created ad-hoc from by borrowing configuration and state)
+//! or [`Split<C, S>`] (owned configuration and state).
+//! Stateless filters should implement `Process for &Self` for composability through
+//! [`Split<Stateless<Self>, ()>`].
+//! Configuration-less filters or filters that include their configuration should implement
+//! `Process for Self` and can be used in split configurations through [`Split<(), Stateful<Self>>`].
+
 mod process;
 pub use process::*;
 mod containers;
 pub use containers::*;
-mod split;
-pub use split::*;
 mod basic;
 pub use basic::*;
+mod split;
+pub use split::*;
 
 /// Binary const assertions
 pub(crate) struct Assert<const A: usize, const B: usize>;
@@ -16,9 +29,25 @@ impl<const A: usize, const B: usize> Assert<A, B> {
     pub const GREATER: () = assert!(A > B);
 }
 
+/// Parallel filter pair
+///
+/// This can be viewed as digital lattice filter or butterfly filter or complementary allpass pair
+/// or polyphase interpolator.
+/// Candidates for the branches are allpasses like Wdf or Ldi, polyphase banks for resampling or Hilbert filters.
+///
+/// Potentially required scaling with 0.5 gain is to be performed ahead of the filter or within each branch.
+///
+/// This uses the default sample-major implementation
+/// and may lead to suboptimal cashing and register thrashing for large branches.
+/// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
+///
+/// The corresponding state for this is `(((), (S0, S1)), ())`.
+pub type Pair<C0, C1, X, I = Stateless<Identity>, J = Stateless<Add>> =
+    Minor<((I, Parallel<(C0, C1)>), J), [X; 2]>;
+
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use super::*;
     use dsp_fixedpoint::Q32;
 
     #[allow(unused)]
@@ -29,6 +58,7 @@ mod test {
         let y: i32 = (&Identity).process(3);
         assert_eq!(y, 3);
         assert_eq!(Split::stateless(Neg).as_mut().process(9), -9);
+        //assert_eq!(Split::stateless(Neg).process(9), -9);
         assert_eq!((&Gain(Q32::<3>::new(32))).process(9), 9 * 4);
         assert_eq!((&Offset(7)).process(9), 7 + 9);
         assert_eq!(Minor::new((&Offset(7), &Offset(1))).process(9), 7 + 1 + 9);
@@ -38,18 +68,19 @@ mod test {
         assert_eq!(xy, [0, 0, 3]);
         let y: i32 = Split::stateful(dly).as_mut().process(4);
         assert_eq!(y, 0);
-        let f = Pair::<_, _, i32>::new((
-            (
+        let mut f = Split::new(
+            Pair::<_, _, i32>::new((
+                (
+                    Default::default(),
+                    Parallel((Stateless(Offset(3)), Stateless(Gain(Q32::<1>::new(4))))),
+                ),
                 Default::default(),
-                Parallel((Stateless(Offset(3)), Stateless(Gain(Q32::<1>::new(4))))),
-            ),
+            )),
             Default::default(),
-        ));
-        let y: i32 = Split::new(&f, &mut Default::default()).process(5);
+        );
+        let y: i32 = f.as_mut().process(5);
         assert_eq!(y, (5 + 3) + ((5 * 4) >> 1));
-        let y: [i32; 5] = Split::new(Channels(f), Default::default())
-            .as_mut()
-            .process([5; _]);
+        let y: [i32; 5] = f.channels().as_mut().process([5; _]);
         assert_eq!(y, [(5 + 3) + ((5 * 4) >> 1); 5]);
     }
 }

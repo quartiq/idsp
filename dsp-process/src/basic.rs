@@ -1,4 +1,4 @@
-use crate::{Process,Inplace, Stateless, Minor, Parallel};
+use crate::{Inplace, Process};
 
 //////////// ELEMENTARY PROCESSORS ////////////
 
@@ -268,19 +268,3 @@ impl<X: Copy, Y, P: Process<X, Option<Y>>, const N: usize> Process<[X; N], Y> fo
 impl<X: Copy, P> Inplace<X> for Decimator<P> where Self: Process<X> {}
 
 // TODO: Nyquist, Integrator, Derivative
-
-/// Parallel filter pair
-///
-/// This can be viewed as digital lattice filter or butterfly filter or complementary allpass pair
-/// or polyphase interpolator.
-/// Candidates for the branches are allpasses like Wdf or Ldi, polyphase banks for resampling or Hilbert filters.
-///
-/// Potentially required scaling with 0.5 gain is to be performed ahead of the filter or within each branch.
-///
-/// This uses the default sample-major implementation
-/// and may lead to suboptimal cashing and register thrashing for large branches.
-/// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
-///
-/// The corresponding state for this is `(((), (S0, S1)), ())`.
-pub type Pair<C0, C1, X, I = Stateless<Identity>, J = Stateless<Add>> =
-    Minor<((I, Parallel<(C0, C1)>), J), [X; 2]>;

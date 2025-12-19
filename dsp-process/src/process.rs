@@ -3,19 +3,6 @@
 /// Processing block
 ///
 /// Single input, single output
-///
-/// Process impls can be cascaded in (homogeneous) `[C; N]` arrays/`[C]` slices, and heterogeneous
-/// `(C0, C1)` tuples. They can be used as configuration-major or
-/// configuration-minor (through [`Minor`]) or in [`Add`]s on complementary allpasses and polyphase banks.
-/// Tuples, arrays, and Pairs, and Minor can be mixed and nested ad lib.
-///
-/// For a given filter configuration `C` and state `S` pair the trait is usually implemented
-/// through [`Split<&'a C, &mut S>`] (created ad-hoc from by borrowing configuration and state)
-/// or [`Split<C, S>`] (owned configuration and state).
-/// Stateless filters should implement `Process for &Self` for composability through
-/// [`Split<Stateless<Self>, ()>`].
-/// Configuration-less filters or filters that include their configuration should implement
-/// `Process for Self` and can be used in split configurations through [`Split<(), Stateful<Self>>`].
 pub trait Process<X: Copy, Y = X> {
     /// Update the state with a new input and obtain an output
     fn process(&mut self, x: X) -> Y;
@@ -31,7 +18,7 @@ pub trait Process<X: Copy, Y = X> {
     }
 }
 
-/// Process a block in place.
+/// Inplace processing
 pub trait Inplace<X: Copy>: Process<X> {
     /// Process an input block into the same data as output
     fn inplace(&mut self, xy: &mut [X]) {
@@ -41,20 +28,77 @@ pub trait Inplace<X: Copy>: Process<X> {
     }
 }
 
+pub trait SplitProcess<X: Copy, Y = X, S = ()>
+where
+    S: ?Sized,
+{
+    fn process(&self, state: &mut S, x: X) -> Y;
+
+    fn block(&self, state: &mut S, x: &[X], y: &mut [Y]) {
+        debug_assert_eq!(x.len(), y.len());
+        for (x, y) in x.iter().zip(y) {
+            *y = self.process(state, *x);
+        }
+    }
+}
+
+pub trait SplitInplace<X: Copy, S = ()>: SplitProcess<X, X, S>
+where
+    S: ?Sized,
+{
+    fn inplace(&self, state: &mut S, xy: &mut [X]) {
+        for xy in xy.iter_mut() {
+            *xy = self.process(state, *xy);
+        }
+    }
+}
+
 //////////// BLANKET ////////////
 
 impl<X: Copy, Y, T: Process<X, Y>> Process<X, Y> for &mut T {
     fn process(&mut self, x: X) -> Y {
-        (*self).process(x)
+        T::process(self, x)
     }
 
     fn block(&mut self, x: &[X], y: &mut [Y]) {
-        (*self).block(x, y)
+        T::block(self, x, y)
     }
 }
 
 impl<X: Copy, T: Inplace<X>> Inplace<X> for &mut T {
     fn inplace(&mut self, xy: &mut [X]) {
-        (*self).inplace(xy)
+        T::inplace(self, xy)
+    }
+}
+
+impl<X: Copy, Y, S, T: SplitProcess<X, Y, S>> SplitProcess<X, Y, S> for &T {
+    fn process(&self, state: &mut S, x: X) -> Y {
+        T::process(self, state, x)
+    }
+
+    fn block(&self, state: &mut S, x: &[X], y: &mut [Y]) {
+        T::block(self, state, x, y)
+    }
+}
+
+impl<X: Copy, S, T: SplitInplace<X, S>> SplitInplace<X, S> for &T {
+    fn inplace(&self, state: &mut S, xy: &mut [X]) {
+        T::inplace(self, state, xy)
+    }
+}
+
+impl<X: Copy, Y, S, T: SplitProcess<X, Y, S>> SplitProcess<X, Y, S> for &mut T {
+    fn process(&self, state: &mut S, x: X) -> Y {
+        T::process(self, state, x)
+    }
+
+    fn block(&self, state: &mut S, x: &[X], y: &mut [Y]) {
+        T::block(self, state, x, y)
+    }
+}
+
+impl<X: Copy, S, T: SplitInplace<X, S>> SplitInplace<X, S> for &mut T {
+    fn inplace(&self, state: &mut S, xy: &mut [X]) {
+        T::inplace(self, state, xy)
     }
 }

@@ -3,7 +3,7 @@
 use num_traits::{Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
-use crate::process::{Process, Split};
+use dsp_process::SplitProcess;
 
 /// Second order state variable filter state
 pub struct State<T> {
@@ -45,7 +45,7 @@ impl<T: Float + FloatConst> Svf<T> {
     }
 }
 
-impl<T> Process<T, ()> for Split<&Svf<T>, &mut State<T>>
+impl<T> SplitProcess<T, (), State<T>> for Svf<T>
 where
     T: Float + FloatConst + Copy,
 {
@@ -53,9 +53,9 @@ where
     ///
     /// Ingest an input sample and update state correspondingly.
     /// Selected output(s) are available from [`State`].
-    fn process(&mut self, x: T) {
-        self.state.lp = self.state.bp * self.config.f + self.state.lp;
-        self.state.hp = x - self.state.lp - self.state.bp * self.config.q;
-        self.state.bp = self.state.hp * self.config.f + self.state.bp;
+    fn process(&self, state: &mut State<T>, x: T) {
+        state.lp = state.bp * self.f + state.lp;
+        state.hp = x - state.lp - state.bp * self.q;
+        state.bp = state.hp * self.f + state.bp;
     }
 }
