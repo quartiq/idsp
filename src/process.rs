@@ -680,7 +680,7 @@ impl<X: Copy, C, S: ?Sized> Inplace<X> for Split<&Parallel<C>, &mut S> where Sel
 
 //////////// TRANSPOSE ////////////
 
-/// `[[X;N]] <-> [[X];N]`
+/// Like [`Parallel`] but transposing `[[X;N]] <-> [[X];N]`
 #[derive(Clone, Debug, Default)]
 pub struct Transpose<C>(pub C);
 
@@ -778,7 +778,7 @@ where
 #[derive(Clone, Debug, Default)]
 pub struct Channels<C>(pub C);
 
-/// Process samples from multiple channels with a common configuration
+/// Process data from multiple channels with a common configuration
 ///
 /// Note that block() and inplace() reinterpret the data as transposed: __not__ as `[[X; N]]` but as `[[X]; N]`.
 /// Use `x.as_flattened().chunks_exact(x.len())`/`x.as_chunks<N>().0` etc. to match that.
@@ -923,14 +923,14 @@ impl<X: Copy, const N: usize> Process<X, [X; N]> for &Identity {
 
 /// Inversion using `Neg`.
 #[derive(Debug, Clone, Default)]
-pub struct Invert;
-impl<T: Copy + core::ops::Neg<Output = T>> Process<T> for &Invert {
+pub struct Neg;
+impl<T: Copy + core::ops::Neg<Output = T>> Process<T> for &Neg {
     fn process(&mut self, x: T) -> T {
         x.neg()
     }
 }
 
-impl<T: Copy> Inplace<T> for &Invert where Self: Process<T> {}
+impl<T: Copy> Inplace<T> for &Neg where Self: Process<T> {}
 
 /// Addition of a constant
 #[derive(Debug, Clone, Copy, Default)]
@@ -1120,10 +1120,10 @@ mod test {
     const fn assert_process<T: Process<X, Y>, X: Copy, Y>() {}
 
     #[test]
-    fn stateless() {
+    fn misc() {
         let y: i32 = (&Identity).process(3);
         assert_eq!(y, 3);
-        assert_eq!(Split::stateless(Invert).as_mut().process(9), -9);
+        assert_eq!(Split::stateless(Neg).as_mut().process(9), -9);
         assert_eq!((&Gain(Q32::<3>::new(32))).process(9), 9 * 4);
         assert_eq!((&Offset(7)).process(9), 7 + 9);
         assert_eq!(Minor::new((&Offset(7), &Offset(1))).process(9), 7 + 1 + 9);
