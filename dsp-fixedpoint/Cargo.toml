@@ -10,6 +10,7 @@ repository.workspace = true
 std = []
 
 [dependencies]
+num-traits.workspace = true
 
 [lints]
 workspace = true

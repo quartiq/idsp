@@ -1,6 +1,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
+#[cfg(not(feature = "std"))]
+use num_traits::float::FloatCore;
+
+use core::iter::{Product, Sum};
 use core::marker::PhantomData;
 use core::ops::{Add, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 
@@ -115,6 +119,18 @@ impl<T: Sub<T, Output = T>, A, const F: i8> Sub for Q<T, A, F> {
     }
 }
 
+impl<T: Sum, A, const F: i8> Sum for Q<T, A, F> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        Self::new(iter.map(|i| i.inner).sum())
+    }
+}
+
+impl<T: Product, A, const F: i8> Product for Q<T, A, F> {
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        Self::new(iter.map(|i| i.inner).product())
+    }
+}
+
 macro_rules! impl_mul_q {
     ($alias:ident, $q:ty, $a:ty) => {
         /// Alias for fixed point integer T with accumulator A
@@ -164,6 +180,40 @@ macro_rules! impl_mul_q {
 
             fn mul(self, rhs: $q) -> Self::Output {
                 ssh(self.inner as $a * rhs as $a, -F) as _
+            }
+        }
+
+        /// I/Q -> I
+        impl<const F: i8> Div<Q<$q, $a, F>> for $q {
+            type Output = $q;
+
+            fn div(self, rhs: Q<$q, $a, F>) -> Self::Output {
+                (if F >= 0 {
+                    ssh(self as $a, F) / rhs.inner as $a
+                } else {
+                    self as $a / ssh(rhs.inner as $a, -F) as $a
+                }) as _
+            }
+        }
+
+        /// Q/I -> Q
+        impl<const F: i8> Div<$q> for Q<$q, $a, F> {
+            type Output = Q<$q, $a, F>;
+
+            fn div(self, rhs: $q) -> Self::Output {
+                Self::new(self.inner / rhs)
+            }
+        }
+
+        impl<const F: i8> From<f32> for Q<$q, $a, F> {
+            fn from(value: f32) -> Self {
+                Self::new((value * (1 << F) as f32).round() as _)
+            }
+        }
+
+        impl<const F: i8> From<f64> for Q<$q, $a, F> {
+            fn from(value: f64) -> Self {
+                Self::new((value * (1 << F) as f64).round() as _)
             }
         }
     };

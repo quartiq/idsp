@@ -3,8 +3,10 @@ use num_traits::ops::wrapping::WrappingAdd;
 /// Wrapping Accumulator
 #[derive(Copy, Clone, Default, PartialEq, PartialOrd, Debug)]
 pub struct Accu<T> {
-    state: T,
-    step: T,
+    /// Current accumulator state
+    pub state: T,
+    /// Step
+    pub step: T,
 }
 
 impl<T> Accu<T> {
@@ -14,10 +16,7 @@ impl<T> Accu<T> {
     }
 }
 
-impl<T> Iterator for Accu<T>
-where
-    T: WrappingAdd + Copy,
-{
+impl<T: WrappingAdd + Copy> Iterator for Accu<T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         let s = self.state;
