@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 use dsp_process::SplitProcess;
 
 /// Type-II, sampled phase, discrete time PLL
@@ -37,7 +35,7 @@ use dsp_process::SplitProcess;
 /// increase resolution for extremely narrowband applications is obvious.
 ///
 /// This PLL implements first order noise shaping to reduce quantization errors.
-#[derive(Copy, Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Copy, Debug, Clone, Default)]
 pub struct PLL {
     // last input phase
     x: i32,

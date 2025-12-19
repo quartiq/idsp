@@ -15,10 +15,10 @@ impl<T: Filter> Lockin<T> {
 
         // Filter with the IIR lowpass,
         // return IQ (in-phase and quadrature) data.
-        Complex {
-            re: self.state[0].update(mix.re, k),
-            im: self.state[1].update(mix.im, k),
-        }
+        Complex::new(
+            self.state[0].update(mix.re(), k),
+            self.state[1].update(mix.im(), k),
+        )
     }
 
     /// Update the lockin with a sample taken at a given phase.

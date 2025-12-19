@@ -1,7 +1,6 @@
 //! State variable filter
 
 use num_traits::{Float, FloatConst};
-use serde::{Deserialize, Serialize};
 
 use dsp_process::SplitProcess;
 
@@ -25,7 +24,7 @@ impl<T: Float> State<T> {
 /// State variable filter
 ///
 /// <https://www.earlevel.com/main/2003/03/02/the-digital-state-variable-filter/>
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub struct Svf<T> {
     f: T,
     q: T,

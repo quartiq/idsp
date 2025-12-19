@@ -1,6 +1,28 @@
-pub use num_complex::Complex;
-
 use super::{atan2, cossin};
+
+/// A complex number in cartesian coordinates
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Complex<T> {
+    /// Real and imaginary parts
+    pub xy: [T; 2],
+}
+
+impl<T: Copy> Complex<T> {
+    /// Create a new Complex<T>
+    pub fn new(re: T, im: T) -> Self {
+        Self { xy: [re, im] }
+    }
+
+    /// The real part
+    pub fn re(&self) -> T {
+        self.xy[0]
+    }
+
+    /// The imaginary part
+    pub fn im(&self) -> T {
+        self.xy[0]
+    }
+}
 
 /// Complex extension trait offering DSP (fast, good accuracy) functionality.
 pub trait ComplexExt<T, U> {
@@ -48,7 +70,8 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// assert_eq!(Complex::new(i32::MAX, i32::MAX).abs_sqr(), u32::MAX - 3);
     /// ```
     fn abs_sqr(&self) -> u32 {
-        (((self.re as i64) * (self.re as i64) + (self.im as i64) * (self.im as i64)) >> 31) as u32
+        let [x, y] = self.xy.map(|x| x as i64 * x as i64);
+        ((x + y) >> 31) as _
     }
 
     /// log2(power) re full scale approximation
@@ -68,8 +91,8 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// assert_eq!(Complex::new(0, 0).log2(), -64);
     /// ```
     fn log2(&self) -> i32 {
-        let a = (self.re as i64) * (self.re as i64) + (self.im as i64) * (self.im as i64);
-        -(a.leading_zeros() as i32)
+        let [x, y] = self.xy.map(|x| x as i64 * x as i64);
+        -((x + y).leading_zeros() as i32)
     }
 
     /// Return the angle.
@@ -83,20 +106,20 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// assert_eq!(Complex::new(0, 0).arg(), 0);
     /// ```
     fn arg(&self) -> i32 {
-        atan2(self.im, self.re)
+        atan2(self.im(), self.re())
     }
 
     fn saturating_add(&self, other: Self) -> Self {
         Self::new(
-            self.re.saturating_add(other.re),
-            self.im.saturating_add(other.im),
+            self.re().saturating_add(other.re()),
+            self.im().saturating_add(other.im()),
         )
     }
 
     fn saturating_sub(&self, other: Self) -> Self {
         Self::new(
-            self.re.saturating_sub(other.re),
-            self.im.saturating_sub(other.im),
+            self.re().saturating_sub(other.re()),
+            self.im().saturating_sub(other.im()),
         )
     }
 }
@@ -109,31 +132,31 @@ pub trait MulScaled<T> {
 
 impl MulScaled<Complex<i32>> for Complex<i32> {
     fn mul_scaled(self, other: Self) -> Self {
-        let a = self.re as i64;
-        let b = self.im as i64;
-        let c = other.re as i64;
-        let d = other.im as i64;
-        Complex {
-            re: ((a * c - b * d) >> 31) as i32,
-            im: ((b * c + a * d) >> 31) as i32,
-        }
+        let a = self.re() as i64;
+        let b = self.im() as i64;
+        let c = other.re() as i64;
+        let d = other.im() as i64;
+        Complex::new(
+            ((a * c - b * d) >> 31) as i32,
+            ((b * c + a * d) >> 31) as i32,
+        )
     }
 }
 
 impl MulScaled<i32> for Complex<i32> {
     fn mul_scaled(self, other: i32) -> Self {
-        Complex {
-            re: ((other as i64 * self.re as i64) >> 31) as i32,
-            im: ((other as i64 * self.im as i64) >> 31) as i32,
-        }
+        Complex::new(
+            ((other as i64 * self.re() as i64) >> 31) as i32,
+            ((other as i64 * self.im() as i64) >> 31) as i32,
+        )
     }
 }
 
 impl MulScaled<i16> for Complex<i32> {
     fn mul_scaled(self, other: i16) -> Self {
-        Complex {
-            re: (other as i32 * (self.re >> 16) + (1 << 14)) >> 15,
-            im: (other as i32 * (self.im >> 16) + (1 << 14)) >> 15,
-        }
+        Complex::new(
+            (other as i32 * (self.re() >> 16) + (1 << 14)) >> 15,
+            (other as i32 * (self.im() >> 16) + (1 << 14)) >> 15,
+        )
     }
 }
