@@ -1,4 +1,4 @@
-use crate::{Inplace, Process};
+use crate::{Assert, Inplace, Process};
 
 //////////// ELEMENTARY PROCESSORS ////////////
 
@@ -268,4 +268,47 @@ impl<X: Copy, Y, P: Process<X, Option<Y>>, const N: usize> Process<[X; N], Y> fo
 }
 impl<X: Copy, P> Inplace<X> for Decimator<P> where Self: Process<X> {}
 
-// TODO: Nyquist, Integrator, Derivative
+/// Nyquist zero with gain 2
+pub struct Nyquist<X>(
+    /// Previous input
+    pub X,
+);
+impl<X: Copy + core::ops::Add<X, Output = Y>, Y, const N: usize> Process<X, Y> for Nyquist<[X; N]> {
+    fn process(&mut self, x: X) -> Y {
+        let () = Assert::<N, 0>::GREATER;
+        let y = x + self.0[N - 1];
+        self.0.copy_within(..N - 1, 1);
+        self.0[0] = x;
+        y
+    }
+}
+impl<X: Copy> Inplace<X> for Nyquist<X> where Self: Process<X> {}
+
+/// Integrator
+pub struct Integrator<Y>(
+    /// Current integrator value
+    pub Y,
+);
+impl<X: Copy, Y: core::ops::AddAssign<X> + Copy> Process<X, Y> for Integrator<Y> {
+    fn process(&mut self, x: X) -> Y {
+        self.0 += x;
+        self.0
+    }
+}
+impl<X: Copy> Inplace<X> for Integrator<X> where Self: Process<X> {}
+
+/// Comb (derivative)
+pub struct Comb<X>(
+    /// Delay line
+    pub X,
+);
+impl<X: Copy + core::ops::Sub<X, Output = Y>, Y, const N: usize> Process<X, Y> for Comb<[X; N]> {
+    fn process(&mut self, x: X) -> Y {
+        let () = Assert::<N, 0>::GREATER;
+        let y = x - self.0[N - 1];
+        self.0.copy_within(..N - 1, 1);
+        self.0[0] = x;
+        y
+    }
+}
+impl<X: Copy> Inplace<X> for Comb<X> where Self: Process<X> {}
