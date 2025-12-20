@@ -5,8 +5,6 @@ mod atan2;
 pub use atan2::*;
 mod accu;
 pub use accu::*;
-mod filter;
-pub use filter::*;
 mod complex;
 pub use complex::*;
 mod cossin;

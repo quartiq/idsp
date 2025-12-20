@@ -1,29 +1,31 @@
-use super::{Complex, ComplexExt, Filter, MulScaled};
+use super::{Complex, ComplexExt, MulScaled};
+use dsp_process::SplitProcess;
 
 /// Lockin filter
 ///
-/// Combines two [`Filter`] and an NCO to perform demodulation
+/// Combines two [`SplitProcess`] filters and an NCO to perform demodulation
 #[derive(Copy, Clone, Default)]
-pub struct Lockin<T> {
-    state: [T; 2],
+pub struct Lockin<C> {
+    lp: C,
 }
 
-impl<T: Filter> Lockin<T> {
+impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<(i32, Complex<i32>), Complex<i32>, [S; 2]>
+    for Lockin<C>
+{
     /// Update the lockin with a sample taken at a local oscillator IQ value.
-    pub fn update_iq(&mut self, sample: i32, lo: Complex<i32>, k: &T::Config) -> Complex<i32> {
-        let mix = lo.mul_scaled(sample);
-
-        // Filter with the IIR lowpass,
-        // return IQ (in-phase and quadrature) data.
+    fn process(&self, state: &mut [S; 2], x: (i32, Complex<i32>)) -> Complex<i32> {
+        let mix = x.1.mul_scaled(x.0);
         Complex::new(
-            self.state[0].update(mix.re(), k),
-            self.state[1].update(mix.im(), k),
+            self.lp.process(&mut state[0], mix.re()),
+            self.lp.process(&mut state[1], mix.im()),
         )
     }
+}
 
+impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<(i32, i32), Complex<i32>, [S; 2]> for Lockin<C> {
     /// Update the lockin with a sample taken at a given phase.
-    pub fn update(&mut self, sample: i32, phase: i32, k: &T::Config) -> Complex<i32> {
+    fn process(&self, state: &mut [S; 2], x: (i32, i32)) -> Complex<i32> {
         // Get the LO signal for demodulation and mix the sample;
-        self.update_iq(sample, Complex::from_angle(phase), k)
+        self.process(state, (x.0, Complex::from_angle(x.1)))
     }
 }
