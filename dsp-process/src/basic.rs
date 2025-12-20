@@ -269,6 +269,8 @@ impl<X: Copy, Y, P: Process<X, Option<Y>>, const N: usize> Process<[X; N], Y> fo
 impl<X: Copy, P> Inplace<X> for Decimator<P> where Self: Process<X> {}
 
 /// Nyquist zero with gain 2
+///
+/// Bad for large differential delays
 pub struct Nyquist<X>(
     /// Previous input
     pub X,
@@ -298,6 +300,8 @@ impl<X: Copy, Y: core::ops::AddAssign<X> + Copy> Process<X, Y> for Integrator<Y>
 impl<X: Copy> Inplace<X> for Integrator<X> where Self: Process<X> {}
 
 /// Comb (derivative)
+///
+/// Bad for large delays
 pub struct Comb<X>(
     /// Delay line
     pub X,
