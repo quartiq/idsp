@@ -9,7 +9,7 @@ authors.workspace = true
 [features]
 std = []
 
-[dependencies]
+[dev-dependencies]
 dsp-fixedpoint.workspace = true
 
 [lints]

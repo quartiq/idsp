@@ -199,8 +199,9 @@ where
 
 impl<X: Copy, const N: usize> Process<X> for Buffer<X, N> {
     fn process(&mut self, x: X) -> X {
+        let y = core::mem::replace(&mut self.buffer[self.idx], x);
         self.idx = (self.idx + 1) % N;
-        core::mem::replace(&mut self.buffer[self.idx], x)
+        y
     }
 
     // TODO: block(), inplace(), Process<[X; M]>
@@ -257,7 +258,7 @@ impl<X: Copy, P> Inplace<X> for Interpolator<P> where Self: Process<X> {}
 
 /// Adapts a decimator to input chunk mode
 ///
-/// Synchronizes to the inner tick bu discarding samples after tick.
+/// Synchronizes to the inner tick by discarding samples after tick.
 /// Panics if tick does not match N
 pub struct Decimator<P>(pub P);
 impl<X: Copy, Y, P: Process<X, Option<Y>>, const N: usize> Process<[X; N], Y> for Decimator<P> {

@@ -1,4 +1,5 @@
 #[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
 use num_traits::float::FloatCore as _;
 
 use dsp_process::{SplitInplace, SplitProcess};

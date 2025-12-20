@@ -1,10 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
+use core::marker::PhantomData;
 
 mod process;
 pub use process::*;
-mod containers;
 mod basic;
+mod containers;
 pub use basic::*;
 mod split;
 pub use split::*;
@@ -15,6 +16,64 @@ impl<const A: usize, const B: usize> Assert<A, B> {
     /// Assert A>B
     pub const GREATER: () = assert!(A > B);
 }
+
+/// Processor-minor, data-major
+///
+/// The various Process tooling implementations for `Minor`
+/// place the data loop as the outer-most loop (processor-minor, data-major).
+/// This is optimal for processors with small or no state and configuration.
+///
+/// Chain of large processors are implemented through tuples and slices/arrays.
+/// Those optimize well if the sizes obey configuration ~ state > data.
+/// If they do not, use `Minor`.
+///
+/// Note that the major implementations only override the behavior
+/// for `block()` and `inplace()`. `process()` is unaffected.
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(transparent)]
+pub struct Minor<C: ?Sized, U> {
+    /// An intermediate data type
+    _intermediate: PhantomData<U>,
+    /// The inner configurations
+    pub inner: C,
+}
+
+impl<C, U> Minor<C, U> {
+    /// Create a new chain
+    pub fn new(inner: C) -> Self {
+        Self {
+            inner,
+            _intermediate: PhantomData,
+        }
+    }
+}
+
+impl<C, U, const N: usize> Minor<[C; N], U> {
+    /// Borrowed Self
+    pub fn as_ref(&self) -> Minor<&[C], U> {
+        Minor::new(self.inner.as_ref())
+    }
+
+    /// Mutably borrowed Self
+    pub fn as_mut(&mut self) -> Minor<&mut [C], U> {
+        Minor::new(self.inner.as_mut())
+    }
+}
+
+/// Fan out parallel input to parallel processors
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Parallel<P>(pub P);
+
+/// Data block transposition wrapper
+///
+/// Like [`Parallel`] but reinterpreting data as transpes `[[X; N]] <-> [[X]; N]`
+/// such that `block()` and `inplace()` are lowered.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Transpose<C>(pub C);
+
+/// Multiple channels to be processed with the same configuration
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Channels<C>(pub C);
 
 /// Parallel filter pair
 ///
@@ -29,7 +88,7 @@ impl<const A: usize, const B: usize> Assert<A, B> {
 /// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
 ///
 /// The corresponding state for this is `(((), (S0, S1)), ())`.
-pub type Pair<C0, C1, X, I = Stateless<Identity>, J = Stateless<Add>> =
+pub type Pair<C0, C1, X, I = Unsplit<Identity>, J = Unsplit<Add>> =
     Minor<((I, Parallel<(C0, C1)>), J), [X; 2]>;
 
 #[cfg(test)]
@@ -59,7 +118,7 @@ mod test {
             Pair::<_, _, i32>::new((
                 (
                     Default::default(),
-                    Parallel((Stateless(Offset(3)), Stateless(Gain(Q32::<1>::new(4))))),
+                    Parallel((Unsplit(Offset(3)), Unsplit(Gain(Q32::<1>::new(4))))),
                 ),
                 Default::default(),
             )),

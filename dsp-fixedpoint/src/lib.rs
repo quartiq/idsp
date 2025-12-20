@@ -2,6 +2,7 @@
 #![doc = include_str!("../README.md")]
 
 #[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
 use num_traits::float::FloatCore;
 
 use core::iter::{Product, Sum};

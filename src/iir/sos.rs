@@ -2,6 +2,7 @@ use dsp_fixedpoint::Q32;
 use dsp_process::{SplitInplace, SplitProcess};
 
 #[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
 use num_traits::float::FloatCore as _;
 
 /// Second-order-section

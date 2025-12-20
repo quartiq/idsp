@@ -5,7 +5,7 @@ use crate::{
 //////////// SPLIT ////////////
 
 /// A stateful processor with split state
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct Split<C, S> {
     /// Processor configuration
     pub config: C,
@@ -46,17 +46,17 @@ impl<C, S> Split<C, S> {
     }
 }
 
-impl<C> Split<Stateless<C>, ()> {
+impl<C> Split<Unsplit<C>, ()> {
     /// Create a stateless processor
     pub fn stateless(config: C) -> Self {
-        Self::new(Stateless(config), ())
+        Self::new(Unsplit(config), ())
     }
 }
 
-impl<S> Split<(), Stateful<S>> {
+impl<S> Split<(), Unsplit<S>> {
     /// Create a state-only processor
     pub fn stateful(state: S) -> Self {
-        Self::new((), Stateful(state))
+        Self::new((), Unsplit(state))
     }
 }
 
@@ -137,6 +137,27 @@ impl<C, S> Split<C, S> {
     }
 }
 
+impl<C, S, U> Split<Minor<C, U>, S> {
+    /// Convert to major
+    pub fn major(self) -> Split<C, S> {
+        Split::new(self.config.inner, self.state)
+    }
+}
+
+impl<C, S> Split<Parallel<C>, S> {
+    /// Convert to serial
+    pub fn major(self) -> Split<C, S> {
+        Split::new(self.config.0, self.state)
+    }
+}
+
+impl<C, S> Split<Transpose<C>, S> {
+    /// Convert to non-transposing
+    pub fn major(self) -> Split<C, S> {
+        Split::new(self.config.0, self.state)
+    }
+}
+
 impl<C0, C1, S0, S1> Split<(C0, C1), (S0, S1)> {
     /// Zip up a split
     pub fn zip(self) -> (Split<C0, S0>, Split<C1, S1>) {
@@ -158,15 +179,16 @@ impl<C, S, const N: usize> Split<[C; N], [S; N]> {
     }
 }
 
-/// Stateless marker
+/// Stateless/stateful marker
 ///
-/// To be used in `Split<Stateless<C>, ()>`
-#[derive(Debug, Clone, Default)]
+/// To be used in `Split<Unsplit<P>, ()>` and `Split<(), Unsplit<P>>`
+/// to mark processors requiring no state and no configuration respectively.
+#[derive(Debug, Copy, Clone, Default)]
 #[repr(transparent)]
-pub struct Stateless<P>(pub P);
+pub struct Unsplit<P>(pub P);
 
 /// Stateless filters
-impl<X: Copy, Y, P> SplitProcess<X, Y> for Stateless<P>
+impl<X: Copy, Y, P> SplitProcess<X, Y> for Unsplit<P>
 where
     for<'a> &'a P: Process<X, Y>,
 {
@@ -179,7 +201,7 @@ where
     }
 }
 
-impl<X: Copy, P> SplitInplace<X> for Stateless<P>
+impl<X: Copy, P> SplitInplace<X> for Unsplit<P>
 where
     for<'a> &'a P: Inplace<X>,
 {
@@ -188,26 +210,19 @@ where
     }
 }
 
-/// State-only marker
-///
-/// To be used in `Split<(), Stateful<S>>`
-#[derive(Debug, Clone, Default)]
-#[repr(transparent)]
-pub struct Stateful<S>(pub S);
-
 /// Configuration-less filters
-impl<X: Copy, Y, P: Process<X, Y>> SplitProcess<X, Y, Stateful<P>> for () {
-    fn process(&self, state: &mut Stateful<P>, x: X) -> Y {
+impl<X: Copy, Y, P: Process<X, Y>> SplitProcess<X, Y, Unsplit<P>> for () {
+    fn process(&self, state: &mut Unsplit<P>, x: X) -> Y {
         state.0.process(x)
     }
 
-    fn block(&self, state: &mut Stateful<P>, x: &[X], y: &mut [Y]) {
+    fn block(&self, state: &mut Unsplit<P>, x: &[X], y: &mut [Y]) {
         state.0.block(x, y)
     }
 }
 
-impl<X: Copy, P: Inplace<X>> SplitInplace<X, Stateful<P>> for () {
-    fn inplace(&self, state: &mut Stateful<P>, xy: &mut [X]) {
+impl<X: Copy, P: Inplace<X>> SplitInplace<X, Unsplit<P>> for () {
+    fn inplace(&self, state: &mut Unsplit<P>, xy: &mut [X]) {
         state.0.inplace(xy)
     }
 }
@@ -257,15 +272,15 @@ where
         debug_assert_eq!(self.len(), state.len());
         self.iter()
             .zip(state.iter_mut())
-            .fold(x, |x, (f, s)| Split::new(f, s).process(x))
+            .fold(x, |x, (c, s)| c.process(s, x))
     }
 
     fn block(&self, state: &mut [S], x: &[X], y: &mut [X]) {
         debug_assert_eq!(self.len(), state.len());
         if let Some(((c0, c), (s0, s))) = self.split_first().zip(state.split_first_mut()) {
-            Split::new(c0, s0).block(x, y);
+            c0.block(s0, x, y);
             for (c, s) in c.iter().zip(s) {
-                Split::new(c, s).inplace(y);
+                c.inplace(s, y);
             }
         } else {
             y.copy_from_slice(x);
@@ -297,9 +312,7 @@ where
         let ((c0, c), (s0, s)) = self.split_first().zip(state.split_first_mut()).unwrap();
         c.iter()
             .zip(s.iter_mut())
-            .fold(Split::new(c0, s0).process(x), |x, (c, s)| {
-                Split::new(c, s).process(x)
-            })
+            .fold(c0.process(s0, x), |x, (c, s)| c.process(s, x))
     }
 
     fn block(&self, state: &mut [S; N], x: &[X], y: &mut [Y]) {
@@ -345,7 +358,7 @@ where
         self.inner
             .iter()
             .zip(state.iter_mut())
-            .fold(x, |x, (f, s)| Split::new(f, s).process(x))
+            .fold(x, |x, (c, s)| c.process(s, x))
     }
 }
 
@@ -363,9 +376,7 @@ where
             .unwrap();
         c.iter()
             .zip(s.iter_mut())
-            .fold(Split::new(c0, s0).process(x), |x, (c, s)| {
-                Split::new(c, s).process(x)
-            })
+            .fold(c0.process(s0, x), |x, (c, s)| c.process(s, x))
     }
 }
 
@@ -511,7 +522,7 @@ where
 
 /// Process data from multiple channels with a common configuration
 ///
-/// Note that block() and inplace() reinterpret the data as transposed: __not__ as `[[X; N]]` but as `[[X]; N]`.
+/// Note that block() and inplace() reinterpret the data as [`Transpose`]: __not__ as `[[X; N]]` but as `[[X]; N]`.
 /// Use `x.as_flattened().chunks_exact(x.len())`/`x.as_chunks<N>().0` etc. to match that.
 impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Channels<C>
 where

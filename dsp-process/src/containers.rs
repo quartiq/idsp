@@ -1,4 +1,4 @@
-use crate::{Assert, Inplace, Process, Minor, Parallel, Transpose};
+use crate::{Assert, Inplace, Minor, Parallel, Process, Transpose};
 
 //////////// MAJOR ////////////
 
