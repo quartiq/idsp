@@ -1,4 +1,6 @@
-use crate::{Assert, Inplace, Minor, Parallel, Process, SplitInplace, SplitProcess};
+use crate::{
+    Assert, Channels, Inplace, Minor, Parallel, Process, SplitInplace, SplitProcess, Transpose,
+};
 
 //////////// SPLIT ////////////
 
@@ -421,13 +423,6 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Parallel<C> where Self: SplitProcess<
 
 //////////// TRANSPOSE ////////////
 
-/// Data block transposition wrapper
-///
-/// Like [`Parallel`] but reinterpreting data as transpes `[[X; N]] <-> [[X]; N]`
-/// such that `block()` and `inplace()` are lowered.
-#[derive(Clone, Debug, Default)]
-pub struct Transpose<C>(pub C);
-
 impl<X: Copy, Y, C0, C1, S0, S1> SplitProcess<[X; 2], [Y; 2], (S0, S1)> for Transpose<(C0, C1)>
 where
     C0: SplitProcess<X, Y, S0>,
@@ -513,10 +508,6 @@ where
 }
 
 //////////// CHANNELS ////////////
-
-/// Multiple channels to be processed with the same configuration
-#[derive(Clone, Debug, Default)]
-pub struct Channels<C>(pub C);
 
 /// Process data from multiple channels with a common configuration
 ///

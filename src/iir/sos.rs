@@ -266,11 +266,11 @@ impl<const F: i8> From<[i32; 5]> for SosClamp<F> {
     }
 }
 
-#[cfg(test)]
-mod test {
+//#[cfg(test)]
+pub mod test {
     #![allow(dead_code)]
     use super::*;
-    use dsp_process::{Inplace, Split};
+    use dsp_process::SplitInplace;
     // No manual tuning needed here.
     // Compiler knows best how and when:
     //   unroll loops
@@ -281,10 +281,7 @@ mod test {
 
     // cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
 
-    pub struct Casc([Sos<29>; 4]);
-    impl Casc {
-        pub fn block(&self, state: &mut [SosState; 4], xy0: &mut [i32; 8]) {
-            Split::new(&self.0, state).inplace(xy0);
-        }
+    pub fn pnm(config: &[Sos<29>; 4], state: &mut [SosState; 4], xy0: &mut [i32; 8]) {
+        config.inplace(state, xy0);
     }
 }

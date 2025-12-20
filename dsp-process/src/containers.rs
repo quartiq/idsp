@@ -1,5 +1,4 @@
-use crate::{Assert, Inplace, Process};
-use core::marker::PhantomData;
+use crate::{Assert, Inplace, Process, Minor, Parallel, Transpose};
 
 //////////// MAJOR ////////////
 
@@ -74,49 +73,6 @@ impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for [P; N] {
 
 //////////// MINOR ////////////
 
-/// Processor-minor, data-major
-///
-/// The various Process tooling implementations for `Minor`
-/// place the data loop as the outer-most loop (processor-minor, data-major).
-/// This is optimal for processors with small or no state and configuration.
-///
-/// Chain of large processors are implemented through tuples and slices/arrays.
-/// Those optimize well if the sizes obey configuration ~ state > data.
-/// If they do not, use `Minor`.
-///
-/// Note that the major implementations only override the behavior
-/// for `block()` and `inplace()`. `process()` is unaffected.
-#[derive(Clone, Debug, Default)]
-#[repr(transparent)]
-pub struct Minor<C: ?Sized, U> {
-    /// An intermediate data type
-    _intermediate: PhantomData<U>,
-    /// The inner configurations
-    pub inner: C,
-}
-
-impl<C, U> Minor<C, U> {
-    /// Create a new chain
-    pub fn new(inner: C) -> Self {
-        Self {
-            inner,
-            _intermediate: PhantomData,
-        }
-    }
-}
-
-impl<C, U, const N: usize> Minor<[C; N], U> {
-    /// Borrowed Self
-    pub fn as_ref(&self) -> Minor<&[C], U> {
-        Minor::new(self.inner.as_ref())
-    }
-
-    /// Mutably borrowed Self
-    pub fn as_mut(&mut self) -> Minor<&mut [C], U> {
-        Minor::new(self.inner.as_mut())
-    }
-}
-
 /// X->U->X
 impl<X: Copy, U: Copy, Y, P0: Process<X, U>, P1: Process<U, Y>> Process<X, Y>
     for Minor<(P0, P1), U>
@@ -148,10 +104,6 @@ impl<X: Copy, U, P> Inplace<X> for Minor<P, U> where Self: Process<X> {}
 
 //////////// PARALLEL ////////////
 
-/// Fan out parallel input to parallel processors
-#[derive(Clone, Debug, Default)]
-pub struct Parallel<P>(pub P);
-
 impl<X0: Copy, X1: Copy, Y0, Y1, P0: Process<X0, Y0>, P1: Process<X1, Y1>>
     Process<(X0, X1), (Y0, Y1)> for Parallel<(P0, P1)>
 {
@@ -182,3 +134,80 @@ where
 }
 
 impl<X: Copy, P> Inplace<X> for Parallel<P> where Self: Process<X> {}
+
+//////////// TRANSPOSE ////////////
+
+impl<X: Copy, Y, C0, C1> Process<[X; 2], [Y; 2]> for Transpose<(C0, C1)>
+where
+    C0: Process<X, Y>,
+    C1: Process<X, Y>,
+{
+    fn process(&mut self, x: [X; 2]) -> [Y; 2] {
+        [self.0.0.process(x[0]), self.0.1.process(x[1])]
+    }
+
+    fn block(&mut self, x: &[[X; 2]], y: &mut [[Y; 2]]) {
+        debug_assert_eq!(x.len(), y.len());
+        let n = x.len();
+        let (x0, x1) = x.as_flattened().split_at(n);
+        let (y0, y1) = y.as_flattened_mut().split_at_mut(n);
+        self.0.0.block(x0, y0);
+        self.0.1.block(x1, y1);
+    }
+}
+
+impl<X: Copy, C0, C1> Inplace<[X; 2]> for Transpose<(C0, C1)>
+where
+    C0: Inplace<X>,
+    C1: Inplace<X>,
+{
+    fn inplace(&mut self, xy: &mut [[X; 2]]) {
+        let n = xy.len();
+        let (xy0, xy1) = xy.as_flattened_mut().split_at_mut(n);
+        self.0.0.inplace(xy0);
+        self.0.1.inplace(xy1);
+    }
+}
+
+impl<X: Copy, Y, C, const N: usize> Process<[X; N], [Y; N]> for Transpose<[C; N]>
+where
+    [Y; N]: Default,
+    C: Process<X, Y>,
+{
+    fn process(&mut self, x: [X; N]) -> [Y; N] {
+        let mut y = <[Y; N]>::default();
+        for (c, (x, y)) in self.0.iter_mut().zip(x.into_iter().zip(y.iter_mut())) {
+            *y = c.process(x);
+        }
+        y
+    }
+
+    fn block(&mut self, x: &[[X; N]], y: &mut [[Y; N]]) {
+        debug_assert_eq!(x.len(), y.len());
+        let n = x.len();
+        for (c, (x, y)) in self.0.iter_mut().zip(
+            x.as_flattened()
+                .chunks_exact(n)
+                .zip(y.as_flattened_mut().chunks_exact_mut(n)),
+        ) {
+            c.block(x, y)
+        }
+    }
+}
+
+impl<X: Copy, C, const N: usize> Inplace<[X; N]> for Transpose<[C; N]>
+where
+    [X; N]: Default,
+    C: Inplace<X>,
+{
+    fn inplace(&mut self, xy: &mut [[X; N]]) {
+        let n = xy.len();
+        for (c, xy) in self
+            .0
+            .iter_mut()
+            .zip(xy.as_flattened_mut().chunks_exact_mut(n))
+        {
+            c.inplace(xy)
+        }
+    }
+}

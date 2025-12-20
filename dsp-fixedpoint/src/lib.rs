@@ -222,10 +222,10 @@ impl_mul_q!(Q8, i8, i16);
 impl_mul_q!(Q16, i16, i32);
 impl_mul_q!(Q32, i32, i64);
 impl_mul_q!(Q64, i64, i128);
-impl_mul_q!(U8, u8, u16);
-impl_mul_q!(U16, u16, u32);
-impl_mul_q!(U32, u32, u64);
-impl_mul_q!(U64, u64, u128);
+impl_mul_q!(P8, u8, u16);
+impl_mul_q!(P16, u16, u32);
+impl_mul_q!(P32, u32, u64);
+impl_mul_q!(P64, u64, u128);
 
 #[cfg(test)]
 mod test {

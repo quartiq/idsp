@@ -1,4 +1,5 @@
 //! Sample processing, filtering, combination of filters.
+use core::marker::PhantomData;
 
 /// Processing block
 ///
@@ -123,3 +124,61 @@ impl<X: Copy, S, T: SplitInplace<X, S>> SplitInplace<X, S> for &mut T {
         T::inplace(self, state, xy)
     }
 }
+
+/// Processor-minor, data-major
+///
+/// The various Process tooling implementations for `Minor`
+/// place the data loop as the outer-most loop (processor-minor, data-major).
+/// This is optimal for processors with small or no state and configuration.
+///
+/// Chain of large processors are implemented through tuples and slices/arrays.
+/// Those optimize well if the sizes obey configuration ~ state > data.
+/// If they do not, use `Minor`.
+///
+/// Note that the major implementations only override the behavior
+/// for `block()` and `inplace()`. `process()` is unaffected.
+#[derive(Clone, Debug, Default)]
+#[repr(transparent)]
+pub struct Minor<C: ?Sized, U> {
+    /// An intermediate data type
+    _intermediate: PhantomData<U>,
+    /// The inner configurations
+    pub inner: C,
+}
+
+impl<C, U> Minor<C, U> {
+    /// Create a new chain
+    pub fn new(inner: C) -> Self {
+        Self {
+            inner,
+            _intermediate: PhantomData,
+        }
+    }
+}
+
+impl<C, U, const N: usize> Minor<[C; N], U> {
+    /// Borrowed Self
+    pub fn as_ref(&self) -> Minor<&[C], U> {
+        Minor::new(self.inner.as_ref())
+    }
+
+    /// Mutably borrowed Self
+    pub fn as_mut(&mut self) -> Minor<&mut [C], U> {
+        Minor::new(self.inner.as_mut())
+    }
+}
+
+/// Fan out parallel input to parallel processors
+#[derive(Clone, Debug, Default)]
+pub struct Parallel<P>(pub P);
+
+/// Data block transposition wrapper
+///
+/// Like [`Parallel`] but reinterpreting data as transpes `[[X; N]] <-> [[X]; N]`
+/// such that `block()` and `inplace()` are lowered.
+#[derive(Clone, Debug, Default)]
+pub struct Transpose<C>(pub C);
+
+/// Multiple channels to be processed with the same configuration
+#[derive(Clone, Debug, Default)]
+pub struct Channels<C>(pub C);
