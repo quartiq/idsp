@@ -2,6 +2,7 @@
 #[allow(unused_imports)]
 use num_traits::float::FloatCore as _;
 
+use dsp_fixedpoint::Q32;
 use dsp_process::{SplitInplace, SplitProcess};
 
 /// Two port adapter architecture
@@ -13,9 +14,9 @@ pub enum Tpa {
     /// terminate
     Z = 0x0,
     /// 1 > g > 1/2: a = g - 1
-    A = 0xa,
+    A = 0xA,
     /// 1/2 >= g > 0: a = -g
-    B = 0xb,
+    B = 0xB,
     /// alternative to B
     B1 = 0xE,
     /// g = 0
@@ -45,7 +46,7 @@ impl From<u8> for Tpa {
 }
 
 impl Tpa {
-    fn quantize(self, g: f64) -> Option<i32> {
+    fn quantize(self, g: f64) -> Option<Q32<32>> {
         // Use negative -0.5 <= a <= 0 instead of the usual positive
         // as -0.5 just fits the Q32 fixed point range.
         let a = match self {
@@ -56,47 +57,41 @@ impl Tpa {
             Self::C | Self::C1 => g,
             Self::D => -1.0 - g,
         };
-        (-0.5..=0.0)
-            .contains(&a)
-            .then_some((a * (1u64 << 32) as f64).round() as _)
+        (-0.5..=0.0).contains(&a).then_some(a.into())
     }
 
     #[inline]
-    fn adapt(&self, x: [i32; 2], a: i32) -> [i32; 2] {
-        fn mul(x: i32, y: i32) -> i32 {
-            ((x as i64 * y as i64) >> 32) as i32
-        }
-
+    fn adapt(&self, x: [i32; 2], a: Q32<32>) -> [i32; 2] {
         match self {
             Tpa::A => {
                 let c = x[1] - x[0];
-                let y = mul(a, c).wrapping_add(x[1]);
+                let y = (a * c).wrapping_add(x[1]);
                 [y.wrapping_add(c), y]
             }
             Tpa::B => {
                 let c = x[0] - x[1];
-                let y = mul(a, c).wrapping_add(x[1]);
+                let y = (a * c).wrapping_add(x[1]);
                 [y, y.wrapping_add(c)]
             }
             Tpa::B1 => {
                 let c = x[0] - x[1];
-                let y = mul(a, c);
+                let y = a * c;
                 [y.wrapping_add(x[1]), y.wrapping_add(x[0])]
             }
             Tpa::X => [x[1], x[0]],
             Tpa::C => {
                 let c = x[1] - x[0];
-                let y = mul(a, c).wrapping_sub(x[1]);
+                let y = (a * c).wrapping_sub(x[1]);
                 [y, y.wrapping_add(c)]
             }
             Tpa::C1 => {
                 let c = x[1] - x[0];
-                let y = mul(a, c);
+                let y = a * c;
                 [y.wrapping_sub(x[1]), y.wrapping_sub(x[0])]
             }
             Tpa::D => {
                 let c = x[0] - x[1];
-                let y = mul(a, c).wrapping_sub(x[1]);
+                let y = (a * c).wrapping_sub(x[1]);
                 [y.wrapping_add(c), y]
             }
             Tpa::Z => x,
@@ -113,12 +108,14 @@ impl Tpa {
 #[derive(Debug, Clone)]
 pub struct Wdf<const N: usize, const M: u32> {
     /// Filter coefficient
-    pub a: [i32; N],
+    pub a: [Q32<32>; N],
 }
 
 impl<const N: usize, const M: u32> Default for Wdf<N, M> {
     fn default() -> Self {
-        Self { a: [0; N] }
+        Self {
+            a: [Default::default(); N],
+        }
     }
 }
 
@@ -129,13 +126,14 @@ impl<const N: usize, const M: u32> Wdf<N, M> {
     /// The type (configuration nibbles M) must match the
     /// optimal scaled architecture, see [`Tpa`].
     pub fn quantize(g: &[f64; N]) -> Option<Self> {
-        let mut a = [0; N];
+        let mut a = [Default::default(); N];
         let mut m = M;
         for (a, g) in a.iter_mut().zip(g) {
             *a = Tpa::from((m & 0xf) as u8).quantize(*g)?;
             m >>= 4;
         }
-        (m == 0).then_some(Self { a })
+        debug_assert_eq!(m, 0);
+        Some(Self { a })
     }
 }
 
@@ -156,7 +154,7 @@ impl<const N: usize, const M: u32> SplitProcess<i32, i32, WdfState<N>> for Wdf<N
     #[inline]
     fn process(&self, state: &mut WdfState<N>, x0: i32) -> i32 {
         let mut y = 0;
-        let (_, x, z) =
+        let (m, x, z) =
             self.a
                 .iter()
                 .zip(state.z.iter_mut())
@@ -165,6 +163,7 @@ impl<const N: usize, const M: u32> SplitProcess<i32, i32, WdfState<N>> for Wdf<N
                     [*y, z1] = Tpa::from((m & 0xf) as u8).adapt([x, *z0], *a);
                     (m >> 4, z1, z0)
                 });
+        debug_assert_eq!(m, 0);
         *z = x;
         y
     }

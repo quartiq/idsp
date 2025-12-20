@@ -4,23 +4,23 @@ use super::{atan2, cossin};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Complex<T> {
     /// Real and imaginary parts
-    pub xy: [T; 2],
+    pub iq: [T; 2],
 }
 
 impl<T: Copy> Complex<T> {
     /// Create a new `Complex<T>`
     pub fn new(re: T, im: T) -> Self {
-        Self { xy: [re, im] }
+        Self { iq: [re, im] }
     }
 
     /// The real part
     pub fn re(&self) -> T {
-        self.xy[0]
+        self.iq[0]
     }
 
     /// The imaginary part
     pub fn im(&self) -> T {
-        self.xy[0]
+        self.iq[0]
     }
 }
 
@@ -29,15 +29,11 @@ pub trait ComplexExt<T, U> {
     /// Unit magnitude from angle
     fn from_angle(angle: T) -> Self;
     /// Square of magnitude
-    fn abs_sqr(&self) -> U;
+    fn norm_sqr(&self) -> U;
     /// Log2 approximation
     fn log2(&self) -> T;
     /// Angle
     fn arg(&self) -> T;
-    /// Staturating addition
-    fn saturating_add(&self, other: Self) -> Self;
-    /// Saturating subtraction
-    fn saturating_sub(&self, other: Self) -> Self;
 }
 
 impl ComplexExt<i32, u32> for Complex<i32> {
@@ -66,11 +62,11 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     ///
     /// ```
     /// use idsp::{Complex, ComplexExt};
-    /// assert_eq!(Complex::new(i32::MIN, 0).abs_sqr(), 1 << 31);
-    /// assert_eq!(Complex::new(i32::MAX, i32::MAX).abs_sqr(), u32::MAX - 3);
+    /// assert_eq!(Complex::new(i32::MIN, 0).norm_sqr(), 1 << 31);
+    /// assert_eq!(Complex::new(i32::MAX, i32::MAX).norm_sqr(), u32::MAX - 3);
     /// ```
-    fn abs_sqr(&self) -> u32 {
-        let [x, y] = self.xy.map(|x| x as i64 * x as i64);
+    fn norm_sqr(&self) -> u32 {
+        let [x, y] = self.iq.map(|x| x as i64 * x as i64);
         ((x + y) >> 31) as _
     }
 
@@ -78,21 +74,21 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     ///
     /// TODO: scale up, interpolate
     ///
-    /// Panic:
-    /// This will panic for `Complex(i32::MIN, i32::MIN)`
-    ///
     /// Example:
     ///
     /// ```
     /// use idsp::{Complex, ComplexExt};
+    /// assert_eq!(Complex::new(i32::MIN, i32::MIN).log2(), 0);
     /// assert_eq!(Complex::new(i32::MAX, i32::MAX).log2(), -1);
+    /// assert_eq!(Complex::new(i32::MIN, 0).log2(), -1);
     /// assert_eq!(Complex::new(i32::MAX, 0).log2(), -2);
+    /// assert_eq!(Complex::new(-1, 0).log2(), -63);
     /// assert_eq!(Complex::new(1, 0).log2(), -63);
     /// assert_eq!(Complex::new(0, 0).log2(), -64);
     /// ```
     fn log2(&self) -> i32 {
-        let [x, y] = self.xy.map(|x| x as i64 * x as i64);
-        -((x + y).leading_zeros() as i32)
+        let [x, y] = self.iq.map(|x| x as i64 * x as i64);
+        -(x.wrapping_add(y).leading_zeros() as i32)
     }
 
     /// Return the angle.
@@ -107,20 +103,6 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// ```
     fn arg(&self) -> i32 {
         atan2(self.im(), self.re())
-    }
-
-    fn saturating_add(&self, other: Self) -> Self {
-        Self::new(
-            self.re().saturating_add(other.re()),
-            self.im().saturating_add(other.im()),
-        )
-    }
-
-    fn saturating_sub(&self, other: Self) -> Self {
-        Self::new(
-            self.re().saturating_sub(other.re()),
-            self.im().saturating_sub(other.im()),
-        )
     }
 }
 
