@@ -7,8 +7,6 @@ use core::{
     ops::{Add, Mul},
 };
 
-use num_traits::Zero;
-
 /// Filter input items into output items.
 pub trait Filter {
     /// Input/output item type.
@@ -85,8 +83,12 @@ pub struct SymFir<'a, T, const M: usize, const N: usize> {
     taps: &'a [T; M],
 }
 
-impl<'a, T: Copy + Zero + Add + Mul<Output = T> + Sum, const M: usize, const N: usize>
-    SymFir<'a, T, M, N>
+impl<
+    'a,
+    T: Copy + Default + Add<Output = T> + Mul<Output = T> + Sum,
+    const M: usize,
+    const N: usize,
+> SymFir<'a, T, M, N>
 {
     /// Create a new `SymFir`.
     ///
@@ -95,7 +97,7 @@ impl<'a, T: Copy + Zero + Add + Mul<Output = T> + Sum, const M: usize, const N: 
     pub fn new(taps: &'a [T; M]) -> Self {
         debug_assert!(N >= M * 2);
         Self {
-            x: [T::zero(); N],
+            x: [T::default(); N],
             taps,
         }
     }
@@ -143,8 +145,12 @@ pub struct HbfDec<'a, T, const M: usize, const N: usize> {
     odd: SymFir<'a, T, M, N>,
 }
 
-impl<'a, T: Zero + Copy + Add + Mul<Output = T> + Sum, const M: usize, const N: usize>
-    HbfDec<'a, T, M, N>
+impl<
+    'a,
+    T: Copy + Default + Add<Output = T> + Mul<Output = T> + Sum,
+    const M: usize,
+    const N: usize,
+> HbfDec<'a, T, M, N>
 {
     /// Create a new `HbfDec`.
     ///
@@ -153,7 +159,7 @@ impl<'a, T: Zero + Copy + Add + Mul<Output = T> + Sum, const M: usize, const N: 
     ///   from oldest to one-before-center. Normalized such that center tap is 1.
     pub fn new(taps: &'a [T; M]) -> Self {
         Self {
-            even: [T::zero(); N],
+            even: [T::default(); N],
             odd: SymFir::new(taps),
         }
     }
@@ -185,8 +191,11 @@ macro_rules! impl_half_i {
 }
 impl_half_i!(i8 i16 i32 i64 i128);
 
-impl<T: Copy + Zero + Add + Mul<Output = T> + Sum + Half, const M: usize, const N: usize> Filter
-    for HbfDec<'_, T, M, N>
+impl<
+    T: Copy + Default + Add<Output = T> + Mul<Output = T> + Sum + Half,
+    const M: usize,
+    const N: usize,
+> Filter for HbfDec<'_, T, M, N>
 {
     type Item = T;
 
@@ -242,8 +251,12 @@ pub struct HbfInt<'a, T, const M: usize, const N: usize> {
     fir: SymFir<'a, T, M, N>,
 }
 
-impl<'a, T: Copy + Zero + Add + Mul<Output = T> + Sum, const M: usize, const N: usize>
-    HbfInt<'a, T, M, N>
+impl<
+    'a,
+    T: Copy + Default + Add<Output = T> + Mul<Output = T> + Sum,
+    const M: usize,
+    const N: usize,
+> HbfInt<'a, T, M, N>
 {
     /// Non-zero (odd) taps from oldest to one-before-center.
     /// Normalized such that center tap is 1.
@@ -259,8 +272,8 @@ impl<'a, T: Copy + Zero + Add + Mul<Output = T> + Sum, const M: usize, const N: 
     }
 }
 
-impl<T: Copy + Zero + Add + Mul<Output = T> + Sum, const M: usize, const N: usize> Filter
-    for HbfInt<'_, T, M, N>
+impl<T: Copy + Default + Add<Output = T> + Mul<Output = T> + Sum, const M: usize, const N: usize>
+    Filter for HbfInt<'_, T, M, N>
 {
     type Item = T;
 
