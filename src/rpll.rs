@@ -1,3 +1,5 @@
+use dsp_process::SplitProcess;
+
 /// Reciprocal PLL.
 ///
 /// Consumes noisy, quantized timestamps of a reference signal and reconstructs
@@ -7,28 +9,23 @@
 /// `u32::MAX` corresponding to both being equal.
 #[derive(Copy, Clone, Default)]
 pub struct RPLL {
-    dt2: u32, // 1 << dt2 is the counter rate to update() rate ratio
-    x: i32,   // previous timestamp
-    ff: u32,  // current frequency estimate from frequency loop
-    f: u32,   // current frequency estimate from both frequency and phase loop
-    y: i32,   // current phase estimate
+    x: i32,  // previous timestamp
+    ff: u32, // current frequency estimate from frequency loop
+    f: u32,  // current frequency estimate from both frequency and phase loop
+    y: i32,  // current phase estimate
 }
 
-impl RPLL {
-    /// Create a new RPLL instance.
-    ///
-    /// Args:
-    /// * dt2: inverse update() rate. 1 << dt2 is the counter rate to update() rate ratio.
-    ///
-    /// Returns:
-    /// Initialized RPLL instance.
-    pub fn new(dt2: u32) -> Self {
-        Self {
-            dt2,
-            ..Default::default()
-        }
-    }
+/// RPLL configuration
+pub struct RPLLConfig {
+    /// 1 << dt2 is the counter rate to update() rate ratio
+    pub dt2: u8,
+    /// Frequency gain
+    pub shift_frequency: u8,
+    /// Phase gain
+    pub shift_phase: u8,
+}
 
+impl SplitProcess<Option<i32>, (i32, u32), RPLL> for RPLLConfig {
     /// Advance the RPLL and optionally supply a new timestamp.
     ///
     /// Args:
@@ -43,42 +40,39 @@ impl RPLL {
     /// Returns:
     /// A tuple containing the current phase (wrapping at the i32 boundary, pi) and
     /// frequency.
-    pub fn update(
-        &mut self,
-        input: Option<i32>,
-        shift_frequency: u32,
-        shift_phase: u32,
-    ) -> (i32, u32) {
-        debug_assert!(shift_frequency >= self.dt2);
-        debug_assert!(shift_phase >= self.dt2);
+    fn process(&self, state: &mut RPLL, x: Option<i32>) -> (i32, u32) {
+        debug_assert!(self.shift_frequency >= self.dt2);
+        debug_assert!(self.shift_phase >= self.dt2);
         // Advance phase
-        self.y = self.y.wrapping_add(self.f as i32);
-        if let Some(x) = input {
+        state.y = state.y.wrapping_add(state.f as i32);
+        if let Some(x) = x {
             // Reference period in counter cycles
-            let dx = x.wrapping_sub(self.x);
+            let dx = x.wrapping_sub(state.x);
             // Store timestamp for next time.
-            self.x = x;
+            state.x = x;
             // Phase using the current frequency estimate
-            let p_sig_64 = self.ff as u64 * dx as u64;
+            let p_sig_64 = state.ff as u64 * dx as u64;
             // Add half-up rounding bias and apply gain/attenuation
-            let p_sig =
-                ((p_sig_64 + (1u32 << (shift_frequency - 1)) as u64) >> shift_frequency) as u32;
+            let p_sig = ((p_sig_64 + (1u32 << (self.shift_frequency - 1)) as u64)
+                >> self.shift_frequency) as u32;
             // Reference phase (1 << dt2 full turns) with gain/attenuation applied
-            let p_ref = 1u32 << (32 + self.dt2 - shift_frequency);
+            let p_ref = 1u32 << (32 + self.dt2 - self.shift_frequency);
             // Update frequency lock
-            self.ff = self.ff.wrapping_add(p_ref.wrapping_sub(p_sig));
+            state.ff = state.ff.wrapping_add(p_ref.wrapping_sub(p_sig));
             // Time in counter cycles between timestamp and "now"
             let dt = (x.wrapping_neg() & ((1 << self.dt2) - 1)) as u32;
             // Reference phase estimate "now"
-            let y_ref = (self.f >> self.dt2).wrapping_mul(dt) as i32;
+            let y_ref = (state.f >> self.dt2).wrapping_mul(dt) as i32;
             // Phase error with gain
-            let dy = y_ref.wrapping_sub(self.y) >> (shift_phase - self.dt2);
+            let dy = y_ref.wrapping_sub(state.y) >> (self.shift_phase - self.dt2);
             // Current frequency estimate from frequency lock and phase error
-            self.f = self.ff.wrapping_add(dy as u32);
+            state.f = state.ff.wrapping_add(dy as u32);
         }
-        (self.y, self.f)
+        (state.y, state.f)
     }
+}
 
+impl RPLL {
     /// Return the current phase estimate
     pub fn phase(&self) -> i32 {
         self.y
@@ -92,19 +86,19 @@ impl RPLL {
 
 #[cfg(test)]
 mod test {
-    use super::RPLL;
+    use super::{RPLL, RPLLConfig};
+    use dsp_process::SplitProcess;
     use rand::{prelude::*, rngs::StdRng};
     use std::vec::Vec;
 
     #[test]
     fn make() {
-        let _ = RPLL::new(8);
+        let _ = RPLL::default();
     }
 
     struct Harness {
         rpll: RPLL,
-        shift_frequency: u32,
-        shift_phase: u32,
+        rpll_config: RPLLConfig,
         noise: i32,
         period: i32,
         next: i32,
@@ -116,9 +110,12 @@ mod test {
     impl Harness {
         fn default() -> Self {
             Self {
-                rpll: RPLL::new(8),
-                shift_frequency: 9,
-                shift_phase: 8,
+                rpll: RPLL::default(),
+                rpll_config: RPLLConfig {
+                    dt2: 8,
+                    shift_frequency: 9,
+                    shift_phase: 8,
+                },
                 noise: 0,
                 period: 333,
                 next: 111,
@@ -129,15 +126,15 @@ mod test {
         }
 
         fn run(&mut self, n: usize) -> (Vec<f32>, Vec<f32>) {
-            assert!(self.period >= 1 << self.rpll.dt2);
-            assert!(self.period < 1 << self.shift_frequency);
-            assert!(self.period < 1 << self.shift_phase + 1);
+            assert!(self.period >= 1 << self.rpll_config.dt2);
+            assert!(self.period < 1 << self.rpll_config.shift_frequency);
+            assert!(self.period < 1 << self.rpll_config.shift_phase + 1);
 
             let mut y = Vec::<f32>::new();
             let mut f = Vec::<f32>::new();
             for _ in 0..n {
                 let timestamp = if self.time - self.next_noisy >= 0 {
-                    assert!(self.time - self.next_noisy < 1 << self.rpll.dt2);
+                    assert!(self.time - self.next_noisy < 1 << self.rpll_config.dt2);
                     self.next = self.next.wrapping_add(self.period);
                     let timestamp = self.next_noisy;
                     let p_noise = self.rng.random_range(-self.noise..=self.noise);
@@ -146,31 +143,30 @@ mod test {
                 } else {
                     None
                 };
-                let (yi, fi) = self
-                    .rpll
-                    .update(timestamp, self.shift_frequency, self.shift_phase);
+                let (yi, fi) = self.rpll_config.process(&mut self.rpll, timestamp);
 
                 let y_ref = (self.time.wrapping_sub(self.next) as i64 * (1i64 << 32)
                     / self.period as i64) as i32;
                 // phase error
                 y.push(yi.wrapping_sub(y_ref) as f32 / 2f32.powi(32));
 
-                let p_ref = 1 << 32 + self.rpll.dt2;
+                let p_ref = 1 << 32 + self.rpll_config.dt2;
                 let p_sig = fi as u64 * self.period as u64;
                 // relative frequency error
                 f.push(
-                    p_sig.wrapping_sub(p_ref) as i64 as f32 / 2f32.powi(32 + self.rpll.dt2 as i32),
+                    p_sig.wrapping_sub(p_ref) as i64 as f32
+                        / 2f32.powi(32 + self.rpll_config.dt2 as i32),
                 );
 
                 // advance time
-                self.time = self.time.wrapping_add(1 << self.rpll.dt2);
+                self.time = self.time.wrapping_add(1 << self.rpll_config.dt2);
             }
             (y, f)
         }
 
         fn measure(&mut self, n: usize, limits: [f32; 4]) {
-            let t_settle = (1 << self.shift_frequency - self.rpll.dt2 + 4)
-                + (1 << self.shift_phase - self.rpll.dt2 + 4);
+            let t_settle = (1 << self.rpll_config.shift_frequency - self.rpll_config.dt2 + 4)
+                + (1 << self.rpll_config.shift_phase - self.rpll_config.dt2 + 4);
             self.run(t_settle);
 
             let (y, f) = self.run(n);
@@ -212,8 +208,8 @@ mod test {
     fn noisy() {
         let mut h = Harness::default();
         h.noise = 10;
-        h.shift_frequency = 23;
-        h.shift_phase = 22;
+        h.rpll_config.shift_frequency = 23;
+        h.rpll_config.shift_phase = 22;
 
         h.measure(1 << 16, [3e-9, 3e-6, 5e-4, 2e-4]);
     }
@@ -225,8 +221,8 @@ mod test {
         h.next = 351;
         h.next_noisy = h.next;
         h.noise = 5;
-        h.shift_frequency = 23;
-        h.shift_phase = 22;
+        h.rpll_config.shift_frequency = 23;
+        h.rpll_config.shift_phase = 22;
 
         h.measure(1 << 16, [2e-9, 2e-6, 1e-3, 1e-4]);
     }
@@ -238,8 +234,8 @@ mod test {
         h.next = 35281;
         h.next_noisy = h.next;
         h.noise = 1000;
-        h.shift_frequency = 23;
-        h.shift_phase = 22;
+        h.rpll_config.shift_frequency = 23;
+        h.rpll_config.shift_phase = 22;
 
         h.measure(1 << 16, [2e-5, 6e-4, 2e-4, 2e-4]);
     }
@@ -251,8 +247,8 @@ mod test {
         h.next = 351;
         h.next_noisy = h.next;
         h.noise = 5;
-        h.shift_frequency = 10;
-        h.shift_phase = 9;
+        h.rpll_config.shift_frequency = 10;
+        h.rpll_config.shift_phase = 9;
 
         h.measure(1 << 16, [2e-6, 3e-2, 2e-5, 2e-2]);
     }
@@ -264,8 +260,8 @@ mod test {
         h.next = 35281;
         h.next_noisy = h.next;
         h.noise = 1000;
-        h.shift_frequency = 21;
-        h.shift_phase = 20;
+        h.rpll_config.shift_frequency = 21;
+        h.rpll_config.shift_phase = 20;
 
         h.measure(1 << 16, [2e-4, 6e-3, 2e-4, 2e-3]);
     }
@@ -273,13 +269,13 @@ mod test {
     #[test]
     fn batch_fast_narrow() {
         let mut h = Harness::default();
-        h.rpll.dt2 = 8 + 3;
+        h.rpll_config.dt2 = 8 + 3;
         h.period = 2431;
         h.next = 35281;
         h.next_noisy = h.next;
         h.noise = 100;
-        h.shift_frequency = 23;
-        h.shift_phase = 23;
+        h.rpll_config.shift_frequency = 23;
+        h.rpll_config.shift_phase = 23;
 
         h.measure(1 << 16, [1e-8, 2e-5, 6e-4, 6e-4]);
     }
