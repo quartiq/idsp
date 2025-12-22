@@ -73,16 +73,11 @@ impl<C, const M: usize> SymFir<[C; M]> {
 
 // TODO: pub struct SymFirInt<R>, SymFirDec<R>
 
-/// Half band decimator (decimate by two)
-///
-/// The effective number of DSP taps is 4*M - 1.
-///
-/// N: state size: N = 2*M - 1 + output.len()
+/// Half band decimator (decimate by two) state
 #[derive(Clone, Debug, Copy)]
 pub struct HbfDec<T> {
-    even: T, // upper bound to R = N - M
-    odd: T,  // N >= 2*M
-             // odd: SymFir<'a, T, M>,
+    even: T, // at least N - M len
+    odd: T,  // N > SymFir::len()
 }
 
 impl<T: Copy + Default, const N: usize> Default for HbfDec<[T; N]> {
@@ -94,35 +89,9 @@ impl<T: Copy + Default, const N: usize> Default for HbfDec<[T; N]> {
     }
 }
 
-trait Half {
-    fn half(self) -> Self;
-}
-
-macro_rules! impl_half_f {
-    ($($t:ty)+) => {$(
-        impl Half for $t {
-            fn half(self) -> Self {
-                0.5 * self
-            }
-        }
-    )+}
-}
-impl_half_f!(f32 f64);
-
-macro_rules! impl_half_i {
-    ($($t:ty)+) => {$(
-        impl Half for $t {
-            fn half(self) -> Self {
-                self >> 1
-            }
-        }
-    )+}
-}
-impl_half_i!(i8 i16 i32 i64 i128);
-
 impl<
     C: Copy + Mul<T, Output = T>,
-    T: Copy + Default + Add<Output = T> + Sum + Half,
+    T: Copy + Default + Add<Output = T> + Sum,
     const M: usize,
     const N: usize,
 > SplitProcess<[T; 2], T, HbfDec<[T; N]>> for SymFir<[C; M]>
@@ -143,7 +112,7 @@ impl<
                 .iter_mut()
                 .zip(state.even.iter().copied().zip(self.get(&state.odd)))
             {
-                *yi = (even + odd).half();
+                *yi = even + odd;
             }
             // keep state
             state.even.copy_within(x.len()..x.len() + M - 1, 0);
@@ -158,15 +127,10 @@ impl<
     }
 }
 
-/// Half band interpolator (interpolation rate 2)
-///
-/// The effective number of DSP taps is 4*M - 1.
-///
-/// M: number of taps
-/// N: state size: N = 2*M - 1 + input.len()
+/// Half band interpolator (interpolation rate 2) state
 #[derive(Clone, Debug, Copy)]
 pub struct HbfInt<T> {
-    x: T,
+    x: T, // len N > SymFir::len()
 }
 
 impl<T: Default + Copy, const N: usize> Default for HbfInt<[T; N]> {
@@ -188,7 +152,7 @@ impl<
         debug_assert_eq!(x.len(), y.len());
         for (x, y) in x.chunks(N - Self::len()).zip(y.chunks_mut(N - Self::len())) {
             // load input
-            state.x[Self::len()..][..x.len()].copy_from_slice(x);
+            state.x[Self::len()..Self::len() + x.len()].copy_from_slice(x);
             // compute output
             for (yi, (even, odd)) in y
                 .iter_mut()
@@ -544,7 +508,7 @@ mod test {
         let x = [1.0; 8];
         let mut y = [0.0; 4];
         h.as_mut().block(x.as_chunks().0, &mut y);
-        assert_eq!(y, [0.75, 1.0, 1.0, 1.0]);
+        assert_eq!(y, [1.5, 2.0, 2.0, 2.0]);
 
         let mut h = Split::new(&HBF_TAPS.3, HbfDec::<[_; 11]>::default());
         let x: Vec<_> = (0..8).map(|i| i as f32).collect();
@@ -597,7 +561,7 @@ mod test {
             })
             .collect();
         // pad
-        y.resize(5 << 10, Complex::default());
+        y.resize(5 << 10, Default::default());
         FftPlanner::new().plan_fft_forward(y.len()).process(&mut y);
         // transfer function
         let p: Vec<_> = y.iter().map(|y| 10.0 * y.norm_sqr().log10()).collect();
@@ -639,7 +603,7 @@ mod test {
         const M: usize = 1 << 10;
         let mut h = HbfDec::<[_; 2 * N - 1 + M]>::default();
         let x = [9.0; M];
-        let mut y = vec![0.0; M / 2];
+        let mut y = [0.0; M / 2];
         for _ in 0..1 << 20 {
             HBF_TAPS.0.block(&mut h, x.as_chunks().0, &mut y);
         }
@@ -653,7 +617,7 @@ mod test {
         let mut h = HbfDecCascade::default();
         const R: usize = 1 << 4;
         let x = [9.0; R << 6];
-        let mut y = [0.0; R];
+        let mut y = [0.0; 1 << 6];
         for _ in 0..1 << 20 {
             HBF_TAPS.block(&mut h, x.as_chunks::<R>().0, &mut y);
         }
