@@ -59,8 +59,8 @@ log = "0.4"
 std = []
 py = ["dep:pyo3", "dep:numpy", "std"]
 
-[profile.release]
-debug = 1
+#[profile.release]
+#opt-level = 3
 
 [profile.dev]
 debug = "line-tables-only"

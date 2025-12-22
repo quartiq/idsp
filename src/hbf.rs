@@ -14,7 +14,6 @@ use dsp_process::SplitProcess;
 ///
 /// # Generics
 /// * `M`: number of taps, one-sided. The filter has effectively 2*M DSP taps
-/// * `N`: state size: N = 2*M - 1 + {input/output}.len()
 ///
 /// # Half band decimation/interpolation filters
 ///
@@ -99,6 +98,8 @@ impl<
     fn block(&self, state: &mut HbfDec<[T; N]>, x: &[[T; 2]], y: &mut [T]) {
         debug_assert_eq!(x.len(), y.len());
         for (x, y) in x.chunks(N - Self::len()).zip(y.chunks_mut(N - Self::len())) {
+            // assert_eq!(x.len(), state.odd.len() - Self::len()); // the assert makes it 20 % faster...
+
             // load input
             for (xi, (even, odd)) in x.iter().zip(
                 state.even[M - 1..]
@@ -304,6 +305,7 @@ pub const HBF_CASCADE_BLOCK: usize = 1 << 6;
 /// Only in-place processing is implemented.
 /// Supports rate changes of 1, 2, 4, 8, and 16.
 #[derive(Copy, Clone, Debug)]
+#[allow(clippy::type_complexity)]
 pub struct HbfDecCascade {
     buf: (
         [f32; HBF_CASCADE_BLOCK * 2],
@@ -339,26 +341,26 @@ impl<const R: usize> SplitProcess<[f32; R], f32, HbfDecCascade> for HbfTaps {
             .chunks(HBF_CASCADE_BLOCK)
             .zip(y.chunks_mut(HBF_CASCADE_BLOCK))
         {
-            let mut x = x.as_flattened();
+            let mut x = x.as_flattened().as_chunks().0;
             if R > 1 << 3 {
-                let u = &mut state.buf.2[..x.len() / 2];
-                self.3.block(&mut state.stages.3, x.as_chunks().0, u);
-                x = u;
+                let u = &mut state.buf.2[..x.len()];
+                self.3.block(&mut state.stages.3, x, u);
+                x = u.as_chunks().0;
             }
             if R > 1 << 2 {
-                let u = &mut state.buf.1[..x.len() / 2];
-                self.2.block(&mut state.stages.2, x.as_chunks().0, u);
-                x = u;
+                let u = &mut state.buf.1[..x.len()];
+                self.2.block(&mut state.stages.2, x, u);
+                x = u.as_chunks().0;
             }
             if R > 1 << 1 {
-                let u = &mut state.buf.0[..x.len() / 2];
-                self.1.block(&mut state.stages.1, x.as_chunks().0, u);
-                x = u;
+                let u = &mut state.buf.0[..x.len()];
+                self.1.block(&mut state.stages.1, x, u);
+                x = u.as_chunks().0;
             }
             if R > 1 << 0 {
-                self.0.block(&mut state.stages.0, x.as_chunks().0, y);
+                self.0.block(&mut state.stages.0, x, y);
             } else {
-                y.copy_from_slice(x);
+                y.copy_from_slice(x.as_flattened());
             }
         }
     }
@@ -400,6 +402,7 @@ impl HbfDecCascade {
 /// Only in-place processing is implemented.
 /// Supports rate changes of 1, 2, 4, 8, and 16.
 #[derive(Copy, Clone, Debug)]
+#[allow(clippy::type_complexity)]
 pub struct HbfIntCascade {
     buf: (
         [[f32; 2]; HBF_CASCADE_BLOCK],
@@ -439,30 +442,29 @@ impl<const R: usize> SplitProcess<f32, [f32; R], HbfIntCascade> for HbfTaps {
             let mut u;
             if R == 1 << 0 {
                 y.as_flattened_mut().copy_from_slice(x);
-            }
-            if R == 1 << 1 {
+            } else if R == 1 << 1 {
                 self.0.block(&mut state.stages.0, x, y);
-            } else if R > 1 << 1 {
+            } else {
                 u = &mut state.buf.0[..x.len()];
                 self.0.block(&mut state.stages.0, x, u);
                 x = u.as_flattened();
-            }
-            if R == 1 << 2 {
-                self.1.block(&mut state.stages.1, x, y);
-            } else if R > 1 << 2 {
-                u = &mut state.buf.1[..x.len()];
-                self.1.block(&mut state.stages.1, x, u);
-                x = u.as_flattened();
-            }
-            if R == 1 << 3 {
-                self.2.block(&mut state.stages.2, x, y);
-            } else if R > 1 << 3 {
-                u = &mut state.buf.2[..x.len()];
-                self.2.block(&mut state.stages.2, x, u);
-                x = u.as_flattened();
-            }
-            if R == 1 << 4 {
-                self.3.block(&mut state.stages.3, x, y);
+                if R == 1 << 2 {
+                    self.1.block(&mut state.stages.1, x, y);
+                } else {
+                    u = &mut state.buf.1[..x.len()];
+                    self.1.block(&mut state.stages.1, x, u);
+                    x = u.as_flattened();
+                    if R == 1 << 3 {
+                        self.2.block(&mut state.stages.2, x, y);
+                    } else {
+                        u = &mut state.buf.2[..x.len()];
+                        self.2.block(&mut state.stages.2, x, u);
+                        x = u.as_flattened();
+                        if R == 1 << 4 {
+                            self.3.block(&mut state.stages.3, x, y);
+                        }
+                    }
+                }
             }
         }
     }
@@ -586,10 +588,11 @@ mod test {
         const N: usize = HBF_TAPS.4.0.len();
         assert_eq!(N, 3);
         let mut h = HbfDec::<[_; 2 * N - 1 + (1 << 4)]>::default();
-        let x = [9.0; 1 << 5];
+        let mut x = [9.0; 1 << 5];
         let mut y = [0.0; 1 << 4];
         for _ in 0..1 << 25 {
             HBF_TAPS.4.block(&mut h, x.as_chunks().0, &mut y);
+            x[0] = y[0]; // prevent the entire loop from being optimized away
         }
     }
 
@@ -602,10 +605,11 @@ mod test {
         assert_eq!(N, 23);
         const M: usize = 1 << 10;
         let mut h = HbfDec::<[_; 2 * N - 1 + M]>::default();
-        let x = [9.0; M];
+        let mut x = [9.0; M];
         let mut y = [0.0; M / 2];
         for _ in 0..1 << 20 {
             HBF_TAPS.0.block(&mut h, x.as_chunks().0, &mut y);
+            x[0] = y[0]; // prevent the entire loop from being optimized away
         }
     }
 
@@ -616,10 +620,11 @@ mod test {
     fn insn_casc() {
         let mut h = HbfDecCascade::default();
         const R: usize = 1 << 4;
-        let x = [9.0; R << 6];
+        let mut x = [9.0; R << 6];
         let mut y = [0.0; 1 << 6];
         for _ in 0..1 << 20 {
             HBF_TAPS.block(&mut h, x.as_chunks::<R>().0, &mut y);
+            x[0] = y[0]; // prevent the entire loop from being optimized away
         }
     }
 
