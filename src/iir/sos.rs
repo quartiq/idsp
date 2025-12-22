@@ -267,8 +267,8 @@ impl<const F: i8> From<[i32; 5]> for SosClamp<F> {
     }
 }
 
-//#[cfg(test)]
-pub mod test {
+#[cfg(test)]
+mod test {
     #![allow(dead_code)]
     use super::*;
     use dsp_process::SplitInplace;
@@ -284,5 +284,25 @@ pub mod test {
 
     pub fn pnm(config: &[Sos<29>; 4], state: &mut [SosState; 4], xy0: &mut [i32; 8]) {
         config.inplace(state, xy0);
+    }
+
+    #[test]
+    #[ignore]
+    fn sos_insn() {
+        let cfg = [
+            [[1., 3., 5.], [7., 9., 17.]],
+            [[3., 3., 5.], [7., 9., 11.]],
+            [[77., 3., 5.], [5., 9., 17.]],
+            [[1., 8., 5.], [7., 9., 17.]],
+        ]
+        .map(|c| Sos::from(&c));
+        let mut state = Default::default();
+        let mut x = [977371917; 1 << 6];
+        for _ in 0..1 << 20 {
+            for x in x.as_chunks_mut().0 {
+                pnm(&cfg, &mut state, x);
+            }
+            x[9] = x[63];
+        }
     }
 }
