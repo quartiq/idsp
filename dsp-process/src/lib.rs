@@ -11,10 +11,16 @@ mod split;
 pub use split::*;
 
 /// Binary const assertions
-pub(crate) struct Assert<const A: usize, const B: usize>;
+pub struct Assert<const A: usize, const B: usize>;
 impl<const A: usize, const B: usize> Assert<A, B> {
-    /// Assert A>B
+    /// Assert A > B
     pub const GREATER: () = assert!(A > B);
+    /// Assert A >= B
+    pub const GREATER_EQUAL: () = assert!(A >= B);
+    /// Assert A == B
+    pub const EQUAL: () = assert!(A == B);
+    /// Assert A != B
+    pub const NOT_EQUAL: () = assert!(A != B);
 }
 
 /// Processor-minor, data-major
