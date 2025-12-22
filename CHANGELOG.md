@@ -7,20 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED](https://github.com/quartiq/idsp/compare/v0.19.0..HEAD) - DATE
 
-### Added
-
-* `iir`: `Sos` family or reworked biquad/sos implementations
-* `iir`: `Process` trait
-* `iir`: `Normal` form implementation
-* `Clamp`: signle wrap phase monotonizer
-* `iir`: `Wdf` Wave digital filter, two port adapter and tooling
-* Python package
-* `dsp-process`: new design and extracted as independent crate
-* `dsp-fixedpoint`: new design and extracted as independent crate
-
 ### Changed
 
 * All filters: ported to `dsp-process`.
+
+### Added
+
+* `dsp-process`: new design and extracted as independent crate
+* `dsp-fixedpoint`: new design and extracted as independent crate
+* `iir`: `Sos` family or reworked biquad/sos implementations
+* `iir`: `Normal` form implementation
+* `Clamp`: signle wrap phase monotonizer
+* `iir`: `Wdf` Wave digital filter, two port adapter and tooling
+* `idsp`: Python package for testing and evaluation
 
 ## [0.19.0](https://github.com/quartiq/idsp/compare/v0.18.0..v0.19.0) - 2025-10-22
 
