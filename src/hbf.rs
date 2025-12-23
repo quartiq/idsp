@@ -98,22 +98,23 @@ impl<
     fn block(&self, state: &mut HbfDec<[T; N]>, x: &[[T; 2]], y: &mut [T]) {
         debug_assert_eq!(x.len(), y.len());
         for (x, y) in x.chunks(N - Self::len()).zip(y.chunks_mut(N - Self::len())) {
-            // assert_eq!(x.len(), state.odd.len() - Self::len()); // the assert makes it 20 % faster...
+            // assert_eq!(x.len(), N - Self::len()); // makes it 20 % faster...
 
             // load input
-            for (xi, (even, odd)) in x.iter().zip(
+            for (x, (even, odd)) in x.iter().zip(
                 state.even[M - 1..]
                     .iter_mut()
                     .zip(state.odd[Self::len()..].iter_mut()),
             ) {
-                [*even, *odd] = *xi;
+                *even = x[0];
+                *odd = x[1];
             }
             // compute output
-            for (yi, (even, odd)) in y
+            for (y, (even, odd)) in y
                 .iter_mut()
                 .zip(state.even.iter().copied().zip(self.get(&state.odd)))
             {
-                *yi = even + odd;
+                *y = even + odd;
             }
             // keep state
             state.even.copy_within(x.len()..x.len() + M - 1, 0);
@@ -155,14 +156,14 @@ impl<
             // load input
             state.x[Self::len()..Self::len() + x.len()].copy_from_slice(x);
             // compute output
-            for (yi, (even, odd)) in y
+            for (y, (even, odd)) in y
                 .iter_mut()
                 .zip(self.get(&state.x).zip(state.x[M..].iter().copied()))
             {
                 // Choose the even item to be the interpolated one.
                 // The alternative would have the same response length
                 // but larger latency.
-                *yi = [even, odd]; // interpolated, center tap: identity
+                *y = [even, odd]; // interpolated, center tap: identity
             }
             // keep state
             state.x.copy_within(x.len()..x.len() + Self::len(), 0);
