@@ -59,7 +59,7 @@ pub fn saturating_scale(lo: i32, hi: i32, shift: u32) -> i32 {
 #[derive(Copy, Clone, Default, Deserialize, Serialize)]
 pub struct Unwrapper<Q> {
     /// current output
-    y: Q,
+    pub y: Q,
 }
 
 impl<Q> Unwrapper<Q>
@@ -85,16 +85,11 @@ where
     {
         self.y.as_()
     }
-
-    /// Current output including wraps
-    pub fn y(&self) -> Q {
-        self.y
-    }
 }
 
 impl<P, Q> Process<P> for Unwrapper<Q>
 where
-    P: WrappingSub + Copy + AsPrimitive<Q>,
+    P: AsPrimitive<Q> + WrappingSub,
     Q: AsPrimitive<P> + WrappingAdd,
 {
     /// Feed a new sample..
@@ -151,11 +146,13 @@ impl core::ops::Add for Wrap {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        match self as i32 + rhs as i32 {
-            ..0 => Self::Negative,
-            0 => Self::None,
-            1.. => Self::Positive,
-        }
+        (self as i32 + rhs as i32).cmp(&0).into()
+    }
+}
+
+impl core::ops::AddAssign for Wrap {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
     }
 }
 
@@ -185,19 +182,11 @@ where
     fn process(&mut self, x: Q) -> Q {
         let (_dx, wrap) = overflowing_sub(x, self.x0);
         self.x0 = x;
-        match self.clamp as i32 + wrap as i32 {
-            ..0 => {
-                self.clamp = Wrap::Negative;
-                Q::min_value()
-            }
-            1.. => {
-                self.clamp = Wrap::Positive;
-                Q::max_value()
-            }
-            0 => {
-                self.clamp = Wrap::None;
-                x
-            }
+        self.clamp += wrap;
+        match self.clamp {
+            Wrap::Negative => Q::min_value(),
+            Wrap::None => Q::zero(),
+            Wrap::Positive => Q::max_value(),
         }
     }
 }
