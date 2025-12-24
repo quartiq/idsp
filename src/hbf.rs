@@ -46,9 +46,7 @@ pub struct SymFir<C>(pub C);
 
 impl<C, const M: usize> SymFir<[C; M]> {
     /// Response length, number of taps
-    pub const fn len() -> usize {
-        2 * M - 1
-    }
+    pub const LEN: usize = 2 * M - 1;
 }
 
 impl<C, const M: usize> SymFir<[C; M]> {
@@ -76,7 +74,7 @@ impl<C, const M: usize> SymFir<[C; M]> {
 #[derive(Clone, Debug, Copy)]
 pub struct HbfDec<T> {
     even: T, // at least N - M len
-    odd: T,  // N > SymFir::len()
+    odd: T,  // N > 2*M - 1 (=SymFir::LEN)
 }
 
 impl<T: Copy + Default, const N: usize> Default for HbfDec<[T; N]> {
@@ -97,14 +95,14 @@ impl<
 {
     fn block(&self, state: &mut HbfDec<[T; N]>, x: &[[T; 2]], y: &mut [T]) {
         debug_assert_eq!(x.len(), y.len());
-        for (x, y) in x.chunks(N - Self::len()).zip(y.chunks_mut(N - Self::len())) {
-            // assert_eq!(x.len(), N - Self::len()); // makes it 20 % faster...
+        for (x, y) in x.chunks(N - Self::LEN).zip(y.chunks_mut(N - Self::LEN)) {
+            // assert_eq!(x.len(), N - Self::LEN); // makes it 20 % faster...
 
             // load input
             for (x, (even, odd)) in x.iter().zip(
                 state.even[M - 1..]
                     .iter_mut()
-                    .zip(state.odd[Self::len()..].iter_mut()),
+                    .zip(state.odd[Self::LEN..].iter_mut()),
             ) {
                 *even = x[0];
                 *odd = x[1];
@@ -118,7 +116,7 @@ impl<
             }
             // keep state
             state.even.copy_within(x.len()..x.len() + M - 1, 0);
-            state.odd.copy_within(x.len()..x.len() + Self::len(), 0);
+            state.odd.copy_within(x.len()..x.len() + Self::LEN, 0);
         }
     }
 
@@ -132,7 +130,7 @@ impl<
 /// Half band interpolator (interpolation rate 2) state
 #[derive(Clone, Debug, Copy)]
 pub struct HbfInt<T> {
-    x: T, // len N > SymFir::len()
+    x: T, // len N > SymFir::LEN
 }
 
 impl<T: Default + Copy, const N: usize> Default for HbfInt<[T; N]> {
@@ -152,9 +150,9 @@ impl<
 {
     fn block(&self, state: &mut HbfInt<[T; N]>, x: &[T], y: &mut [[T; 2]]) {
         debug_assert_eq!(x.len(), y.len());
-        for (x, y) in x.chunks(N - Self::len()).zip(y.chunks_mut(N - Self::len())) {
+        for (x, y) in x.chunks(N - Self::LEN).zip(y.chunks_mut(N - Self::LEN)) {
             // load input
-            state.x[Self::len()..Self::len() + x.len()].copy_from_slice(x);
+            state.x[Self::LEN..][..x.len()].copy_from_slice(x);
             // compute output
             for (y, (even, odd)) in y
                 .iter_mut()
@@ -166,7 +164,7 @@ impl<
                 *y = [even, odd]; // interpolated, center tap: identity
             }
             // keep state
-            state.x.copy_within(x.len()..x.len() + Self::len(), 0);
+            state.x.copy_within(x.len()..x.len() + Self::LEN, 0);
         }
     }
 
@@ -314,10 +312,10 @@ pub struct HbfDecCascade {
         [f32; HBF_CASCADE_BLOCK * 8],
     ),
     stages: (
-        HbfDec<[f32; 2 * HBF_TAPS.0.0.len() - 1 + HBF_CASCADE_BLOCK]>,
-        HbfDec<[f32; 2 * HBF_TAPS.1.0.len() - 1 + HBF_CASCADE_BLOCK * 2]>,
-        HbfDec<[f32; 2 * HBF_TAPS.2.0.len() - 1 + HBF_CASCADE_BLOCK * 4]>,
-        HbfDec<[f32; 2 * HBF_TAPS.3.0.len() - 1 + HBF_CASCADE_BLOCK * 8]>,
+        HbfDec<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
+        HbfDec<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + HBF_CASCADE_BLOCK * 2]>,
+        HbfDec<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + HBF_CASCADE_BLOCK * 4]>,
+        HbfDec<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + HBF_CASCADE_BLOCK * 8]>,
     ),
 }
 
@@ -377,17 +375,21 @@ impl HbfDecCascade {
     /// Response length, effective number of taps
     pub const fn len(rate: usize) -> usize {
         let mut n = 0;
-        if rate > 8 {
-            n = n / 2 + 2 * HBF_TAPS.3.0.len() - 1
+        if rate > 1 >> 3 {
+            n /= 2;
+            n += SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN;
         }
-        if rate > 4 {
-            n = n / 2 + 2 * HBF_TAPS.2.0.len() - 1;
+        if rate > 1 >> 2 {
+            n /= 2;
+            n += SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN;
         }
-        if rate > 2 {
-            n = n / 2 + 2 * HBF_TAPS.1.0.len() - 1;
+        if rate > 1 >> 1 {
+            n /= 2;
+            n += SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN;
         }
-        if rate > 1 {
-            n = n / 2 + 2 * HBF_TAPS.0.0.len() - 1;
+        if rate > 1 >> 0 {
+            n /= 2;
+            n += SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN;
         }
         n
     }
@@ -411,10 +413,10 @@ pub struct HbfIntCascade {
         [[f32; 2]; HBF_CASCADE_BLOCK * 4],
     ),
     stages: (
-        HbfInt<[f32; 2 * HBF_TAPS.0.0.len() - 1 + HBF_CASCADE_BLOCK]>,
-        HbfInt<[f32; 2 * HBF_TAPS.1.0.len() - 1 + HBF_CASCADE_BLOCK * 2]>,
-        HbfInt<[f32; 2 * HBF_TAPS.2.0.len() - 1 + HBF_CASCADE_BLOCK * 4]>,
-        HbfInt<[f32; 2 * HBF_TAPS.3.0.len() - 1 + HBF_CASCADE_BLOCK * 8]>,
+        HbfInt<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
+        HbfInt<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + HBF_CASCADE_BLOCK * 2]>,
+        HbfInt<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + HBF_CASCADE_BLOCK * 4]>,
+        HbfInt<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + HBF_CASCADE_BLOCK * 8]>,
     ),
 }
 
@@ -481,17 +483,21 @@ impl HbfIntCascade {
     /// Response length, effective number of taps
     pub const fn len(rate: usize) -> usize {
         let mut n = 0;
-        if rate > 1 {
-            n = 2 * (n + 2 * HBF_TAPS.0.0.len() - 1);
+        if rate > 1 << 0 {
+            n += SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN;
+            n *= 2;
         }
-        if rate > 2 {
-            n = 2 * (n + 2 * HBF_TAPS.1.0.len() - 1);
+        if rate > 1 << 1 {
+            n += SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN;
+            n *= 2;
         }
-        if rate > 4 {
-            n = 2 * (n + 2 * HBF_TAPS.2.0.len() - 1);
+        if rate > 1 << 2 {
+            n += SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN;
+            n *= 2;
         }
-        if rate > 8 {
-            n = 2 * (n + 2 * HBF_TAPS.3.0.len() - 1);
+        if rate > 1 << 3 {
+            n += SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN;
+            n *= 2;
         }
         n
     }
