@@ -10,7 +10,7 @@ use core::{
 
 use dsp_process::SplitProcess;
 
-/// Symmetric FIR filter prototype.
+/// Symmetric and anti-symmetric FIR filter prototype.
 ///
 /// # Generics
 /// * `M`: number of taps, one-sided. The filter has effectively 2*M DSP taps
@@ -51,18 +51,22 @@ impl<C, const M: usize> SymFir<[C; M]> {
 
 impl<C, const M: usize> SymFir<[C; M]> {
     /// Perform the FIR convolution and yield results iteratively.
+    ///
+    /// # Params
+    /// * `x` - Slice of inputs
+    /// * `f` - Map old (i) an new (M - 1 - i) input to multiplier input
     #[inline]
-    pub fn get<T>(&self, x: &[T]) -> impl Iterator<Item = T>
+    pub fn get<T, U>(&self, x: &[U], mut f: impl FnMut(&U, &U) -> T) -> impl Iterator<Item = T>
     where
         C: Copy + Mul<T, Output = T>,
-        T: Copy + Add<Output = T> + Sum,
+        T: Copy + Add<T, Output = T> + Sum,
     {
-        x.windows(2 * M).map(|x| {
+        x.windows(2 * M).map(move |x| {
             let (old, new) = x.split_at(M);
             old.iter()
                 .zip(new.iter().rev())
                 .zip(self.0.iter())
-                .map(|((xo, xn), tap)| *tap * (*xo + *xn))
+                .map(|((xo, xn), tap)| *tap * f(xo, xn))
                 .sum()
         })
     }
@@ -108,11 +112,11 @@ impl<
                 *odd = x[1];
             }
             // compute output
-            for (y, (even, odd)) in y
-                .iter_mut()
-                .zip(state.even.iter().copied().zip(self.get(&state.odd)))
-            {
-                *y = even + odd;
+            for (y, (odd, even)) in y.iter_mut().zip(
+                self.get(&state.odd, |xo, xn| *xo + *xn)
+                    .zip(state.even.iter().copied()),
+            ) {
+                *y = odd + even;
             }
             // keep state
             state.even.copy_within(x.len()..x.len() + M - 1, 0);
@@ -154,10 +158,10 @@ impl<
             // load input
             state.x[Self::LEN..][..x.len()].copy_from_slice(x);
             // compute output
-            for (y, (even, odd)) in y
-                .iter_mut()
-                .zip(self.get(&state.x).zip(state.x[M..].iter().copied()))
-            {
+            for (y, (even, odd)) in y.iter_mut().zip(
+                self.get(&state.x, |xo, xn| *xo + *xn)
+                    .zip(state.x[M..].iter().copied()),
+            ) {
                 // Choose the even item to be the interpolated one.
                 // The alternative would have the same response length
                 // but larger latency.
