@@ -12,10 +12,10 @@ pub struct Sos<const F: i8> {
     ///
     /// `[b0, b1, b2, a1, a2]`
     /// Such that:
-    /// `y0 = (b0*x0 + b1*x1 + b2*x2 + a1*y1 + a2*y2)/(1 << Q)`
+    /// `y0 = (b0*x0 + b1*x1 + b2*x2 + a1*y1 + a2*y2)/(1 << F)`
     ///
     /// Note the a1, a2 sign:
-    /// `H = (b0 + b1*z^-1 + b2*z^-2)/((1 << Q) - a2*z^-1 - a2*z^-2)`
+    /// `H = (b0 + b1*z^-1 + b2*z^-2)/((1 << F) - a2*z^-1 - a2*z^-2)`
     pub ba: [Q32<F>; 5],
 }
 
@@ -23,14 +23,7 @@ pub struct Sos<const F: i8> {
 #[derive(Clone, Debug)]
 pub struct SosClamp<const F: i8> {
     /// Coefficients
-    ///
-    /// `[b0, b1, b2, a1, a2]`
-    /// Such that:
-    /// `y0 = (b0*x0 + b1*x1 + b2*x2 + a1*y1 + a2*y2)/(1 << Q)`
-    ///
-    /// Note the a1, a2 sign:
-    /// `H = (b0 + b1*z^-1 + b2*z^-2)/((1 << Q) - a2*z^-1 - a2*z^-2)`
-    pub ba: [Q32<F>; 5],
+    pub coeff: Sos<F>,
     /// Summing junction offset
     pub u: i32,
     /// Summing junction min clamp
@@ -42,7 +35,7 @@ pub struct SosClamp<const F: i8> {
 impl<const F: i8> Default for SosClamp<F> {
     fn default() -> Self {
         Self {
-            ba: Default::default(),
+            coeff: Default::default(),
             u: 0,
             min: i32::MIN,
             max: i32::MAX,
@@ -53,7 +46,7 @@ impl<const F: i8> Default for SosClamp<F> {
 impl<const F: i8> SosClamp<F> {
     /// Forward gain
     pub fn k(&self) -> Q32<F> {
-        self.ba[..3].iter().copied().sum()
+        self.coeff.ba[..3].iter().copied().sum()
     }
 
     /// Summing junction offset referred to input
@@ -119,7 +112,7 @@ impl<const F: i8> SplitProcess<i32, i32, SosState> for Sos<F> {
 impl<const F: i8> SplitProcess<i32, i32, SosState> for SosClamp<F> {
     fn process(&self, state: &mut SosState, x0: i32) -> i32 {
         let xy = &mut state.xy;
-        let ba = &self.ba;
+        let ba = &self.coeff.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0].inner as i64;
         acc += xy[0] as i64 * ba[1].inner as i64;
@@ -156,7 +149,7 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for SosClamp<F> {
     fn process(&self, state: &mut SosStateWide, x0: i32) -> i32 {
         let x = &mut state.x;
         let y = &mut state.y;
-        let ba = &self.ba;
+        let ba = &self.coeff.ba;
         let mut acc = 0;
         acc += x0 as i64 * ba[0].inner as i64;
         acc += x[0] as i64 * ba[1].inner as i64;
@@ -196,7 +189,7 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for SosClamp<F> {
     fn process(&self, state: &mut SosStateDither, x0: i32) -> i32 {
         let xy = &mut state.xy;
         let e = &mut state.e;
-        let ba = &self.ba;
+        let ba = &self.coeff.ba;
         let mut acc = *e as i64;
         acc += x0 as i64 * ba[0].inner as i64;
         acc += xy[0] as i64 * ba[1].inner as i64;
@@ -240,7 +233,7 @@ impl<const F: i8> From<&[[f64; 3]; 2]> for Sos<F> {
 impl<const F: i8> From<&[[f64; 3]; 2]> for SosClamp<F> {
     fn from(ba: &[[f64; 3]; 2]) -> Self {
         Self {
-            ba: quantize::<F>(ba),
+            coeff: ba.into(),
             ..Default::default()
         }
     }
@@ -257,11 +250,9 @@ impl<const F: i8> From<[i32; 5]> for Sos<F> {
 }
 
 impl<const F: i8> From<[i32; 5]> for SosClamp<F> {
-    fn from(mut ba: [i32; 5]) -> Self {
-        ba[3] *= -1;
-        ba[4] *= -1;
+    fn from(ba: [i32; 5]) -> Self {
         Self {
-            ba: ba.map(Q32::new),
+            coeff: ba.into(),
             ..Default::default()
         }
     }
