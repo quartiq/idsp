@@ -59,12 +59,13 @@ impl<C, const M: usize> SymFir<[C; M]> {
     pub fn get<T, U>(&self, x: &[U], mut f: impl FnMut(&U, &U) -> T) -> impl Iterator<Item = T>
     where
         C: Copy + Mul<T, Output = T>,
-        T: Copy + Add<T, Output = T> + Sum,
+        T: Copy + Sum,
     {
+        // https://doc.rust-lang.org/std/primitive.slice.html#method.array_windows
         x.windows(2 * M).map(move |x| {
-            let (old, new) = x.split_at(M);
-            old.iter()
-                .zip(new.iter().rev())
+            let x = x.as_chunks::<M>().0;
+            x[0].iter()
+                .zip(x[1].iter().rev())
                 .zip(self.0.iter())
                 .map(|((xo, xn), tap)| *tap * f(xo, xn))
                 .sum()
@@ -100,7 +101,7 @@ impl<
     fn block(&self, state: &mut HbfDec<[T; N]>, x: &[[T; 2]], y: &mut [T]) {
         debug_assert_eq!(x.len(), y.len());
         for (x, y) in x.chunks(N - Self::LEN).zip(y.chunks_mut(N - Self::LEN)) {
-            // assert_eq!(x.len(), N - Self::LEN); // makes it 20 % faster...
+            // assert_eq!(x.len(), N - Self::LEN); // makes it 20 % faster if true...
 
             // load input
             for (x, (even, odd)) in x.iter().zip(
@@ -162,9 +163,6 @@ impl<
                 self.get(&state.x, |xo, xn| *xo + *xn)
                     .zip(state.x[M..].iter().copied()),
             ) {
-                // Choose the even item to be the interpolated one.
-                // The alternative would have the same response length
-                // but larger latency.
                 *y = [even, odd]; // interpolated, center tap: identity
             }
             // keep state
@@ -391,7 +389,7 @@ impl HbfDecCascade {
             n /= 2;
             n += SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN;
         }
-        if rate > 1 >> 0 {
+        if rate > 1 {
             n /= 2;
             n += SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN;
         }
