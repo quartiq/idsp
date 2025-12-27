@@ -123,11 +123,11 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
     strum::IntoStaticStr,
 )]
 #[strum_discriminants(derive(serde::Serialize, serde::Deserialize), allow(missing_docs))]
-#[tree(meta(doc = "Representation of Biquad", typename))]
+#[tree(meta(doc = "Representation of a biquad", typename))]
 pub enum BiquadRepr<T, C>
 where
     C: Coefficient,
-    T: Float + FloatConst,
+    T: Float + FloatConst + Default,
 {
     /// Normalized SI unit coefficients
     Ba(Ba<T>),
@@ -145,7 +145,7 @@ where
 impl<T, C> Default for BiquadRepr<T, C>
 where
     C: Coefficient,
-    T: Float + FloatConst,
+    T: Float + FloatConst + Default,
 {
     fn default() -> Self {
         Self::Ba(Default::default())
@@ -155,7 +155,7 @@ where
 impl<T, C> BiquadRepr<T, C>
 where
     C: Coefficient + AsPrimitive<C> + AsPrimitive<T>,
-    T: AsPrimitive<C> + Float + FloatConst,
+    T: AsPrimitive<C> + Float + FloatConst + Default,
 {
     /// Build a biquad
     ///

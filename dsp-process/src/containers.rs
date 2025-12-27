@@ -73,7 +73,7 @@ impl<X: Copy, P: Inplace<X>, const N: usize> Inplace<X> for [P; N] {
 
 //////////// MINOR ////////////
 
-/// X->U->X
+/// X->U->Y
 impl<X: Copy, U: Copy, Y, P0: Process<X, U>, P1: Process<U, Y>> Process<X, Y>
     for Minor<(P0, P1), U>
 {

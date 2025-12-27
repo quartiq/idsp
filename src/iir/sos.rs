@@ -11,11 +11,14 @@ pub struct Sos<const F: i8 = 29> {
     /// Coefficients
     ///
     /// `[b0, b1, b2, a1, a2]`
-    /// Such that:
-    /// `y0 = (b0*x0 + b1*x1 + b2*x2 + a1*y1 + a2*y2)/(1 << F)`
     ///
-    /// Note the a1, a2 sign:
-    /// `H = (b0 + b1*z^-1 + b2*z^-2)/((1 << F) - a2*z^-1 - a2*z^-2)`
+    /// Such that
+    /// `y0 = (b0*x0 + b1*x1 + b2*x2 + a1*y1 + a2*y2)/(1 << F)`
+    /// where `x0, x1, x2` are current, delayed, and doubly delayed inputs and
+    /// `y0, y1, y2` are current, delayed, and doubly delayed outputs.
+    ///
+    /// Note the a1, a2 sign. The transfer function is:
+    /// `H(z) = (b0 + b1*z^-1 + b2*z^-2)/((1 << F) - a2*z^-1 - a2*z^-2)`
     pub ba: [Q32<F>; 5],
 }
 
@@ -44,7 +47,7 @@ impl<const F: i8> Default for SosClamp<F> {
 }
 
 impl<const F: i8> SosClamp<F> {
-    /// Forward gain
+    /// DC forward gain fro input to summing junction
     pub fn k(&self) -> Q32<F> {
         self.coeff.ba[..3].iter().copied().sum()
     }
@@ -211,7 +214,7 @@ impl<const F: i8> SplitInplace<i32, SosState> for SosClamp<F> {}
 impl<const F: i8> SplitInplace<i32, SosStateWide> for SosClamp<F> {}
 impl<const F: i8> SplitInplace<i32, SosStateDither> for SosClamp<F> {}
 
-fn quantize<T: From<f64>>(ba: &[[f64; 3]; 2]) -> [T; 5] {
+fn quantize<T: From<f64>>(ba: [[f64; 3]; 2]) -> [T; 5] {
     let a0 = 1.0 / ba[1][0];
     [
         (ba[0][0] * a0).into(),
@@ -222,14 +225,14 @@ fn quantize<T: From<f64>>(ba: &[[f64; 3]; 2]) -> [T; 5] {
     ]
 }
 
-impl<const F: i8> From<&[[f64; 3]; 2]> for Sos<F> {
-    fn from(ba: &[[f64; 3]; 2]) -> Self {
+impl<const F: i8> From<[[f64; 3]; 2]> for Sos<F> {
+    fn from(ba: [[f64; 3]; 2]) -> Self {
         Self { ba: quantize(ba) }
     }
 }
 
-impl<const F: i8> From<&[[f64; 3]; 2]> for SosClamp<F> {
-    fn from(ba: &[[f64; 3]; 2]) -> Self {
+impl<const F: i8> From<[[f64; 3]; 2]> for SosClamp<F> {
+    fn from(ba: [[f64; 3]; 2]) -> Self {
         Self {
             coeff: ba.into(),
             ..Default::default()
@@ -285,9 +288,9 @@ mod test {
             [[1., 3., 5.], [55., -17., 17.]],
             [[1., 8., 5.], [77., -7., 7.]],
         ]
-        .map(|c| Sos::from(&c));
+        .map(|c| Sos::from(c));
         let mut state = Default::default();
-        let mut x = [977371917; 1 << 6];
+        let mut x = [977371917; 1 << 7];
         for _ in 0..1 << 20 {
             for x in x.as_chunks_mut().0 {
                 pnm(&cfg, &mut state, x);

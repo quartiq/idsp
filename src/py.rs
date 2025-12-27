@@ -60,7 +60,7 @@ mod _idsp {
                     .ok_or(PyTypeError::new_err("order"))?
                     .try_into()
                     .or(Err(PyTypeError::new_err("shape")))?;
-                Ok(crate::iir::Sos::<29>::from(&[
+                Ok(crate::iir::Sos::<29>::from([
                     [s[0], s[1], s[2]],
                     [s[3], s[4], s[5]],
                 ]))
@@ -91,7 +91,7 @@ mod _idsp {
                     .try_into()
                     .or(Err(PyTypeError::new_err("shape")))?;
                 let mut sos =
-                    crate::iir::SosClamp::<29>::from(&[[s[0], s[1], s[2]], [s[3], s[4], s[5]]]);
+                    crate::iir::SosClamp::<29>::from([[s[0], s[1], s[2]], [s[3], s[4], s[5]]]);
                 sos.u = s[6].round() as _;
                 sos.min = s[7].round() as _;
                 sos.max = s[8].round() as _;

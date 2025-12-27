@@ -9,8 +9,8 @@ use crate::{Coefficient, iir::Biquad};
 pub enum Order {
     /// Proportional
     P = 2,
-    #[default]
     /// Integrator
+    #[default]
     I = 1,
     /// Double integrator
     I2 = 0,
@@ -53,7 +53,7 @@ impl<T: Float> Default for PidBuilder<T> {
 
 /// PID action
 ///
-/// This enumerates the five possible PID style actions of a [`crate::iir::Biquad`]
+/// This enumerates the five possible PID style actions of a Biquad/second-order-section.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Action {
     /// Double integrating, -40 dB per decade
@@ -62,7 +62,7 @@ pub enum Action {
     I = 1,
     /// Proportional
     P = 2,
-    /// Derivative=, 20 dB per decade
+    /// Derivative, 20 dB per decade
     D = 3,
     /// Double derivative, 40 dB per decade
     D2 = 4,
@@ -256,19 +256,6 @@ pub struct Gains<T> {
     d2: (),
 }
 
-impl<T: Float> Gains<T> {
-    fn new(value: T) -> Self {
-        Self {
-            value: [value; 5],
-            i2: (),
-            i: (),
-            p: (),
-            d: (),
-            d2: (),
-        }
-    }
-}
-
 /// PID Controller parameters
 #[derive(Clone, Debug, Tree)]
 #[tree(meta(doc, typename))]
@@ -305,12 +292,18 @@ pub struct Pid<T: Float> {
     pub max: T,
 }
 
-impl<T: Float> Default for Pid<T> {
+impl<T: Float + Default> Default for Pid<T> {
     fn default() -> Self {
         Self {
             order: Order::default(),
-            gains: Gains::new(T::zero()),
-            limits: Gains::new(T::infinity()),
+            gains: Gains {
+                value: [T::zero(); 5],
+                ..Default::default()
+            },
+            limits: Gains {
+                value: [T::infinity(); 5],
+                ..Default::default()
+            },
             setpoint: T::zero(),
             min: T::neg_infinity(),
             max: T::infinity(),
