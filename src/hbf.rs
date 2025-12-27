@@ -299,7 +299,7 @@ pub const HBF_TAPS: HbfTaps = (
 /// Passband width in units of lowest sample rate
 pub const HBF_PASSBAND: f32 = 0.4;
 
-/// Max low-rate block size (HbfIntCascade input, HbfDecCascade output)
+/// Max lowest-rate block size (HbfIntCascade input, HbfDecCascade output)
 pub const HBF_CASCADE_BLOCK: usize = 1 << 6;
 
 /// Half-band decimation filter cascade with optimal taps

@@ -211,7 +211,7 @@ impl<const F: i8> SplitInplace<i32, SosState> for SosClamp<F> {}
 impl<const F: i8> SplitInplace<i32, SosStateWide> for SosClamp<F> {}
 impl<const F: i8> SplitInplace<i32, SosStateDither> for SosClamp<F> {}
 
-fn quantize<const F: i8>(ba: &[[f64; 3]; 2]) -> [Q32<F>; 5] {
+fn quantize<T: From<f64>>(ba: &[[f64; 3]; 2]) -> [T; 5] {
     let a0 = 1.0 / ba[1][0];
     [
         (ba[0][0] * a0).into(),
@@ -224,9 +224,7 @@ fn quantize<const F: i8>(ba: &[[f64; 3]; 2]) -> [Q32<F>; 5] {
 
 impl<const F: i8> From<&[[f64; 3]; 2]> for Sos<F> {
     fn from(ba: &[[f64; 3]; 2]) -> Self {
-        Self {
-            ba: quantize::<F>(ba),
-        }
+        Self { ba: quantize(ba) }
     }
 }
 
@@ -277,14 +275,15 @@ mod test {
         config.inplace(state, xy0);
     }
 
+    // ~20 insn/sample/sos on skylake, >200 MS/s
     #[test]
     #[ignore]
     fn sos_insn() {
         let cfg = [
-            [[1., 3., 5.], [7., 9., 17.]],
-            [[3., 3., 5.], [7., 9., 11.]],
-            [[77., 3., 5.], [5., 9., 17.]],
-            [[1., 8., 5.], [7., 9., 17.]],
+            [[1., 3., 5.], [19., -9., 9.]],
+            [[3., 3., 5.], [21., -11., 11.]],
+            [[1., 3., 5.], [55., -17., 17.]],
+            [[1., 8., 5.], [77., -7., 7.]],
         ]
         .map(|c| Sos::from(&c));
         let mut state = Default::default();
