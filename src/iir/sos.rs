@@ -6,8 +6,8 @@ use dsp_process::{SplitInplace, SplitProcess};
 use num_traits::float::FloatCore as _;
 
 /// Second-order-section
-#[derive(Clone, Debug, Default)]
-pub struct Sos<const F: i8> {
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct Sos<const F: i8 = 29> {
     /// Coefficients
     ///
     /// `[b0, b1, b2, a1, a2]`
@@ -20,8 +20,8 @@ pub struct Sos<const F: i8> {
 }
 
 /// Second-order-section with offset and clamp
-#[derive(Clone, Debug)]
-pub struct SosClamp<const F: i8> {
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct SosClamp<const F: i8 = 29> {
     /// Coefficients
     pub coeff: Sos<F>,
     /// Summing junction offset
@@ -61,7 +61,7 @@ impl<const F: i8> SosClamp<F> {
 }
 
 /// SOS state
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct SosState {
     /// X,Y state
     ///
@@ -70,7 +70,7 @@ pub struct SosState {
 }
 
 /// SOS state with wide Y
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct SosStateWide {
     /// X state
     ///
@@ -83,7 +83,7 @@ pub struct SosStateWide {
 }
 
 /// SOS state with first order error feedback
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct SosStateDither {
     /// X,Y state
     ///

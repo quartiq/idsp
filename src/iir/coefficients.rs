@@ -200,15 +200,16 @@ where
     /// Builds second order biquad low pass filter coefficients.
     ///
     /// ```
+    /// use dsp_process::SplitProcess;
     /// use idsp::iir::*;
-    /// let ba = Filter::default()
+    /// let iir: Sos<30> = (&Filter::default()
     ///     .critical_frequency(0.1)
     ///     .gain(1000.0)
-    ///     .lowpass();
-    /// let iir = Biquad::<i32>::from(&ba);
-    /// let mut xy = [0; 4];
+    ///     .lowpass())
+    ///     .into();
+    /// let mut xy = SosState::default();
     /// let x = vec![3, -4, 5, 7, -3, 2];
-    /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
+    /// let y: Vec<_> = x.iter().map(|x0| iir.process(&mut xy, *x0)).collect();
     /// assert_eq!(y, [5, 3, 9, 25, 42, 49]);
     /// ```
     pub fn lowpass(&self) -> [[T; 3]; 2] {
@@ -225,15 +226,16 @@ where
     /// Builds second order biquad high pass filter coefficients.
     ///
     /// ```
+    /// use dsp_process::SplitProcess;
     /// use idsp::iir::*;
-    /// let ba = Filter::default()
+    /// let iir: Sos<30> = (&Filter::default()
     ///     .critical_frequency(0.1)
     ///     .gain(1000.0)
-    ///     .highpass();
-    /// let iir = Biquad::<i32>::from(&ba);
-    /// let mut xy = [0; 4];
+    ///     .highpass())
+    ///     .into();
+    /// let mut xy = SosState::default();
     /// let x = vec![3, -4, 5, 7, -3, 2];
-    /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
+    /// let y: Vec<_> = x.iter().map(|x0| iir.process(&mut xy, *x0)).collect();
     /// assert_eq!(y, [5, -9, 11, 12, -1, 17]);
     /// ```
     pub fn highpass(&self) -> [[T; 3]; 2] {
@@ -395,27 +397,26 @@ where
 mod test {
     use super::*;
 
-    use core::f64;
+    use dsp_process::SplitProcess;
     use num_complex::Complex64;
 
-    use crate::iir::*;
+    use crate::iir::{Sos, SosStateDither};
 
     #[test]
     #[ignore]
     fn lowpass_noise_shaping() {
-        let ba = Biquad::<i32>::from(
-            &Filter::default()
-                .critical_frequency(1e-5f64)
-                .gain(1e3)
-                .lowpass(),
-        );
+        let ba: Sos<29> = (&Filter::default()
+            .critical_frequency(1e-5f64)
+            .gain(1e3)
+            .lowpass())
+            .into();
         println!("{:?}", ba);
-        let mut xy = [0; 5];
+        let mut xy = SosStateDither::default();
         for _ in 0..(1 << 24) {
-            ba.update(&mut xy, 1);
+            ba.process(&mut xy, 1);
         }
         for _ in 0..10 {
-            ba.update(&mut xy, 1);
+            ba.process(&mut xy, 1);
             println!("{xy:?}");
         }
     }
@@ -430,7 +431,7 @@ mod test {
     }
 
     fn freqz(b: &[f64], a: &[f64], f: f64) -> Complex64 {
-        let z = Complex64::new(0.0, -f64::consts::TAU * f).exp();
+        let z = Complex64::new(0.0, -core::f64::consts::TAU * f).exp();
         polyval(b, z) / polyval(a, z)
     }
 
@@ -466,7 +467,8 @@ mod test {
         }
 
         // Quantize and back
-        let bai = (&Biquad::<i32>::from(ba)).into();
+        let bai: [f64; _] = Sos::<29>::from(ba).ba.map(|c| c.into());
+        let bai = [[bai[0], bai[1], bai[2]], [1.0, -bai[3], -bai[4]]];
         println!("{bai:?}");
 
         for (f, g) in fg {
