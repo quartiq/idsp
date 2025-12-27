@@ -1,4 +1,4 @@
-use crate::{Assert, Inplace, Process};
+use crate::{Inplace, Process};
 
 //////////// ELEMENTARY PROCESSORS ////////////
 
@@ -277,7 +277,7 @@ pub struct Nyquist<X>(
 );
 impl<X: Copy + core::ops::Add<X, Output = Y>, Y, const N: usize> Process<X, Y> for Nyquist<[X; N]> {
     fn process(&mut self, x: X) -> Y {
-        let () = Assert::<N, 0>::GREATER;
+        const { assert!(N > 0) }
         let y = x + self.0[N - 1];
         self.0.copy_within(..N - 1, 1);
         self.0[0] = x;
@@ -308,7 +308,7 @@ pub struct Comb<X>(
 );
 impl<X: Copy + core::ops::Sub<X, Output = Y>, Y, const N: usize> Process<X, Y> for Comb<[X; N]> {
     fn process(&mut self, x: X) -> Y {
-        let () = Assert::<N, 0>::GREATER;
+        const { assert!(N > 0) }
         let y = x - self.0[N - 1];
         self.0.copy_within(..N - 1, 1);
         self.0[0] = x;

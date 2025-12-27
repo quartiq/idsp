@@ -100,6 +100,7 @@ impl<
 {
     fn block(&self, state: &mut HbfDec<[T; N]>, x: &[[T; 2]], y: &mut [T]) {
         debug_assert_eq!(x.len(), y.len());
+        const { assert!(N > Self::LEN) }
         for (x, y) in x.chunks(N - Self::LEN).zip(y.chunks_mut(N - Self::LEN)) {
             // assert_eq!(x.len(), N - Self::LEN); // makes it 20 % faster if true...
 
@@ -155,6 +156,7 @@ impl<
 {
     fn block(&self, state: &mut HbfInt<[T; N]>, x: &[T], y: &mut [[T; 2]]) {
         debug_assert_eq!(x.len(), y.len());
+        const { assert!(N > Self::LEN) }
         for (x, y) in x.chunks(N - Self::LEN).zip(y.chunks_mut(N - Self::LEN)) {
             // load input
             state.x[Self::LEN..][..x.len()].copy_from_slice(x);
@@ -338,6 +340,7 @@ impl<const R: usize> SplitProcess<[f32; R], f32, HbfDecCascade> for HbfTaps {
     fn block(&self, state: &mut HbfDecCascade, x: &[[f32; R]], y: &mut [f32]) {
         debug_assert_eq!(x.len(), y.len());
         debug_assert!([0, 1, 2, 3, 4].map(|i| 1 << i).contains(&R));
+        const { assert!(R.count_ones() == 1) }
         for (x, y) in x
             .chunks(HBF_CASCADE_BLOCK)
             .zip(y.chunks_mut(HBF_CASCADE_BLOCK))
@@ -439,6 +442,7 @@ impl<const R: usize> SplitProcess<f32, [f32; R], HbfIntCascade> for HbfTaps {
     fn block(&self, state: &mut HbfIntCascade, x: &[f32], y: &mut [[f32; R]]) {
         debug_assert_eq!(x.len(), y.len());
         debug_assert!([0, 1, 2, 3, 4].map(|i| 1 << i).contains(&R));
+        const { assert!(R.count_ones() == 1) }
         for (mut x, y) in x
             .chunks(HBF_CASCADE_BLOCK)
             .zip(y.chunks_mut(HBF_CASCADE_BLOCK))

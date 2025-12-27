@@ -1,6 +1,4 @@
-use crate::{
-    Assert, Channels, Inplace, Minor, Parallel, Process, SplitInplace, SplitProcess, Transpose,
-};
+use crate::{Channels, Inplace, Minor, Parallel, Process, SplitInplace, SplitProcess, Transpose};
 
 //////////// SPLIT ////////////
 
@@ -308,7 +306,7 @@ where
     C: SplitProcess<X, Y, S> + SplitInplace<Y, S>,
 {
     fn process(&self, state: &mut [S; N], x: X) -> Y {
-        let () = Assert::<N, 0>::GREATER;
+        const { assert!(N > 0) }
         let ((c0, c), (s0, s)) = self.split_first().zip(state.split_first_mut()).unwrap();
         c.iter()
             .zip(s.iter_mut())
@@ -316,7 +314,7 @@ where
     }
 
     fn block(&self, state: &mut [S; N], x: &[X], y: &mut [Y]) {
-        let () = Assert::<N, 0>::GREATER;
+        const { assert!(N > 0) }
         let ((c0, c), (s0, s)) = self.split_first().zip(state.split_first_mut()).unwrap();
         c0.block(s0, x, y);
         for (c, s) in c.iter().zip(s.iter_mut()) {
@@ -368,7 +366,7 @@ where
     C: SplitProcess<X, Y, S> + SplitProcess<Y, Y, S>,
 {
     fn process(&self, state: &mut [S; N], x: X) -> Y {
-        let () = Assert::<N, 0>::GREATER;
+        const { assert!(N > 0) }
         let ((c0, c), (s0, s)) = self
             .inner
             .split_first()

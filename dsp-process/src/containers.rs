@@ -1,4 +1,4 @@
-use crate::{Assert, Inplace, Minor, Parallel, Process, Transpose};
+use crate::{Inplace, Minor, Parallel, Process, Transpose};
 
 //////////// MAJOR ////////////
 
@@ -50,13 +50,13 @@ impl<X: Copy, P: Inplace<X>> Inplace<X> for [P] {
 /// Arrays must be non-empty but that first item can transform X->Y
 impl<X: Copy, Y: Copy, P: Process<X, Y> + Inplace<Y>, const N: usize> Process<X, Y> for [P; N] {
     fn process(&mut self, x: X) -> Y {
-        let () = Assert::<N, 0>::GREATER;
+        const { assert!(N > 0) }
         let (p0, p) = self.split_first_mut().unwrap();
         p.iter_mut().fold(p0.process(x), |x, p| p.process(x))
     }
 
     fn block(&mut self, x: &[X], y: &mut [Y]) {
-        let () = Assert::<N, 0>::GREATER;
+        const { assert!(N > 0) }
         let (p0, p) = self.split_first_mut().unwrap();
         p0.block(x, y);
         for p in p.iter_mut() {
@@ -94,7 +94,7 @@ impl<X: Copy, Y: Copy, P: Process<X, Y> + Process<Y>, const N: usize> Process<X,
     for Minor<[P; N], Y>
 {
     fn process(&mut self, x: X) -> Y {
-        let () = Assert::<N, 0>::GREATER;
+        const { assert!(N > 0) }
         let (p0, p) = self.inner.split_first_mut().unwrap();
         p.iter_mut().fold(p0.process(x), |x, p| p.process(x))
     }
