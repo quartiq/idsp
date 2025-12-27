@@ -11,6 +11,7 @@ std = []
 
 [dependencies]
 num-traits.workspace = true
+serde = { version = "1.0.228", default-features = false, features = ["derive"] }
 
 [lints]
 workspace = true
