@@ -304,8 +304,11 @@ pub const HBF_CASCADE_BLOCK: usize = 1 << 6;
 
 /// Half-band decimation filter cascade with optimal taps
 ///
+/// This is a no_alloc version without trait objects.
+/// The price to pay is fixed and flat memory usage independent
+/// of block size and cascade length.
+///
 /// See [HBF_TAPS].
-/// Only in-place processing is implemented.
 /// Supports rate changes of 1, 2, 4, 8, and 16.
 #[derive(Copy, Clone, Debug)]
 #[allow(clippy::type_complexity)]
@@ -339,8 +342,7 @@ impl Default for HbfDecCascade {
 impl<const R: usize> SplitProcess<[f32; R], f32, HbfDecCascade> for HbfTaps {
     fn block(&self, state: &mut HbfDecCascade, x: &[[f32; R]], y: &mut [f32]) {
         debug_assert_eq!(x.len(), y.len());
-        debug_assert!([0, 1, 2, 3, 4].map(|i| 1 << i).contains(&R));
-        const { assert!(R.count_ones() == 1) }
+        const { assert!(R == 1 || R == 2 || R == 4 || R == 8 || R == 16) }
         for (x, y) in x
             .chunks(HBF_CASCADE_BLOCK)
             .zip(y.chunks_mut(HBF_CASCADE_BLOCK))
@@ -379,6 +381,7 @@ impl<const R: usize> SplitProcess<[f32; R], f32, HbfDecCascade> for HbfTaps {
 impl HbfDecCascade {
     /// Response length, effective number of taps
     pub const fn len(rate: usize) -> usize {
+        assert!(rate == 1 || rate == 2 || rate == 4 || rate == 8 || rate == 16);
         let mut n = 0;
         if rate > 1 >> 3 {
             n /= 2;
@@ -407,7 +410,6 @@ impl HbfDecCascade {
 /// of block size and cascade length.
 ///
 /// See [HBF_TAPS].
-/// Only in-place processing is implemented.
 /// Supports rate changes of 1, 2, 4, 8, and 16.
 #[derive(Copy, Clone, Debug)]
 #[allow(clippy::type_complexity)]
@@ -441,8 +443,7 @@ impl Default for HbfIntCascade {
 impl<const R: usize> SplitProcess<f32, [f32; R], HbfIntCascade> for HbfTaps {
     fn block(&self, state: &mut HbfIntCascade, x: &[f32], y: &mut [[f32; R]]) {
         debug_assert_eq!(x.len(), y.len());
-        debug_assert!([0, 1, 2, 3, 4].map(|i| 1 << i).contains(&R));
-        const { assert!(R.count_ones() == 1) }
+        const { assert!(R == 1 || R == 2 || R == 4 || R == 8 || R == 16) }
         for (mut x, y) in x
             .chunks(HBF_CASCADE_BLOCK)
             .zip(y.chunks_mut(HBF_CASCADE_BLOCK))
@@ -488,6 +489,7 @@ impl<const R: usize> SplitProcess<f32, [f32; R], HbfIntCascade> for HbfTaps {
 impl HbfIntCascade {
     /// Response length, effective number of taps
     pub const fn len(rate: usize) -> usize {
+        assert!(rate == 1 || rate == 2 || rate == 4 || rate == 8 || rate == 16);
         let mut n = 0;
         if rate > 1 << 0 {
             n += SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN;
