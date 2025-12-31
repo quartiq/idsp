@@ -179,6 +179,15 @@ impl<
     }
 }
 
+/// Half band filter cascade taps for a 98 dB filter
+pub type HbfTaps98 = (
+    SymFir<[f32; 15]>,
+    SymFir<[f32; 6]>,
+    SymFir<[f32; 3]>,
+    SymFir<[f32; 3]>,
+    SymFir<[f32; 2]>,
+);
+
 /// Standard/optimal half-band filter cascade taps
 ///
 /// * obtained with `2*signal.remez(4*n - 1, bands=(0, .5-df/2, .5+df/2, 1), desired=(1, 0), fs=2, grid_density=512)[:2*n:2]`
@@ -190,13 +199,7 @@ impl<
 /// * lowest rate filter is at 0 index
 /// * use taps 0..n for 2**n interpolation/decimation
 #[allow(clippy::excessive_precision, clippy::type_complexity)]
-pub const HBF_TAPS_98: (
-    SymFir<[f32; 15]>,
-    SymFir<[f32; 6]>,
-    SymFir<[f32; 3]>,
-    SymFir<[f32; 3]>,
-    SymFir<[f32; 2]>,
-) = (
+pub const HBF_TAPS_98: HbfTaps98 = (
     // n=15 coefficients (effective number of DSP taps 4*15-1 = 59), transition band width df=.2 fs
     SymFir([
         7.02144012e-05,
@@ -232,6 +235,7 @@ pub const HBF_TAPS_98: (
     SymFir([-0.06291796, 0.5629161]),
 );
 
+/// Half band filter cascade taps
 pub type HbfTaps = (
     SymFir<[f32; 23]>,
     SymFir<[f32; 9]>,
@@ -310,61 +314,43 @@ pub const HBF_CASCADE_BLOCK: usize = 1 << 6;
 ///
 /// See [HBF_TAPS].
 /// Supports rate changes of 1, 2, 4, 8, and 16.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 #[allow(clippy::type_complexity)]
-pub struct HbfDecCascade {
-    buf: (
-        [f32; HBF_CASCADE_BLOCK * 2],
-        [f32; HBF_CASCADE_BLOCK * 4],
-        [f32; HBF_CASCADE_BLOCK * 8],
-    ),
-    stages: (
-        HbfDec<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
-        HbfDec<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + HBF_CASCADE_BLOCK * 2]>,
-        HbfDec<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + HBF_CASCADE_BLOCK * 4]>,
-        HbfDec<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + HBF_CASCADE_BLOCK * 8]>,
-    ),
-}
-
-impl Default for HbfDecCascade {
-    fn default() -> Self {
-        Self {
-            buf: (
-                [Default::default(); _],
-                [Default::default(); _],
-                [Default::default(); _],
-            ),
-            stages: Default::default(),
-        }
-    }
-}
+pub struct HbfDecCascade(
+    HbfDec<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
+    HbfDec<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + HBF_CASCADE_BLOCK * 2]>,
+    HbfDec<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + HBF_CASCADE_BLOCK * 4]>,
+    HbfDec<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + HBF_CASCADE_BLOCK * 8]>,
+);
 
 impl<const R: usize> SplitProcess<[f32; R], f32, HbfDecCascade> for HbfTaps {
     fn block(&self, state: &mut HbfDecCascade, x: &[[f32; R]], y: &mut [f32]) {
-        debug_assert_eq!(x.len(), y.len());
         const { assert!(R == 1 || R == 2 || R == 4 || R == 8 || R == 16) }
+        debug_assert_eq!(x.len(), y.len());
+        let mut u0 = [0.0; HBF_CASCADE_BLOCK * 4];
+        let mut u1 = [0.0; HBF_CASCADE_BLOCK * 8];
         for (x, y) in x
             .chunks(HBF_CASCADE_BLOCK)
             .zip(y.chunks_mut(HBF_CASCADE_BLOCK))
         {
             let mut x = x.as_flattened().as_chunks().0;
-            if R > 1 << 3 {
-                let u = &mut state.buf.2[..x.len()];
-                self.3.block(&mut state.stages.3, x, u);
-                x = u.as_chunks().0;
-            }
-            if R > 1 << 2 {
-                let u = &mut state.buf.1[..x.len()];
-                self.2.block(&mut state.stages.2, x, u);
-                x = u.as_chunks().0;
-            }
-            if R > 1 << 1 {
-                let u = &mut state.buf.0[..x.len()];
-                self.1.block(&mut state.stages.1, x, u);
-                x = u.as_chunks().0;
-            }
             if R > 1 << 0 {
-                self.0.block(&mut state.stages.0, x, y);
+                if R > 1 << 1 {
+                    if R > 1 << 2 {
+                        if R > 1 << 3 {
+                            let u = &mut u1[..x.len()];
+                            self.3.block(&mut state.3, x, u);
+                            x = u.as_chunks().0;
+                        }
+                        let u = &mut u0[..x.len()];
+                        self.2.block(&mut state.2, x, u);
+                        x = u.as_chunks().0;
+                    }
+                    let u = &mut u1[..x.len()];
+                    self.1.block(&mut state.1, x, u);
+                    x = u.as_chunks().0;
+                }
+                self.0.block(&mut state.0, x, y);
             } else {
                 y.copy_from_slice(x.as_flattened());
             }
@@ -411,67 +397,48 @@ impl HbfDecCascade {
 ///
 /// See [HBF_TAPS].
 /// Supports rate changes of 1, 2, 4, 8, and 16.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 #[allow(clippy::type_complexity)]
-pub struct HbfIntCascade {
-    buf: (
-        [[f32; 2]; HBF_CASCADE_BLOCK],
-        [[f32; 2]; HBF_CASCADE_BLOCK * 2],
-        [[f32; 2]; HBF_CASCADE_BLOCK * 4],
-    ),
-    stages: (
-        HbfInt<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
-        HbfInt<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + HBF_CASCADE_BLOCK * 2]>,
-        HbfInt<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + HBF_CASCADE_BLOCK * 4]>,
-        HbfInt<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + HBF_CASCADE_BLOCK * 8]>,
-    ),
-}
-
-impl Default for HbfIntCascade {
-    fn default() -> Self {
-        Self {
-            buf: (
-                [Default::default(); _],
-                [Default::default(); _],
-                [Default::default(); _],
-            ),
-            stages: Default::default(),
-        }
-    }
-}
+pub struct HbfIntCascade(
+    HbfInt<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
+    HbfInt<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + HBF_CASCADE_BLOCK * 2]>,
+    HbfInt<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + HBF_CASCADE_BLOCK * 4]>,
+    HbfInt<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + HBF_CASCADE_BLOCK * 8]>,
+);
 
 impl<const R: usize> SplitProcess<f32, [f32; R], HbfIntCascade> for HbfTaps {
     fn block(&self, state: &mut HbfIntCascade, x: &[f32], y: &mut [[f32; R]]) {
-        debug_assert_eq!(x.len(), y.len());
         const { assert!(R == 1 || R == 2 || R == 4 || R == 8 || R == 16) }
+        debug_assert_eq!(x.len(), y.len());
+        let mut u0 = [[0.0; 2]; HBF_CASCADE_BLOCK * 2];
+        let mut u1 = [[0.0; 2]; HBF_CASCADE_BLOCK * 4];
         for (mut x, y) in x
             .chunks(HBF_CASCADE_BLOCK)
             .zip(y.chunks_mut(HBF_CASCADE_BLOCK))
         {
             let y = y.as_flattened_mut().as_chunks_mut().0;
-            let mut u;
             if R == 1 << 0 {
                 y.as_flattened_mut().copy_from_slice(x);
             } else if R == 1 << 1 {
-                self.0.block(&mut state.stages.0, x, y);
+                self.0.block(&mut state.0, x, y);
             } else {
-                u = &mut state.buf.0[..x.len()];
-                self.0.block(&mut state.stages.0, x, u);
+                let u = &mut u1[..x.len()];
+                self.0.block(&mut state.0, x, u);
                 x = u.as_flattened();
                 if R == 1 << 2 {
-                    self.1.block(&mut state.stages.1, x, y);
+                    self.1.block(&mut state.1, x, y);
                 } else {
-                    u = &mut state.buf.1[..x.len()];
-                    self.1.block(&mut state.stages.1, x, u);
+                    let u = &mut u0[..x.len()];
+                    self.1.block(&mut state.1, x, u);
                     x = u.as_flattened();
                     if R == 1 << 3 {
-                        self.2.block(&mut state.stages.2, x, y);
+                        self.2.block(&mut state.2, x, y);
                     } else {
-                        u = &mut state.buf.2[..x.len()];
-                        self.2.block(&mut state.stages.2, x, u);
+                        let u = &mut u1[..x.len()];
+                        self.2.block(&mut state.2, x, u);
                         x = u.as_flattened();
                         if R == 1 << 4 {
-                            self.3.block(&mut state.stages.3, x, y);
+                            self.3.block(&mut state.3, x, y);
                         }
                     }
                 }
