@@ -258,25 +258,25 @@ macro_rules! impl_mul_q {
 
         impl<const F: i8> From<f32> for Q<$q, $a, F> {
             fn from(value: f32) -> Self {
-                Self::new((value * (1 << F) as f32).round() as _)
+                Self::new((value * (1u128 << F) as f32).round() as _)
             }
         }
 
         impl<const F: i8> From<f64> for Q<$q, $a, F> {
             fn from(value: f64) -> Self {
-                Self::new((value * (1 << F) as f64).round() as _)
+                Self::new((value * (1u128 << F) as f64).round() as _)
             }
         }
 
         impl<const F: i8> From<Q<$q, $a, F>> for f32 {
             fn from(value: Q<$q, $a, F>) -> Self {
-                value.inner as Self * (1.0 / (1 << F) as Self)
+                value.inner as Self * (1.0 / (1u128 << F) as Self)
             }
         }
 
         impl<const F: i8> From<Q<$q, $a, F>> for f64 {
             fn from(value: Q<$q, $a, F>) -> Self {
-                value.inner as Self * (1.0 / (1 << F) as Self)
+                value.inner as Self * (1.0 / (1u128 << F) as Self)
             }
         }
     };
