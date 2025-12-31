@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::{Inplace, Process};
 
 //////////// ELEMENTARY PROCESSORS ////////////
@@ -97,6 +95,12 @@ impl<X: Copy, const N: usize> Process<X, [X; N]> for &Identity {
     }
 }
 
+impl<X: Copy> Process<[X; 1], X> for &Identity {
+    fn process(&mut self, x: [X; 1]) -> X {
+        x[0]
+    }
+}
+
 /// Inversion using `Neg`.
 #[derive(Debug, Clone, Default)]
 pub struct Neg;
@@ -174,32 +178,21 @@ where
 impl<X: Copy> Inplace<X> for &Rate where Self: Process<X> {}
 
 /// Buffer input or output, or fixed delay line
-#[derive(Debug, Clone)]
-pub struct Buffer<X, const N: usize> {
-    buffer: [X; N],
+#[derive(Debug, Clone, Default)]
+pub struct Buffer<B> {
+    buffer: B,
     idx: usize,
 }
 
-impl<X, const N: usize> Buffer<X, N> {
+impl<X, const N: usize> Buffer<[X; N]> {
     /// The buffer is empty
     pub fn is_empty(&self) -> bool {
         self.idx == 0
     }
 }
 
-impl<X, const N: usize> Default for Buffer<X, N>
-where
-    [X; N]: Default,
-{
-    fn default() -> Self {
-        Self {
-            buffer: Default::default(),
-            idx: 0,
-        }
-    }
-}
-
-impl<X: Copy, const N: usize> Process<X> for Buffer<X, N> {
+/// Delay line
+impl<X: Copy, const N: usize> Process<X> for Buffer<[X; N]> {
     fn process(&mut self, x: X) -> X {
         let y = core::mem::replace(&mut self.buffer[self.idx], x);
         self.idx = (self.idx + 1) % N;
@@ -209,9 +202,10 @@ impl<X: Copy, const N: usize> Process<X> for Buffer<X, N> {
     // TODO: block(), inplace(), Process<[X; M]>
 }
 
-impl<X: Copy, const N: usize> Inplace<X> for Buffer<X, N> where Self: Process<X> {}
+impl<X: Copy, const N: usize> Inplace<X> for Buffer<[X; N]> where Self: Process<X> {}
 
-impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<X, N> {
+/// Buffer into chunks
+impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<[X; N]> {
     fn process(&mut self, x: X) -> Option<[X; N]> {
         self.buffer[self.idx] = x;
         self.idx += 1;
@@ -224,8 +218,10 @@ impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<X, N> {
     // TODO: block()
 }
 
+/// Buffer out of chunks
+///
 /// Panics on underflow
-impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<X, N> {
+impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<[X; N]> {
     fn process(&mut self, x: Option<[X; N]>) -> X {
         if let Some(x) = x {
             self.buffer = x;
@@ -238,37 +234,6 @@ impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<X, N> {
 
     // TODO: block()
 }
-
-/// Adapts an interpolator to output chunk mode
-pub struct Interpolator<P>(pub P);
-impl<X: Copy, Y, P: Process<Option<X>, Y>, const N: usize> Process<X, [Y; N]> for Interpolator<P>
-where
-    [Y; N]: Default,
-{
-    fn process(&mut self, x: X) -> [Y; N] {
-        let mut y = <[Y; N]>::default();
-        if let Some((y0, y)) = y.split_first_mut() {
-            *y0 = self.0.process(Some(x));
-            for y in y.iter_mut() {
-                *y = self.0.process(None);
-            }
-        }
-        y
-    }
-}
-impl<X: Copy, P> Inplace<X> for Interpolator<P> where Self: Process<X> {}
-
-/// Adapts a decimator to input chunk mode
-///
-/// Synchronizes to the inner tick by discarding samples after tick.
-/// Panics if tick does not match N
-pub struct Decimator<P>(pub P);
-impl<X: Copy, Y, P: Process<X, Option<Y>>, const N: usize> Process<[X; N], Y> for Decimator<P> {
-    fn process(&mut self, x: [X; N]) -> Y {
-        x.into_iter().find_map(|x| self.0.process(x)).unwrap()
-    }
-}
-impl<X: Copy, P> Inplace<X> for Decimator<P> where Self: Process<X> {}
 
 /// Nyquist zero with gain 2
 ///
@@ -318,58 +283,3 @@ impl<X: Copy + core::ops::Sub<X, Output = Y>, Y, const N: usize> Process<X, Y> f
     }
 }
 impl<X: Copy> Inplace<X> for Comb<X> where Self: Process<X> {}
-
-/// Chain of processors with intermediate buffer supporting block() from block()
-pub struct Major<P, U, const N: usize> {
-    /// The inner processors
-    pub inner: P,
-    _marker: PhantomData<U>,
-}
-impl<P, U, const N: usize> Major<P, U, N> {
-    /// Create a new chain of processors
-    pub fn new(inner: P) -> Self {
-        Self {
-            inner,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<X: Copy, U: Copy, Y, P1: Process<X, U>, P2: Process<U, Y>, const N: usize> Process<X, Y>
-    for Major<(P1, P2), U, N>
-where
-    [U; N]: Default,
-{
-    fn process(&mut self, x: X) -> Y {
-        self.inner.1.process(self.inner.0.process(x))
-    }
-
-    fn block(&mut self, x: &[X], y: &mut [Y]) {
-        debug_assert_eq!(x.len(), y.len());
-        let mut u = <[U; N]>::default();
-        let (x, xr) = x.as_chunks::<N>();
-        let (y, yr) = y.as_chunks_mut::<N>();
-        for (x, y) in x.iter().zip(y) {
-            self.inner.0.block(x, &mut u);
-            self.inner.1.block(&u, y);
-        }
-        self.inner.0.block(xr, &mut u[..xr.len()]);
-        self.inner.1.block(&u[..xr.len()], yr);
-    }
-}
-impl<X: Copy, U: Copy, P1: Process<X, U>, P2: Process<U, X>, const N: usize> Inplace<X>
-    for Major<(P1, P2), U, N>
-where
-    [U; N]: Default,
-{
-    fn inplace(&mut self, xy: &mut [X]) {
-        let mut u = <[U; N]>::default();
-        let (xy, xyr) = xy.as_chunks_mut::<N>();
-        for xy in xy {
-            self.inner.0.block(xy, &mut u);
-            self.inner.1.block(&u, xy);
-        }
-        self.inner.0.block(xyr, &mut u[..xyr.len()]);
-        self.inner.1.block(&u[..xyr.len()], xyr);
-    }
-}

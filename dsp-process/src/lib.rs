@@ -9,6 +9,16 @@ mod containers;
 pub use basic::*;
 mod split;
 pub use split::*;
+mod adapters;
+pub use adapters::*;
+
+/// Stateless/stateful marker
+///
+/// To be used in `Split<Unsplit<P>, ()>` and `Split<(), Unsplit<P>>`
+/// to mark processors requiring no state and no configuration respectively.
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(transparent)]
+pub struct Unsplit<P>(pub P);
 
 /// Processor-minor, data-major
 ///
@@ -50,6 +60,22 @@ impl<C, U, const N: usize> Minor<[C; N], U> {
     /// Mutably borrowed Self
     pub fn as_mut(&mut self) -> Minor<&mut [C], U> {
         Minor::new(self.inner.as_mut())
+    }
+}
+
+/// Chain of processors with intermediate buffer supporting block() from block()s
+pub struct Intermediate<P, U, const N: usize> {
+    /// The inner processors
+    pub inner: P,
+    _marker: PhantomData<U>,
+}
+impl<P, U, const N: usize> Intermediate<P, U, N> {
+    /// Create a new chain of processors
+    pub fn new(inner: P) -> Self {
+        Self {
+            inner,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -102,7 +128,7 @@ mod test {
         assert_eq!((&Offset(7)).process(9), 7 + 9);
         assert_eq!(Minor::new((&Offset(7), &Offset(1))).process(9), 7 + 1 + 9);
         let mut xy = [3, 0, 0];
-        let mut dly = Buffer::<_, 2>::default();
+        let mut dly = Buffer::<[_; 2]>::default();
         dly.inplace(&mut xy);
         assert_eq!(xy, [0, 0, 3]);
         let y: i32 = Split::stateful(dly).as_mut().process(4);
