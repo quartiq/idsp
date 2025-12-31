@@ -563,50 +563,51 @@ mod test {
     }
 
     /// small 32 block size, single stage, 3 mul (11 tap) decimator
-    /// 3.5 insn per input item, > 1 GS/s per core on Skylake
+    /// 0.6 cycles per input item, > 4 GS/s per core on Skylake
     #[test]
     #[ignore]
     fn insn_dec() {
         const N: usize = HBF_TAPS.4.0.len();
         assert_eq!(N, 3);
-        let mut h = HbfDec::<[_; 2 * N - 1 + (1 << 4)]>::default();
-        let mut x = [9.0; 1 << 5];
-        let mut y = [0.0; 1 << 4];
+        const M: usize = 1 << 4;
+        let mut h = HbfDec::<[_; SymFir::<[f32; N]>::LEN + M]>::default();
+        let mut x = [[9.0; 2]; M];
+        let mut y = [0.0; M];
         for _ in 0..1 << 25 {
-            HBF_TAPS.4.block(&mut h, x.as_chunks().0, &mut y);
-            x[0] = y[0]; // prevent the entire loop from being optimized away
+            HBF_TAPS.4.block(&mut h, &x, &mut y);
+            x[33][1] = y[11]; // prevent the entire loop from being optimized away
         }
     }
 
     /// 1k block size, single stage, 23 mul (91 tap) decimator
-    /// 4.9 insn: > 1 GS/s
+    /// 1.8 cycles: > 1 GS/s
     #[test]
     #[ignore]
     fn insn_dec2() {
         const N: usize = HBF_TAPS.0.0.len();
         assert_eq!(N, 23);
-        const M: usize = 1 << 10;
-        let mut h = HbfDec::<[_; 2 * N - 1 + M]>::default();
-        let mut x = [9.0; M];
-        let mut y = [0.0; M / 2];
+        const M: usize = 1 << 9;
+        let mut h = HbfDec::<[_; SymFir::<[f32; N]>::LEN + M]>::default();
+        let mut x = [[9.0; 2]; M];
+        let mut y = [0.0; M];
         for _ in 0..1 << 20 {
-            HBF_TAPS.0.block(&mut h, x.as_chunks().0, &mut y);
-            x[0] = y[0]; // prevent the entire loop from being optimized away
+            HBF_TAPS.0.block(&mut h, &x, &mut y);
+            x[33][1] = y[11]; // prevent the entire loop from being optimized away
         }
     }
 
     /// full block size full decimator cascade (depth 4, 1024 items per input block)
-    /// 4.1 insn: > 1 GS/s
+    /// 1.2 cycles: > 2 GS/s
     #[test]
     #[ignore]
     fn insn_casc() {
         let mut h = HbfDecCascade::default();
         const R: usize = 1 << 4;
-        let mut x = [9.0; R << 6];
+        let mut x = [[9.0; R]; 1 << 6];
         let mut y = [0.0; 1 << 6];
         for _ in 0..1 << 20 {
-            HBF_TAPS.block(&mut h, x.as_chunks::<R>().0, &mut y);
-            x[0] = y[0]; // prevent the entire loop from being optimized away
+            HBF_TAPS.block(&mut h, &x, &mut y);
+            x[33][1] = y[11]; // prevent the entire loop from being optimized away
         }
     }
 
