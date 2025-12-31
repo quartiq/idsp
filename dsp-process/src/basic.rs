@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::{Inplace, Process};
 
 //////////// ELEMENTARY PROCESSORS ////////////
@@ -316,3 +318,58 @@ impl<X: Copy + core::ops::Sub<X, Output = Y>, Y, const N: usize> Process<X, Y> f
     }
 }
 impl<X: Copy> Inplace<X> for Comb<X> where Self: Process<X> {}
+
+/// Chain of processors with intermediate buffer supporting block() from block()
+pub struct Major<P, U, const N: usize> {
+    /// The inner processors
+    pub inner: P,
+    _marker: PhantomData<U>,
+}
+impl<P, U, const N: usize> Major<P, U, N> {
+    /// Create a new chain of processors
+    pub fn new(inner: P) -> Self {
+        Self {
+            inner,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<X: Copy, U: Copy, Y, P1: Process<X, U>, P2: Process<U, Y>, const N: usize> Process<X, Y>
+    for Major<(P1, P2), U, N>
+where
+    [U; N]: Default,
+{
+    fn process(&mut self, x: X) -> Y {
+        self.inner.1.process(self.inner.0.process(x))
+    }
+
+    fn block(&mut self, x: &[X], y: &mut [Y]) {
+        debug_assert_eq!(x.len(), y.len());
+        let mut u = <[U; N]>::default();
+        let (x, xr) = x.as_chunks::<N>();
+        let (y, yr) = y.as_chunks_mut::<N>();
+        for (x, y) in x.iter().zip(y) {
+            self.inner.0.block(x, &mut u);
+            self.inner.1.block(&u, y);
+        }
+        self.inner.0.block(xr, &mut u[..xr.len()]);
+        self.inner.1.block(&u[..xr.len()], yr);
+    }
+}
+impl<X: Copy, U: Copy, P1: Process<X, U>, P2: Process<U, X>, const N: usize> Inplace<X>
+    for Major<(P1, P2), U, N>
+where
+    [U; N]: Default,
+{
+    fn inplace(&mut self, xy: &mut [X]) {
+        let mut u = <[U; N]>::default();
+        let (xy, xyr) = xy.as_chunks_mut::<N>();
+        for xy in xy {
+            self.inner.0.block(xy, &mut u);
+            self.inner.1.block(&u, xy);
+        }
+        self.inner.0.block(xyr, &mut u[..xyr.len()]);
+        self.inner.1.block(&u[..xyr.len()], xyr);
+    }
+}
