@@ -166,7 +166,7 @@ where
     }
 
     fn block(&mut self, x: &[[X; N]], y: &mut [[Y; M]]) {
-        const { assert!(R * M == N) }
+        const { assert!(R * N == M) }
         let (y, []) = y.as_flattened_mut().as_chunks_mut() else {
             unreachable!()
         };
@@ -204,7 +204,7 @@ where
     }
 
     fn block(&self, state: &mut S, x: &[[X; N]], y: &mut [[Y; M]]) {
-        const { assert!(R * M == N) }
+        const { assert!(R * N == M) }
         let (y, []) = y.as_flattened_mut().as_chunks_mut() else {
             unreachable!()
         };
