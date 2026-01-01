@@ -1,6 +1,7 @@
 use crate::{Inplace, Process, SplitInplace, SplitProcess};
 
 /// Adapts an interpolator to output chunk mode
+#[derive(Clone, Debug, Default)]
 pub struct Interpolator<P>(pub P);
 impl<X: Copy, Y, P: Process<Option<X>, Y>, const N: usize> Process<X, [Y; N]> for Interpolator<P> {
     fn process(&mut self, x: X) -> [Y; N] {
@@ -21,6 +22,7 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Interpolator<C> where Self: SplitProc
 ///
 /// Synchronizes to the inner tick by discarding samples after tick.
 /// Panics if tick does not match N
+#[derive(Clone, Debug, Default)]
 pub struct Decimator<P>(pub P);
 impl<X: Copy, Y, P: Process<X, Option<Y>>, const N: usize> Process<[X; N], Y> for Decimator<P> {
     fn process(&mut self, x: [X; N]) -> Y {
@@ -43,6 +45,7 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Decimator<C> where Self: SplitProcess
 ///
 /// Adapts a X->Y processor into a [X; N] -> [Y; N] processor
 /// by flattening input and output.
+#[derive(Clone, Debug, Default)]
 pub struct Chunk<P>(pub P);
 impl<P: Process<X, Y>, X: Copy, Y, const N: usize> Process<[X; N], [Y; N]> for Chunk<P> {
     fn process(&mut self, x: [X; N]) -> [Y; N] {
@@ -76,6 +79,7 @@ impl<C: SplitInplace<X, S>, S, X: Copy, const N: usize> SplitInplace<[X; N], S> 
 }
 
 /// Adapts a [X; R] -> Y processor to [X; N=R*M]->[Y; M]
+#[derive(Clone, Debug, Default)]
 pub struct ChunkIn<P, const R: usize>(pub P);
 impl<P: Process<[X; R], Y>, X: Copy, Y, const N: usize, const R: usize, const M: usize>
     Process<[X; N], [Y; M]> for ChunkIn<P, R>
@@ -140,6 +144,7 @@ where
 }
 
 /// Adapts a X -> [Y; R] processor to [X; N]->[Y; M = R*N]
+#[derive(Clone, Debug, Default)]
 pub struct ChunkOut<P, const R: usize>(pub P);
 impl<P: Process<X, [Y; R]>, X: Copy, Y, const N: usize, const R: usize, const M: usize>
     Process<[X; N], [Y; M]> for ChunkOut<P, R>
@@ -220,6 +225,7 @@ where
 }
 
 /// Adapts a [X; Q] -> [Y; R] processor to [X; N = Q*_]->[Y; M = R*_]
+#[derive(Clone, Debug, Default)]
 pub struct ChunkInOut<P, const Q: usize, const R: usize>(pub P);
 impl<
     P: Process<[X; Q], [Y; R]>,

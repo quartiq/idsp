@@ -575,12 +575,16 @@ where
 
 //////////// SPLIT INTERMEDIATE ////////////
 
-impl<X: Copy, U: Copy, Y, C0, C1, S0, S1, const N: usize> SplitProcess<X, Y, (S0, S1)>
-    for Intermediate<(C0, C1), U, N>
-where
-    [U; N]: Default,
+impl<
+    X: Copy,
+    U: Copy + Default,
+    Y,
     C0: SplitProcess<X, U, S0>,
     C1: SplitProcess<U, Y, S1>,
+    S0,
+    S1,
+    const N: usize,
+> SplitProcess<X, Y, (S0, S1)> for Intermediate<(C0, C1), U, N>
 {
     fn process(&self, state: &mut (S0, S1), x: X) -> Y {
         self.inner
@@ -590,7 +594,7 @@ where
 
     fn block(&self, state: &mut (S0, S1), x: &[X], y: &mut [Y]) {
         debug_assert_eq!(x.len(), y.len());
-        let mut u = <[U; N]>::default();
+        let mut u = [U::default(); N];
         let (x, xr) = x.as_chunks::<N>();
         let (y, yr) = y.as_chunks_mut::<N>();
         for (x, y) in x.iter().zip(y) {
@@ -602,15 +606,18 @@ where
     }
 }
 
-impl<X: Copy, U: Copy, C0, C1, S0, S1, const N: usize> SplitInplace<X, (S0, S1)>
-    for Intermediate<(C0, C1), U, N>
-where
-    [U; N]: Default,
+impl<
+    X: Copy,
+    U: Copy + Default,
     C0: SplitProcess<X, U, S0>,
     C1: SplitProcess<U, X, S1>,
+    S0,
+    S1,
+    const N: usize,
+> SplitInplace<X, (S0, S1)> for Intermediate<(C0, C1), U, N>
 {
     fn inplace(&self, state: &mut (S0, S1), xy: &mut [X]) {
-        let mut u = <[U; N]>::default();
+        let mut u = [U::default(); N];
         let (xy, xyr) = xy.as_chunks_mut::<N>();
         for xy in xy {
             self.inner.0.block(&mut state.0, xy, &mut u);

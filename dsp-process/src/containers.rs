@@ -134,12 +134,11 @@ impl<X: Copy, Y, P0: Process<X, Y>, P1: Process<X, Y>> Process<[X; 2], [Y; 2]>
     }
 }
 
-impl<X: Copy, Y, P: Process<X, Y>, const N: usize> Process<[X; N], [Y; N]> for Parallel<[P; N]>
-where
-    [Y; N]: Default,
+impl<X: Copy, Y: Copy + Default, P: Process<X, Y>, const N: usize> Process<[X; N], [Y; N]>
+    for Parallel<[P; N]>
 {
     fn process(&mut self, x: [X; N]) -> [Y; N] {
-        let mut y = <[Y; N]>::default();
+        let mut y = [Y::default(); N];
         for (c, (x, y)) in self.0.iter_mut().zip(x.into_iter().zip(y.iter_mut())) {
             *y = c.process(x);
         }
@@ -151,10 +150,8 @@ impl<X: Copy, P> Inplace<X> for Parallel<P> where Self: Process<X> {}
 
 //////////// TRANSPOSE ////////////
 
-impl<X: Copy, Y, C0, C1> Process<[X; 2], [Y; 2]> for Transpose<(C0, C1)>
-where
-    C0: Process<X, Y>,
-    C1: Process<X, Y>,
+impl<X: Copy, Y, C0: Process<X, Y>, C1: Process<X, Y>> Process<[X; 2], [Y; 2]>
+    for Transpose<(C0, C1)>
 {
     fn process(&mut self, x: [X; 2]) -> [Y; 2] {
         [self.0.0.process(x[0]), self.0.1.process(x[1])]
@@ -183,13 +180,11 @@ where
     }
 }
 
-impl<X: Copy, Y, C, const N: usize> Process<[X; N], [Y; N]> for Transpose<[C; N]>
-where
-    [Y; N]: Default,
-    C: Process<X, Y>,
+impl<X: Copy, Y: Copy + Default, C: Process<X, Y>, const N: usize> Process<[X; N], [Y; N]>
+    for Transpose<[C; N]>
 {
     fn process(&mut self, x: [X; N]) -> [Y; N] {
-        let mut y = <[Y; N]>::default();
+        let mut y = [Y::default(); N];
         for (c, (x, y)) in self.0.iter_mut().zip(x.into_iter().zip(y.iter_mut())) {
             *y = c.process(x);
         }
@@ -209,11 +204,7 @@ where
     }
 }
 
-impl<X: Copy, C, const N: usize> Inplace<[X; N]> for Transpose<[C; N]>
-where
-    [X; N]: Default,
-    C: Inplace<X>,
-{
+impl<X: Copy + Default, C: Inplace<X>, const N: usize> Inplace<[X; N]> for Transpose<[C; N]> {
     fn inplace(&mut self, xy: &mut [[X; N]]) {
         let n = xy.len();
         for (c, xy) in self
@@ -228,17 +219,15 @@ where
 
 //////////// INTERMEDIATE ////////////
 
-impl<X: Copy, U: Copy, Y, P1: Process<X, U>, P2: Process<U, Y>, const N: usize> Process<X, Y>
-    for Intermediate<(P1, P2), U, N>
-where
-    [U; N]: Default,
+impl<X: Copy, U: Copy + Default, Y, P1: Process<X, U>, P2: Process<U, Y>, const N: usize>
+    Process<X, Y> for Intermediate<(P1, P2), U, N>
 {
     fn process(&mut self, x: X) -> Y {
         self.inner.1.process(self.inner.0.process(x))
     }
 
     fn block(&mut self, x: &[X], y: &mut [Y]) {
-        let mut u = <[U; N]>::default();
+        let mut u = [U::default(); N];
         let (x, xr) = x.as_chunks::<N>();
         let (y, yr) = y.as_chunks_mut::<N>();
         for (x, y) in x.iter().zip(y) {
@@ -251,13 +240,11 @@ where
     }
 }
 
-impl<X: Copy, U: Copy, P1: Process<X, U>, P2: Process<U, X>, const N: usize> Inplace<X>
+impl<X: Copy, U: Copy + Default, P1: Process<X, U>, P2: Process<U, X>, const N: usize> Inplace<X>
     for Intermediate<(P1, P2), U, N>
-where
-    [U; N]: Default,
 {
     fn inplace(&mut self, xy: &mut [X]) {
-        let mut u = <[U; N]>::default();
+        let mut u = [U::default(); N];
         let (xy, xyr) = xy.as_chunks_mut::<N>();
         for xy in xy {
             self.inner.0.block(xy, &mut u);

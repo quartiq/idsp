@@ -158,6 +158,7 @@ impl<T: Copy + Ord> Process<T> for &Clamp<T> {
 impl<T: Copy> Inplace<T> for &Clamp<T> where Self: Process<T> {}
 
 /// Decimate or zero stuff
+#[derive(Debug, Clone, Default)]
 pub struct Rate;
 impl<X: Copy, const N: usize> Process<[X; N], X> for &Rate {
     fn process(&mut self, x: [X; N]) -> X {
@@ -165,12 +166,9 @@ impl<X: Copy, const N: usize> Process<[X; N], X> for &Rate {
     }
 }
 
-impl<X: Copy, const N: usize> Process<X, [X; N]> for &Rate
-where
-    [X; N]: Default,
-{
+impl<X: Copy + Default, const N: usize> Process<X, [X; N]> for &Rate {
     fn process(&mut self, x: X) -> [X; N] {
-        let mut y = <[X; N]>::default();
+        let mut y = [X::default(); N];
         y[0] = x;
         y
     }
@@ -238,6 +236,7 @@ impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<[X; N]> {
 /// Nyquist zero with gain 2
 ///
 /// Bad for large differential delays
+#[derive(Debug, Clone, Default)]
 pub struct Nyquist<X>(
     /// Previous input
     pub X,
@@ -254,6 +253,7 @@ impl<X: Copy + core::ops::Add<X, Output = Y>, Y, const N: usize> Process<X, Y> f
 impl<X: Copy> Inplace<X> for Nyquist<X> where Self: Process<X> {}
 
 /// Integrator
+#[derive(Debug, Clone, Default)]
 pub struct Integrator<Y>(
     /// Current integrator value
     pub Y,
@@ -269,6 +269,7 @@ impl<X: Copy> Inplace<X> for Integrator<X> where Self: Process<X> {}
 /// Comb (derivative)
 ///
 /// Bad for large delays
+#[derive(Debug, Clone, Default)]
 pub struct Comb<X>(
     /// Delay line
     pub X,
