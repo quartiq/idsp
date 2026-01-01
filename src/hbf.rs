@@ -41,7 +41,7 @@ use dsp_process::SplitProcess;
 /// The filters are optimized for decent block sizes and perform best (i.e. with negligible
 /// overhead) for blocks of 32 high-rate items or more, depending very much on architecture.
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug)]
 pub struct SymFir<C>(pub C);
 
 impl<C, const M: usize> SymFir<[C; M]> {
@@ -76,7 +76,7 @@ impl<C, const M: usize> SymFir<[C; M]> {
 // TODO: pub struct SymFirInt<R>, SymFirDec<R>
 
 /// Half band decimator (decimate by two) state
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug)]
 pub struct HbfDec<T> {
     even: T, // at least N - M len
     odd: T,  // N > 2*M - 1 (=SymFir::LEN)
@@ -134,7 +134,7 @@ impl<
 }
 
 /// Half band interpolator (interpolation rate 2) state
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug)]
 pub struct HbfInt<T> {
     x: T, // len N > SymFir::LEN
 }
@@ -314,7 +314,7 @@ pub const HBF_CASCADE_BLOCK: usize = 1 << 6;
 ///
 /// See [HBF_TAPS].
 /// Supports rate changes of 1, 2, 4, 8, and 16.
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[allow(clippy::type_complexity)]
 pub struct HbfDecCascade(
     HbfDec<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
@@ -397,7 +397,7 @@ impl HbfDecCascade {
 ///
 /// See [HBF_TAPS].
 /// Supports rate changes of 1, 2, 4, 8, and 16.
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 #[allow(clippy::type_complexity)]
 pub struct HbfIntCascade(
     HbfInt<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
@@ -511,6 +511,37 @@ mod test {
     }
 
     #[test]
+    #[ignore]
+    fn plumbing() {
+        use dsp_process::{ChunkIn, Intermediate, SplitProcess};
+        const BUF: usize = 1 << 6;
+        let c = Intermediate::<_, [_; 8], BUF>::new((
+            ChunkIn(&HBF_TAPS.3),
+            Intermediate::<_, [_; 4], BUF>::new((
+                ChunkIn(&HBF_TAPS.2),
+                Intermediate::<_, _, BUF>::new((ChunkIn(&HBF_TAPS.1), &HBF_TAPS.0)),
+            )),
+        ));
+        let mut s = (
+            HbfDec::<[_; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + BUF * 8]>::default(),
+            (
+                HbfDec::<[_; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + BUF * 4]>::default(),
+                (
+                    HbfDec::<[_; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + BUF * 2]>::default(),
+                    HbfDec::<[_; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + BUF]>::default(),
+                ),
+            ),
+        );
+        const R: usize = 1 << 4;
+        let mut x = [[9.0; R]; 1 << 6];
+        let mut y = [7.0; 1 << 6];
+        for _ in 0..1 << 22 {
+            c.block(&mut s, &x, &mut y);
+            x[33][1] = y[11]; // prevent the entire loop from being optimized away
+        }
+    }
+
+    #[test]
     fn response_length_dec() {
         let mut h = HbfDecCascade::default();
         const R: usize = 1 << 4;
@@ -575,7 +606,7 @@ mod test {
         let mut y = [0.0; M];
         for _ in 0..1 << 25 {
             HBF_TAPS.4.block(&mut h, &x, &mut y);
-            x[33][1] = y[11]; // prevent the entire loop from being optimized away
+            x[13][1] = y[11]; // prevent the entire loop from being optimized away
         }
     }
 
@@ -605,7 +636,7 @@ mod test {
         const R: usize = 1 << 4;
         let mut x = [[9.0; R]; 1 << 6];
         let mut y = [0.0; 1 << 6];
-        for _ in 0..1 << 20 {
+        for _ in 0..1 << 22 {
             HBF_TAPS.block(&mut h, &x, &mut y);
             x[33][1] = y[11]; // prevent the entire loop from being optimized away
         }
