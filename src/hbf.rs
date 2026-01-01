@@ -512,8 +512,8 @@ mod test {
 
     #[test]
     #[ignore]
-    fn plumbing() {
-        use dsp_process::{ChunkIn, Intermediate, SplitProcess};
+    fn plumbing_dec_casc() {
+        use dsp_process::{ChunkIn, Intermediate};
         const BUF: usize = 1 << 6;
         let c = Intermediate::<_, [_; 8], BUF>::new((
             ChunkIn(&HBF_TAPS.3),
@@ -522,22 +522,56 @@ mod test {
                 Intermediate::<_, _, BUF>::new((ChunkIn(&HBF_TAPS.1), &HBF_TAPS.0)),
             )),
         ));
-        let mut s = (
-            HbfDec::<[_; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + BUF * 8]>::default(),
+        let mut s: (
+            HbfDec<[_; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + BUF * 8]>,
             (
-                HbfDec::<[_; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + BUF * 4]>::default(),
+                HbfDec<[_; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + BUF * 4]>,
                 (
-                    HbfDec::<[_; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + BUF * 2]>::default(),
-                    HbfDec::<[_; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + BUF]>::default(),
+                    HbfDec<[_; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + BUF * 2]>,
+                    HbfDec<[_; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + BUF]>,
                 ),
             ),
-        );
+        ) = Default::default();
         const R: usize = 1 << 4;
         let mut x = [[9.0; R]; 1 << 6];
         let mut y = [7.0; 1 << 6];
         for _ in 0..1 << 22 {
             c.block(&mut s, &x, &mut y);
             x[33][1] = y[11]; // prevent the entire loop from being optimized away
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn plumbing_int_casc() {
+        use dsp_process::{ChunkOut, Intermediate};
+        const BUF: usize = 1 << 6;
+        let c = Intermediate::<_, [_; 2], { BUF / 2 }>::new((
+            &HBF_TAPS.0,
+            Intermediate::<_, [_; 4], { BUF / 2 }>::new((
+                ChunkOut(&HBF_TAPS.1),
+                Intermediate::<_, [_; 8], { BUF / 2 }>::new((
+                    ChunkOut(&HBF_TAPS.2),
+                    ChunkOut(&HBF_TAPS.3),
+                )),
+            )),
+        ));
+        let mut s: (
+            HbfInt<[_; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + BUF]>,
+            (
+                HbfInt<[_; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + BUF * 2]>,
+                (
+                    HbfInt<[_; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + BUF * 4]>,
+                    HbfInt<[_; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + BUF * 8]>,
+                ),
+            ),
+        ) = Default::default();
+        const R: usize = 1 << 4;
+        let mut x = [9.0; 1 << 6];
+        let mut y = [[7.0; R]; 1 << 6];
+        for _ in 0..1 << 22 {
+            c.block(&mut s, &x, &mut y);
+            x[33] = y[11][9]; // prevent the entire loop from being optimized away
         }
     }
 
