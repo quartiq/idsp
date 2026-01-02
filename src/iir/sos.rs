@@ -207,12 +207,8 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for SosClamp<F> {
     }
 }
 
-impl<const F: i8> SplitInplace<i32, SosState> for Sos<F> {}
-impl<const F: i8> SplitInplace<i32, SosStateWide> for Sos<F> {}
-impl<const F: i8> SplitInplace<i32, SosStateDither> for Sos<F> {}
-impl<const F: i8> SplitInplace<i32, SosState> for SosClamp<F> {}
-impl<const F: i8> SplitInplace<i32, SosStateWide> for SosClamp<F> {}
-impl<const F: i8> SplitInplace<i32, SosStateDither> for SosClamp<F> {}
+impl<const F: i8, S> SplitInplace<i32, S> for Sos<F> where Self: SplitProcess<i32, i32, S> {}
+impl<const F: i8, S> SplitInplace<i32, S> for SosClamp<F> where Self: SplitProcess<i32, i32, S> {}
 
 fn quantize<T: From<f64>>(ba: [[f64; 3]; 2]) -> [T; 5] {
     let a0 = 1.0 / ba[1][0];
