@@ -8,7 +8,7 @@ use core::{
     slice::{from_mut, from_ref},
 };
 
-use dsp_process::{ChunkIn, ChunkOut, Intermediate, SplitProcess};
+use dsp_process::{ChunkIn, ChunkOut, Major, SplitProcess};
 
 /// Symmetric and anti-symmetric FIR filter prototype.
 ///
@@ -334,16 +334,16 @@ pub type HbfDec32 = (
     HbfDec16,
 );
 
-type HbfDecConfig<const B: usize = HBF_CASCADE_BLOCK> = Intermediate<
+type HbfDecConfig<const B: usize = HBF_CASCADE_BLOCK> = Major<
     (
         ChunkIn<&'static SymFir<[f32; HBF_TAPS.4.0.len()]>, 2>,
-        Intermediate<
+        Major<
             (
                 ChunkIn<&'static SymFir<[f32; HBF_TAPS.3.0.len()]>, 2>,
-                Intermediate<
+                Major<
                     (
                         ChunkIn<&'static SymFir<[f32; HBF_TAPS.2.0.len()]>, 2>,
-                        Intermediate<
+                        Major<
                             (
                                 ChunkIn<&'static SymFir<[f32; HBF_TAPS.1.0.len()]>, 2>,
                                 &'static SymFir<[f32; HBF_TAPS.0.0.len()]>,
@@ -361,13 +361,13 @@ type HbfDecConfig<const B: usize = HBF_CASCADE_BLOCK> = Intermediate<
 >;
 
 /// HBF decimation cascade
-pub const HBF_DEC_CASCADE: HbfDecConfig = Intermediate::new((
+pub const HBF_DEC_CASCADE: HbfDecConfig = Major::new((
     ChunkIn(&HBF_TAPS.4),
-    Intermediate::new((
+    Major::new((
         ChunkIn(&HBF_TAPS.3),
-        Intermediate::new((
+        Major::new((
             ChunkIn(&HBF_TAPS.2),
-            Intermediate::new((ChunkIn(&HBF_TAPS.1), &HBF_TAPS.0)),
+            Major::new((ChunkIn(&HBF_TAPS.1), &HBF_TAPS.0)),
         )),
     )),
 ));
@@ -421,13 +421,13 @@ pub type HbfInt32 = (
     HbfInt<[f32; SymFir::<[f32; HBF_TAPS.4.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 4)]>,
 );
 
-type HbfIntConfig<const B: usize = HBF_CASCADE_BLOCK> = Intermediate<
+type HbfIntConfig<const B: usize = HBF_CASCADE_BLOCK> = Major<
     (
-        Intermediate<
+        Major<
             (
-                Intermediate<
+                Major<
                     (
-                        Intermediate<
+                        Major<
                             (
                                 &'static SymFir<[f32; HBF_TAPS.0.0.len()]>,
                                 ChunkOut<&'static SymFir<[f32; HBF_TAPS.1.0.len()]>, 2>,
@@ -448,10 +448,10 @@ type HbfIntConfig<const B: usize = HBF_CASCADE_BLOCK> = Intermediate<
 >;
 
 /// HBF interpolation cascade
-pub const HBF_INT_CASCADE: HbfIntConfig = Intermediate::new((
-    Intermediate::new((
-        Intermediate::new((
-            Intermediate::new((&HBF_TAPS.0, ChunkOut(&HBF_TAPS.1))),
+pub const HBF_INT_CASCADE: HbfIntConfig = Major::new((
+    Major::new((
+        Major::new((
+            Major::new((&HBF_TAPS.0, ChunkOut(&HBF_TAPS.1))),
             ChunkOut(&HBF_TAPS.2),
         )),
         ChunkOut(&HBF_TAPS.3),

@@ -1,6 +1,5 @@
 use crate::{
-    Channels, Inplace, Intermediate, Minor, Parallel, Process, SplitInplace, SplitProcess,
-    Transpose, Unsplit,
+    Channels, Inplace, Major, Minor, Parallel, Process, SplitInplace, SplitProcess, Transpose,
 };
 
 //////////// SPLIT ////////////
@@ -45,7 +44,22 @@ impl<C, S> Split<C, S> {
             state: &mut self.state,
         }
     }
+
+    /// Assert that this implements Process<X, Y>
+    pub const fn assert_process<X: Copy, Y>(&self)
+    where
+        Self: Process<X, Y>,
+    {
+    }
 }
+
+/// Stateless/stateful marker
+///
+/// To be used in `Split<Unsplit<P>, ()>` and `Split<(), Unsplit<P>>`
+/// to mark processors requiring no state and no configuration respectively.
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(transparent)]
+pub struct Unsplit<P>(pub P);
 
 impl<C> Split<Unsplit<C>, ()> {
     /// Create a stateless processor
@@ -138,35 +152,35 @@ impl<C, S> Split<C, S> {
     }
 
     /// Convert to intermediate buffered processor-major
-    pub fn intermediate<B>(self) -> Split<Intermediate<C, B>, S> {
-        Split::new(Intermediate::new(self.config), self.state)
+    pub fn major<B>(self) -> Split<Major<C, B>, S> {
+        Split::new(Major::new(self.config), self.state)
     }
 }
 
 impl<C, S, U> Split<Minor<C, U>, S> {
-    /// Convert to major
-    pub fn major(self) -> Split<C, S> {
+    /// Strip minor
+    pub fn inter(self) -> Split<C, S> {
         Split::new(self.config.inner, self.state)
     }
 }
 
 impl<C, S> Split<Parallel<C>, S> {
     /// Convert to serial
-    pub fn major(self) -> Split<C, S> {
+    pub fn inter(self) -> Split<C, S> {
         Split::new(self.config.0, self.state)
     }
 }
 
 impl<C, S> Split<Transpose<C>, S> {
     /// Convert to non-transposing
-    pub fn major(self) -> Split<C, S> {
+    pub fn inter(self) -> Split<C, S> {
         Split::new(self.config.0, self.state)
     }
 }
 
-impl<C, S, B> Split<Intermediate<C, B>, S> {
-    /// Remove intermediate buffering
-    pub fn major(self) -> Split<C, S> {
+impl<C, S, B> Split<Major<C, B>, S> {
+    /// Remove major intermediate buffering
+    pub fn inter(self) -> Split<C, S> {
         Split::new(self.config.inner, self.state)
     }
 }
@@ -193,25 +207,25 @@ impl<C, S, const N: usize> Split<[C; N], [S; N]> {
 }
 
 /// Stateless filters
-impl<X: Copy, Y, P> SplitProcess<X, Y> for Unsplit<P>
+impl<'a, X: Copy, Y, P> SplitProcess<X, Y> for Unsplit<&'a P>
 where
-    for<'a> &'a P: Process<X, Y>,
+    &'a P: Process<X, Y>,
 {
     fn process(&self, _state: &mut (), x: X) -> Y {
-        (&self.0).process(x)
+        (&*self.0).process(x)
     }
 
     fn block(&self, _state: &mut (), x: &[X], y: &mut [Y]) {
-        (&self.0).block(x, y)
+        (&*self.0).block(x, y)
     }
 }
 
-impl<X: Copy, P> SplitInplace<X> for Unsplit<P>
+impl<'a, X: Copy, P> SplitInplace<X> for Unsplit<&'a P>
 where
-    for<'a> &'a P: Inplace<X>,
+    &'a P: Inplace<X>,
 {
     fn inplace(&self, _state: &mut (), xy: &mut [X]) {
-        (&self.0).inplace(xy)
+        (&*self.0).inplace(xy)
     }
 }
 
@@ -229,392 +243,5 @@ impl<X: Copy, Y, P: Process<X, Y>> SplitProcess<X, Y, Unsplit<P>> for () {
 impl<X: Copy, P: Inplace<X>> SplitInplace<X, Unsplit<P>> for () {
     fn inplace(&self, state: &mut Unsplit<P>, xy: &mut [X]) {
         state.0.inplace(xy)
-    }
-}
-
-//////////// SPLIT MAJOR ////////////
-
-/// Chain of two different large filters
-///
-/// X->Y
-impl<X: Copy, Y: Copy, C0, C1, S0, S1> SplitProcess<X, Y, (S0, S1)> for (C0, C1)
-where
-    C0: SplitProcess<X, Y, S0>,
-    C1: SplitInplace<Y, S1>,
-{
-    fn process(&self, state: &mut (S0, S1), x: X) -> Y {
-        // TODO: defer to Minor
-        self.1
-            .process(&mut state.1, self.0.process(&mut state.0, x))
-    }
-
-    fn block(&self, state: &mut (S0, S1), x: &[X], y: &mut [Y]) {
-        self.0.block(&mut state.0, x, y);
-        self.1.inplace(&mut state.1, y);
-    }
-}
-
-impl<X: Copy, C0, C1, S0, S1> SplitInplace<X, (S0, S1)> for (C0, C1)
-where
-    C0: SplitInplace<X, S0>,
-    C1: SplitInplace<X, S1>,
-{
-    fn inplace(&self, state: &mut (S0, S1), xy: &mut [X]) {
-        self.0.inplace(&mut state.0, xy);
-        self.1.inplace(&mut state.1, xy);
-    }
-}
-
-/// A chain of multiple large filters of the same type
-///
-/// slice can be empty
-/// X->X->X...
-impl<X: Copy, C, S> SplitProcess<X, X, [S]> for [C]
-where
-    C: SplitInplace<X, S>,
-{
-    fn process(&self, state: &mut [S], x: X) -> X {
-        debug_assert_eq!(self.len(), state.len());
-        self.iter()
-            .zip(state.iter_mut())
-            .fold(x, |x, (c, s)| c.process(s, x))
-    }
-
-    fn block(&self, state: &mut [S], x: &[X], y: &mut [X]) {
-        debug_assert_eq!(self.len(), state.len());
-        if let Some(((c0, c), (s0, s))) = self.split_first().zip(state.split_first_mut()) {
-            c0.block(s0, x, y);
-            for (c, s) in c.iter().zip(s) {
-                c.inplace(s, y);
-            }
-        } else {
-            y.copy_from_slice(x);
-        }
-    }
-}
-
-impl<X: Copy, C, S> SplitInplace<X, [S]> for [C]
-where
-    C: SplitInplace<X, S>,
-{
-    fn inplace(&self, state: &mut [S], xy: &mut [X]) {
-        debug_assert_eq!(self.len(), state.len());
-        for (c, s) in self.iter().zip(state.iter_mut()) {
-            c.inplace(s, xy);
-        }
-    }
-}
-
-/// A chain of multiple large filters of the same type
-///
-/// X->Y->Y...
-impl<X: Copy, Y: Copy, C, S, const N: usize> SplitProcess<X, Y, [S; N]> for [C; N]
-where
-    C: SplitProcess<X, Y, S> + SplitInplace<Y, S>,
-{
-    fn process(&self, state: &mut [S; N], x: X) -> Y {
-        const { assert!(N > 0) }
-        let ((c0, c), (s0, s)) = self.split_first().zip(state.split_first_mut()).unwrap();
-        c.iter()
-            .zip(s.iter_mut())
-            .fold(c0.process(s0, x), |x, (c, s)| c.process(s, x))
-    }
-
-    fn block(&self, state: &mut [S; N], x: &[X], y: &mut [Y]) {
-        const { assert!(N > 0) }
-        let ((c0, c), (s0, s)) = self.split_first().zip(state.split_first_mut()).unwrap();
-        c0.block(s0, x, y);
-        for (c, s) in c.iter().zip(s.iter_mut()) {
-            c.inplace(s, y)
-        }
-    }
-}
-
-impl<X: Copy, C, S, const N: usize> SplitInplace<X, [S; N]> for [C; N]
-where
-    C: SplitInplace<X, S>,
-{
-    fn inplace(&self, state: &mut [S; N], xy: &mut [X]) {
-        self.as_ref().inplace(state.as_mut(), xy)
-    }
-}
-
-//////////// SPLIT MINOR ////////////
-
-impl<X: Copy, U: Copy, Y, C0, C1, S0, S1> SplitProcess<X, Y, (S0, S1)> for Minor<(C0, C1), U>
-where
-    C0: SplitProcess<X, U, S0>,
-    C1: SplitProcess<U, Y, S1>,
-{
-    fn process(&self, state: &mut (S0, S1), x: X) -> Y {
-        self.inner
-            .1
-            .process(&mut state.1, self.inner.0.process(&mut state.0, x))
-    }
-}
-
-/// A chain of multiple small filters of the same type
-impl<X: Copy, C, S> SplitProcess<X, X, [S]> for Minor<[C], X>
-where
-    C: SplitProcess<X, X, S>,
-{
-    fn process(&self, state: &mut [S], x: X) -> X {
-        debug_assert_eq!(self.inner.len(), state.len());
-        self.inner
-            .iter()
-            .zip(state.iter_mut())
-            .fold(x, |x, (c, s)| c.process(s, x))
-    }
-}
-
-/// A chain of multiple small filters of the same type
-impl<X: Copy, Y: Copy, C, S, const N: usize> SplitProcess<X, Y, [S; N]> for Minor<[C; N], Y>
-where
-    C: SplitProcess<X, Y, S> + SplitProcess<Y, Y, S>,
-{
-    fn process(&self, state: &mut [S; N], x: X) -> Y {
-        const { assert!(N > 0) }
-        let ((c0, c), (s0, s)) = self
-            .inner
-            .split_first()
-            .zip(state.split_first_mut())
-            .unwrap();
-        c.iter()
-            .zip(s.iter_mut())
-            .fold(c0.process(s0, x), |x, (c, s)| c.process(s, x))
-    }
-}
-
-impl<X: Copy, U, C, S> SplitInplace<X, S> for Minor<C, U> where Self: SplitProcess<X, X, S> {}
-
-//////////// SPLIT PARALLEL ////////////
-
-impl<X0: Copy, X1: Copy, Y0, Y1, C0, C1, S0, S1> SplitProcess<(X0, X1), (Y0, Y1), (S0, S1)>
-    for Parallel<(C0, C1)>
-where
-    C0: SplitProcess<X0, Y0, S0>,
-    C1: SplitProcess<X1, Y1, S1>,
-{
-    fn process(&self, state: &mut (S0, S1), x: (X0, X1)) -> (Y0, Y1) {
-        (
-            self.0.0.process(&mut state.0, x.0),
-            self.0.1.process(&mut state.1, x.1),
-        )
-    }
-}
-
-impl<X: Copy, Y, C0, C1, S0, S1> SplitProcess<[X; 2], [Y; 2], (S0, S1)> for Parallel<(C0, C1)>
-where
-    C0: SplitProcess<X, Y, S0>,
-    C1: SplitProcess<X, Y, S1>,
-{
-    fn process(&self, state: &mut (S0, S1), x: [X; 2]) -> [Y; 2] {
-        [
-            self.0.0.process(&mut state.0, x[0]),
-            self.0.1.process(&mut state.1, x[1]),
-        ]
-    }
-}
-
-impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Parallel<[C; N]>
-where
-    [Y; N]: Default,
-    C: SplitProcess<X, Y, S>,
-{
-    fn process(&self, state: &mut [S; N], x: [X; N]) -> [Y; N] {
-        let mut y = <[Y; N]>::default();
-        for ((c, s), (x, y)) in self
-            .0
-            .iter()
-            .zip(state.iter_mut())
-            .zip(x.into_iter().zip(y.iter_mut()))
-        {
-            *y = c.process(s, x);
-        }
-        y
-    }
-}
-
-impl<X: Copy, C, S> SplitInplace<X, S> for Parallel<C> where Self: SplitProcess<X, X, S> {}
-
-//////////// TRANSPOSE ////////////
-
-impl<X: Copy, Y, C0, C1, S0, S1> SplitProcess<[X; 2], [Y; 2], (S0, S1)> for Transpose<(C0, C1)>
-where
-    C0: SplitProcess<X, Y, S0>,
-    C1: SplitProcess<X, Y, S1>,
-{
-    fn process(&self, state: &mut (S0, S1), x: [X; 2]) -> [Y; 2] {
-        [
-            self.0.0.process(&mut state.0, x[0]),
-            self.0.1.process(&mut state.1, x[1]),
-        ]
-    }
-
-    fn block(&self, state: &mut (S0, S1), x: &[[X; 2]], y: &mut [[Y; 2]]) {
-        debug_assert_eq!(x.len(), y.len());
-        let n = x.len();
-        let (x0, x1) = x.as_flattened().split_at(n);
-        let (y0, y1) = y.as_flattened_mut().split_at_mut(n);
-        self.0.0.block(&mut state.0, x0, y0);
-        self.0.1.block(&mut state.1, x1, y1);
-    }
-}
-
-impl<X: Copy, C0, C1, S0, S1> SplitInplace<[X; 2], (S0, S1)> for Transpose<(C0, C1)>
-where
-    C0: SplitInplace<X, S0>,
-    C1: SplitInplace<X, S1>,
-{
-    fn inplace(&self, state: &mut (S0, S1), xy: &mut [[X; 2]]) {
-        let n = xy.len();
-        let (xy0, xy1) = xy.as_flattened_mut().split_at_mut(n);
-        self.0.0.inplace(&mut state.0, xy0);
-        self.0.1.inplace(&mut state.1, xy1);
-    }
-}
-
-impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Transpose<[C; N]>
-where
-    [Y; N]: Default,
-    C: SplitProcess<X, Y, S>,
-{
-    fn process(&self, state: &mut [S; N], x: [X; N]) -> [Y; N] {
-        let mut y = <[Y; N]>::default();
-        for ((c, s), (x, y)) in self
-            .0
-            .iter()
-            .zip(state.iter_mut())
-            .zip(x.into_iter().zip(y.iter_mut()))
-        {
-            *y = c.process(s, x);
-        }
-        y
-    }
-
-    fn block(&self, state: &mut [S; N], x: &[[X; N]], y: &mut [[Y; N]]) {
-        debug_assert_eq!(x.len(), y.len());
-        let n = x.len();
-        for ((c, s), (x, y)) in self.0.iter().zip(state.iter_mut()).zip(
-            x.as_flattened()
-                .chunks_exact(n)
-                .zip(y.as_flattened_mut().chunks_exact_mut(n)),
-        ) {
-            c.block(s, x, y)
-        }
-    }
-}
-
-impl<X: Copy, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Transpose<[C; N]>
-where
-    [X; N]: Default,
-    C: SplitInplace<X, S>,
-{
-    fn inplace(&self, state: &mut [S; N], xy: &mut [[X; N]]) {
-        let n = xy.len();
-        for ((c, s), xy) in self
-            .0
-            .iter()
-            .zip(state.iter_mut())
-            .zip(xy.as_flattened_mut().chunks_exact_mut(n))
-        {
-            c.inplace(s, xy)
-        }
-    }
-}
-
-//////////// CHANNELS ////////////
-
-/// Process data from multiple channels with a common configuration
-///
-/// Note that block() and inplace() reinterpret the data as [`Transpose`]: __not__ as `[[X; N]]` but as `[[X]; N]`.
-/// Use `x.as_flattened().chunks_exact(x.len())`/`x.as_chunks<N>().0` etc. to match that.
-impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Channels<C>
-where
-    [Y; N]: Default,
-    C: SplitProcess<X, Y, S>,
-{
-    fn process(&self, state: &mut [S; N], x: [X; N]) -> [Y; N] {
-        let mut y = <[Y; N]>::default();
-        for ((x, y), state) in x.into_iter().zip(y.iter_mut()).zip(state.iter_mut()) {
-            *y = self.0.process(state, x);
-        }
-        y
-    }
-
-    fn block(&self, state: &mut [S; N], x: &[[X; N]], y: &mut [[Y; N]]) {
-        debug_assert_eq!(x.len(), y.len());
-        let n = x.len();
-        for ((x, y), state) in x
-            .as_flattened()
-            .chunks_exact(n)
-            .zip(y.as_flattened_mut().chunks_exact_mut(n))
-            .zip(state.iter_mut())
-        {
-            self.0.block(state, x, y)
-        }
-    }
-}
-
-impl<X: Copy, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Channels<C>
-where
-    [X; N]: Default,
-    C: SplitInplace<X, S>,
-{
-    fn inplace(&self, state: &mut [S; N], xy: &mut [[X; N]]) {
-        let n = xy.len();
-        for (xy, state) in xy
-            .as_flattened_mut()
-            .chunks_exact_mut(n)
-            .zip(state.iter_mut())
-        {
-            self.0.inplace(state, xy)
-        }
-    }
-}
-
-//////////// SPLIT INTERMEDIATE ////////////
-
-impl<X: Copy, U: Copy + Default, Y, C0, C1, S0, S1, const N: usize> SplitProcess<X, Y, (S0, S1)>
-    for Intermediate<(C0, C1), [U; N]>
-where
-    C0: SplitProcess<X, U, S0>,
-    C1: SplitProcess<U, Y, S1>,
-{
-    fn process(&self, state: &mut (S0, S1), x: X) -> Y {
-        self.inner
-            .1
-            .process(&mut state.1, self.inner.0.process(&mut state.0, x))
-    }
-
-    fn block(&self, state: &mut (S0, S1), x: &[X], y: &mut [Y]) {
-        debug_assert_eq!(x.len(), y.len());
-        let mut u = [U::default(); N];
-        let (x, xr) = x.as_chunks::<N>();
-        let (y, yr) = y.as_chunks_mut::<N>();
-        for (x, y) in x.iter().zip(y) {
-            self.inner.0.block(&mut state.0, x, &mut u);
-            self.inner.1.block(&mut state.1, &u, y);
-        }
-        self.inner.0.block(&mut state.0, xr, &mut u[..xr.len()]);
-        self.inner.1.block(&mut state.1, &u[..xr.len()], yr);
-    }
-}
-
-impl<X: Copy, U: Copy + Default, C0, C1, S0, S1, const N: usize> SplitInplace<X, (S0, S1)>
-    for Intermediate<(C0, C1), [U; N]>
-where
-    C0: SplitProcess<X, U, S0>,
-    C1: SplitProcess<U, X, S1>,
-{
-    fn inplace(&self, state: &mut (S0, S1), xy: &mut [X]) {
-        let mut u = [U::default(); N];
-        let (xy, xyr) = xy.as_chunks_mut::<N>();
-        for xy in xy {
-            self.inner.0.block(&mut state.0, xy, &mut u);
-            self.inner.1.block(&mut state.1, &u, xy);
-        }
-        self.inner.0.block(&mut state.0, xyr, &mut u[..xyr.len()]);
-        self.inner.1.block(&mut state.1, &u[..xyr.len()], xyr);
     }
 }

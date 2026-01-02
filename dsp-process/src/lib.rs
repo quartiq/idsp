@@ -1,99 +1,16 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
-use core::marker::PhantomData;
 
 mod process;
 pub use process::*;
 mod basic;
-mod containers;
 pub use basic::*;
 mod split;
 pub use split::*;
 mod adapters;
 pub use adapters::*;
-
-/// Stateless/stateful marker
-///
-/// To be used in `Split<Unsplit<P>, ()>` and `Split<(), Unsplit<P>>`
-/// to mark processors requiring no state and no configuration respectively.
-#[derive(Debug, Copy, Clone, Default)]
-#[repr(transparent)]
-pub struct Unsplit<P>(pub P);
-
-/// Processor-minor, data-major
-///
-/// The various Process tooling implementations for `Minor`
-/// place the data loop as the outer-most loop (processor-minor, data-major).
-/// This is optimal for processors with small or no state and configuration.
-///
-/// Chain of large processors are implemented through tuples and slices/arrays.
-/// Those optimize well if the sizes obey configuration ~ state > data.
-/// If they do not, use `Minor`.
-///
-/// Note that the major implementations only override the behavior
-/// for `block()` and `inplace()`. `process()` is unaffected.
-#[derive(Clone, Copy, Debug, Default)]
-#[repr(transparent)]
-pub struct Minor<C: ?Sized, U> {
-    /// An intermediate data type
-    _intermediate: PhantomData<U>,
-    /// The inner configurations
-    pub inner: C,
-}
-
-impl<C, U> Minor<C, U> {
-    /// Create a new chain
-    pub const fn new(inner: C) -> Self {
-        Self {
-            inner,
-            _intermediate: PhantomData,
-        }
-    }
-}
-
-impl<C, U, const N: usize> Minor<[C; N], U> {
-    /// Borrowed Self
-    pub fn as_ref(&self) -> Minor<&[C], U> {
-        Minor::new(self.inner.as_ref())
-    }
-
-    /// Mutably borrowed Self
-    pub fn as_mut(&mut self) -> Minor<&mut [C], U> {
-        Minor::new(self.inner.as_mut())
-    }
-}
-
-/// Chain of processors with intermediate buffer supporting block() from block()s
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Intermediate<P, B> {
-    /// The inner processors
-    pub inner: P,
-    _marker: PhantomData<B>,
-}
-impl<P, B> Intermediate<P, B> {
-    /// Create a new chain of processors
-    pub const fn new(inner: P) -> Self {
-        Self {
-            inner,
-            _marker: PhantomData,
-        }
-    }
-}
-
-/// Fan out parallel input to parallel processors
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Parallel<P>(pub P);
-
-/// Data block transposition wrapper
-///
-/// Like [`Parallel`] but reinterpreting data as transpes `[[X; N]] <-> [[X]; N]`
-/// such that `block()` and `inplace()` are lowered.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Transpose<C>(pub C);
-
-/// Multiple channels to be processed with the same configuration
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Channels<C>(pub C);
+mod compose;
+pub use compose::*;
 
 /// Parallel filter pair
 ///
@@ -108,7 +25,7 @@ pub struct Channels<C>(pub C);
 /// To avoid this, use `block()` and `inplace()` on a scratch buffer (input or output).
 ///
 /// The corresponding state for this is `(((), (S0, S1)), ())`.
-pub type Pair<C0, C1, X, I = Unsplit<Identity>, J = Unsplit<Add>> =
+pub type Pair<C0, C1, X, I = Unsplit<&'static Identity>, J = Unsplit<&'static Add>> =
     Minor<((I, Parallel<(C0, C1)>), J), [X; 2]>;
 
 #[cfg(test)]
@@ -116,31 +33,31 @@ mod test {
     use super::*;
     use dsp_fixedpoint::Q32;
 
-    #[allow(unused)]
-    const fn assert_process<T: Process<X, Y>, X: Copy, Y>() {}
-
     #[test]
     fn misc() {
         let y: i32 = (&Identity).process(3);
         assert_eq!(y, 3);
-        assert_eq!(Split::stateless(Neg).as_mut().process(9), -9);
+        assert_eq!(Split::stateless(&Neg).as_mut().process(9), -9);
         //assert_eq!(Split::stateless(Neg).process(9), -9);
         assert_eq!((&Gain(Q32::<3>::new(32))).process(9), 9 * 4);
         assert_eq!((&Offset(7)).process(9), 7 + 9);
-        assert_eq!(Minor::new((&Offset(7), &Offset(1))).process(9), 7 + 1 + 9);
+        let mut p = (Split::stateless(&Offset(7)) * Split::stateless(&Offset(1))).minor();
+        p.as_mut().assert_process::<i8, _>();
+        assert_eq!(p.as_mut().process(9), 7 + 1 + 9);
         let mut xy = [3, 0, 0];
         let mut dly = Buffer::<[_; 2]>::default();
         dly.inplace(&mut xy);
         assert_eq!(xy, [0, 0, 3]);
         let y: i32 = Split::stateful(dly).as_mut().process(4);
         assert_eq!(y, 0);
+        let g = Gain(Q32::<1>::new(4));
         let mut f = Split::new(
-            Pair::<_, _, i32>::new((
+            Pair::<_, _, _>::new((
                 (
-                    Default::default(),
-                    Parallel((Unsplit(Offset(3)), Unsplit(Gain(Q32::<1>::new(4))))),
+                    Unsplit(&Identity),
+                    Parallel((Unsplit(&Offset(3)), Unsplit(&g))),
                 ),
-                Default::default(),
+                Unsplit(&Add),
             )),
             Default::default(),
         );

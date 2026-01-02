@@ -139,9 +139,9 @@ mod _idsp {
             ),
         );
 
-        let mut f = (Split::stateless(Identity)
+        let mut f = (Split::stateless(&Identity)
             * Split::new(p, Default::default()).parallel()
-            * Split::stateless(Add))
+            * Split::stateless(&Add))
         .minor::<[_; _]>();
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
         f.as_mut().inplace(xy);
