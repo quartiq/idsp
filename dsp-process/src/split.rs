@@ -1,3 +1,5 @@
+use core::array::{from_fn, repeat};
+
 use crate::{
     Channels, Inplace, Major, Minor, Parallel, Process, SplitInplace, SplitProcess, Transpose,
 };
@@ -35,21 +37,21 @@ impl<C, S> Split<C, S> {
         Self { config, state }
     }
 
+    /// Statically assert that this implements Process<X, Y>
+    pub const fn assert_process<X: Copy, Y>(&self)
+    where
+        Self: Process<X, Y>,
+    {
+    }
+
     /// Obtain a borrowing Split
     ///
-    /// Stateful `Process` is typically implemented on the borrowing Split
+    /// Stateful `Process` is implemented on the borrowing Split
     pub fn as_mut(&mut self) -> Split<&C, &mut S> {
         Split {
             config: &self.config,
             state: &mut self.state,
         }
-    }
-
-    /// Assert that this implements Process<X, Y>
-    pub const fn assert_process<X: Copy, Y>(&self)
-    where
-        Self: Process<X, Y>,
-    {
     }
 }
 
@@ -75,12 +77,12 @@ impl<S> Split<(), Unsplit<S>> {
     }
 }
 
-/// Unzip two splits into one (config major)
+/// Unzip two splits into one
 impl<C0, C1, S0, S1> core::ops::Mul<Split<C1, S1>> for Split<C0, S0> {
     type Output = Split<(C0, C1), (S0, S1)>;
 
     fn mul(self, rhs: Split<C1, S1>) -> Self::Output {
-        (self, rhs).into()
+        Split::from((self, rhs))
     }
 }
 
@@ -89,7 +91,7 @@ impl<C0, C1, S0, S1> core::ops::Add<Split<C1, S1>> for Split<C0, S0> {
     type Output = Split<Parallel<(C0, C1)>, (S0, S1)>;
 
     fn add(self, rhs: Split<C1, S1>) -> Self::Output {
-        Split::from((self, rhs)).parallel()
+        (self * rhs).parallel()
     }
 }
 
@@ -109,8 +111,8 @@ impl<C, S, const N: usize> From<[Split<C, S>; N]> for Split<[C; N], [S; N]> {
         // Not efficient or nice, but this is usually not a hot path
         let mut splits = splits.map(|s| (Some(s.config), Some(s.state)));
         Self::new(
-            core::array::from_fn(|i| splits[i].0.take().unwrap()),
-            core::array::from_fn(|i| splits[i].1.take().unwrap()),
+            from_fn(|i| splits[i].0.take().unwrap()),
+            from_fn(|i| splits[i].1.take().unwrap()),
         )
     }
 }
@@ -119,6 +121,11 @@ impl<C, S> Split<C, S> {
     /// Convert to a configuration-minor split
     pub fn minor<U>(self) -> Split<Minor<C, U>, S> {
         Split::new(Minor::new(self.config), self.state)
+    }
+
+    /// Convert to intermediate buffered processor-major
+    pub fn major<U>(self) -> Split<Major<C, U>, S> {
+        Split::new(Major::new(self.config), self.state)
     }
 
     /// Convert to parallel (MIMO)
@@ -132,10 +139,7 @@ impl<C, S> Split<C, S> {
         C: Clone,
         S: Clone,
     {
-        Split::new(
-            core::array::repeat(self.config),
-            core::array::repeat(self.state),
-        )
+        Split::new(repeat(self.config), repeat(self.state))
     }
 
     /// Apply to multiple states by cloning the current (!) state
@@ -143,17 +147,12 @@ impl<C, S> Split<C, S> {
     where
         S: Clone,
     {
-        Split::new(Channels(self.config), core::array::repeat(self.state))
+        Split::new(Channels(self.config), repeat(self.state))
     }
 
     /// Convert to parallel transpose operation on blocks/inplace of `[[x]; N]` instead of `[[x; N]]`
     pub fn transpose(self) -> Split<Transpose<C>, S> {
         Split::new(Transpose(self.config), self.state)
-    }
-
-    /// Convert to intermediate buffered processor-major
-    pub fn major<B>(self) -> Split<Major<C, B>, S> {
-        Split::new(Major::new(self.config), self.state)
     }
 }
 
@@ -199,7 +198,7 @@ impl<C, S, const N: usize> Split<[C; N], [S; N]> {
     /// Zip up a split
     pub fn zip(self) -> [Split<C, S>; N] {
         let mut it = self.config.into_iter().zip(self.state);
-        core::array::from_fn(|_| {
+        from_fn(|_| {
             let (c, s) = it.next().unwrap();
             Split::new(c, s)
         })

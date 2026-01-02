@@ -83,12 +83,14 @@ impl<T: Copy> Inplace<T> for &Identity {
     fn inplace(&mut self, _xy: &mut [T]) {}
 }
 
+/// Fan out
 impl<X: Copy> Process<X, (X, X)> for &Identity {
     fn process(&mut self, x: X) -> (X, X) {
         (x, x)
     }
 }
 
+/// Fan out
 impl<X: Copy, const N: usize> Process<X, [X; N]> for &Identity {
     fn process(&mut self, x: X) -> [X; N] {
         core::array::repeat(x)
@@ -249,6 +251,8 @@ impl<X: Copy + core::ops::Add<X, Output = Y>, Y, const N: usize> Process<X, Y> f
         self.0[0] = x;
         y
     }
+
+    // TODO: block, inplace
 }
 impl<X: Copy> Inplace<X> for Nyquist<X> where Self: Process<X> {}
 
@@ -282,5 +286,7 @@ impl<X: Copy + core::ops::Sub<X, Output = Y>, Y, const N: usize> Process<X, Y> f
         self.0[0] = x;
         y
     }
+
+    // TODO: block, inplace
 }
 impl<X: Copy> Inplace<X> for Comb<X> where Self: Process<X> {}

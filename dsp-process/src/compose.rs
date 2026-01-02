@@ -83,7 +83,9 @@ where
 {
     fn process(&self, state: &mut [S; N], x: X) -> Y {
         const { assert!(N > 0) }
-        let ((c0, c), (s0, s)) = self.split_first().zip(state.split_first_mut()).unwrap();
+        let Some(((c0, c), (s0, s))) = self.split_first().zip(state.split_first_mut()) else {
+            unreachable!()
+        };
         c.iter()
             .zip(s.iter_mut())
             .fold(c0.process(s0, x), |x, (c, s)| c.process(s, x))
@@ -91,7 +93,9 @@ where
 
     fn block(&self, state: &mut [S; N], x: &[X], y: &mut [Y]) {
         const { assert!(N > 0) }
-        let ((c0, c), (s0, s)) = self.split_first().zip(state.split_first_mut()).unwrap();
+        let Some(((c0, c), (s0, s))) = self.split_first().zip(state.split_first_mut()) else {
+            unreachable!()
+        };
         c0.block(s0, x, y);
         for (c, s) in c.iter().zip(s.iter_mut()) {
             c.inplace(s, y)
@@ -186,11 +190,9 @@ where
 {
     fn process(&self, state: &mut [S; N], x: X) -> Y {
         const { assert!(N > 0) }
-        let ((c0, c), (s0, s)) = self
-            .inner
-            .split_first()
-            .zip(state.split_first_mut())
-            .unwrap();
+        let Some(((c0, c), (s0, s))) = self.inner.split_first().zip(state.split_first_mut()) else {
+            unreachable!()
+        };
         c.iter()
             .zip(s.iter_mut())
             .fold(c0.process(s0, x), |x, (c, s)| c.process(s, x))
@@ -232,13 +234,13 @@ where
     }
 }
 
-impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Parallel<[C; N]>
+impl<X: Copy, Y: Copy + Default, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]>
+    for Parallel<[C; N]>
 where
-    [Y; N]: Default,
     C: SplitProcess<X, Y, S>,
 {
     fn process(&self, state: &mut [S; N], x: [X; N]) -> [Y; N] {
-        let mut y = <[Y; N]>::default();
+        let mut y = [Y::default(); N];
         for ((c, s), (x, y)) in self
             .0
             .iter()
@@ -297,13 +299,13 @@ where
     }
 }
 
-impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Transpose<[C; N]>
+impl<X: Copy, Y: Copy + Default, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]>
+    for Transpose<[C; N]>
 where
-    [Y; N]: Default,
     C: SplitProcess<X, Y, S>,
 {
     fn process(&self, state: &mut [S; N], x: [X; N]) -> [Y; N] {
-        let mut y = <[Y; N]>::default();
+        let mut y = [Y::default(); N];
         for ((c, s), (x, y)) in self
             .0
             .iter()
@@ -328,9 +330,8 @@ where
     }
 }
 
-impl<X: Copy, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Transpose<[C; N]>
+impl<X: Copy + Default, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Transpose<[C; N]>
 where
-    [X; N]: Default,
     C: SplitInplace<X, S>,
 {
     fn inplace(&self, state: &mut [S; N], xy: &mut [[X; N]]) {
@@ -356,13 +357,13 @@ pub struct Channels<C>(pub C);
 ///
 /// Note that block() and inplace() reinterpret the data as [`Transpose`]: __not__ as `[[X; N]]` but as `[[X]; N]`.
 /// Use `x.as_flattened().chunks_exact(x.len())`/`x.as_chunks<N>().0` etc. to match that.
-impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Channels<C>
+impl<X: Copy, Y: Copy + Default, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]>
+    for Channels<C>
 where
-    [Y; N]: Default,
     C: SplitProcess<X, Y, S>,
 {
     fn process(&self, state: &mut [S; N], x: [X; N]) -> [Y; N] {
-        let mut y = <[Y; N]>::default();
+        let mut y = [Y::default(); N];
         for ((x, y), state) in x.into_iter().zip(y.iter_mut()).zip(state.iter_mut()) {
             *y = self.0.process(state, x);
         }
@@ -383,9 +384,8 @@ where
     }
 }
 
-impl<X: Copy, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Channels<C>
+impl<X: Copy + Default, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Channels<C>
 where
-    [X; N]: Default,
     C: SplitInplace<X, S>,
 {
     fn inplace(&self, state: &mut [S; N], xy: &mut [[X; N]]) {
@@ -407,13 +407,13 @@ where
 ///
 /// Prefer default composition for X->X->X, arrays/slices where inplace is possible
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Major<P: ?Sized, B> {
+pub struct Major<P: ?Sized, U> {
     /// Intermediate buffer
-    _buf: PhantomData<B>,
+    _buf: PhantomData<U>,
     /// The inner processors
     pub inner: P,
 }
-impl<P, B> Major<P, B> {
+impl<P, U> Major<P, U> {
     /// Create a new chain of processors
     pub const fn new(inner: P) -> Self {
         Self {

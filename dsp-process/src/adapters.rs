@@ -2,7 +2,7 @@ use crate::{SplitInplace, SplitProcess};
 
 /// Adapts an interpolator to output chunk mode
 ///
-/// The inner processor is called with `Some(x)` once and then `None`
+/// The inner processor is called with `Some(x)` once and then `None` `N-1` times
 #[derive(Clone, Debug, Default)]
 pub struct Interpolator<P>(pub P);
 impl<X: Copy, Y, C: SplitProcess<Option<X>, Y, S>, S, const N: usize> SplitProcess<X, [Y; N], S>
@@ -24,6 +24,7 @@ impl<X: Copy, Y, C: SplitProcess<X, Option<Y>, S>, S, const N: usize> SplitProce
     for Decimator<C>
 {
     fn process(&self, state: &mut S, x: [X; N]) -> Y {
+        const { assert!(N > 0) }
         x.into_iter()
             .find_map(|x| self.0.process(state, x))
             .unwrap()
@@ -112,16 +113,16 @@ where
 /// Adapts a X -> [Y; R] processor to [X; N]->[Y; M = R*N]
 #[derive(Debug, Copy, Clone, Default)]
 pub struct ChunkOut<P, const R: usize>(pub P);
-impl<C: SplitProcess<X, [Y; R], S>, S, X: Copy, Y, const N: usize, const R: usize, const M: usize>
+impl<C, S, X: Copy, Y: Default + Copy, const N: usize, const R: usize, const M: usize>
     SplitProcess<[X; N], [Y; M], S> for ChunkOut<C, R>
 where
-    [Y; M]: Default,
+    C: SplitProcess<X, [Y; R], S>,
 {
     fn process(&self, state: &mut S, x: [X; N]) -> [Y; M] {
         const { assert!(R * N == M) }
-        // TODO: bytemuck?
-        // x.map(|x| self.0.process(x)).flatten()
-        let mut y = <[Y; M]>::default();
+        // TODO: bytemuck y
+        // x.map(|x| self.0.process(x)).as_flattened().as_array()
+        let mut y = [Y::default(); M];
         let (yy, []) = y.as_chunks_mut() else {
             unreachable!()
         };
@@ -152,20 +153,27 @@ where
     }
 }
 
-/// Adapts a [X; Q] -> [Y; R] processor to [X; N = Q*_]->[Y; M = R*_]
+/// Adapts a [X; Q] -> [Y; R] processor to [X; N = Q*i]->[Y; M = R*i]
 #[derive(Debug, Copy, Clone, Default)]
 pub struct ChunkInOut<P, const Q: usize, const R: usize>(pub P);
-impl<C, S, X: Copy, Y, const Q: usize, const N: usize, const R: usize, const M: usize>
-    SplitProcess<[X; N], [Y; M], S> for ChunkInOut<C, Q, R>
+impl<
+    C,
+    S,
+    X: Copy,
+    Y: Default + Copy,
+    const Q: usize,
+    const N: usize,
+    const R: usize,
+    const M: usize,
+> SplitProcess<[X; N], [Y; M], S> for ChunkInOut<C, Q, R>
 where
-    [Y; M]: Default,
     C: SplitProcess<[X; Q], [Y; R], S>,
 {
     fn process(&self, state: &mut S, x: [X; N]) -> [Y; M] {
         const { assert!(N.is_multiple_of(Q)) }
         const { assert!(M.is_multiple_of(R)) }
-        // TODO: bytemuck?
-        let mut y = <[Y; M]>::default();
+        // TODO: bytemuck y
+        let mut y = [Y::default(); M];
         let (yy, []) = y.as_chunks_mut() else {
             unreachable!()
         };
