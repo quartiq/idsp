@@ -38,7 +38,7 @@ impl Iterator for Sweep {
 impl Sweep {
     /// Create a new exponential sweep
     #[inline]
-    pub fn new(rate: i32, state: i64) -> Self {
+    pub const fn new(rate: i32, state: i64) -> Self {
         Self { rate, state }
     }
 
@@ -144,7 +144,7 @@ pub struct AccuOsc<T> {
 impl<T> AccuOsc<T> {
     /// Create a new accumulating oscillator
     #[inline]
-    pub fn new(sweep: T) -> Self {
+    pub const fn new(sweep: T) -> Self {
         Self { sweep, state: 0 }
     }
 }

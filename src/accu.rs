@@ -11,7 +11,7 @@ pub struct Accu<T> {
 
 impl<T> Accu<T> {
     /// Create a new accumulator with given initial state and step.
-    pub fn new(state: T, step: T) -> Self {
+    pub const fn new(state: T, step: T) -> Self {
         Self { state, step }
     }
 }
