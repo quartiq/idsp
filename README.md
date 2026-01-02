@@ -86,10 +86,10 @@ bandpass, and notch filtering of a signal.
 
 ## FIR filters
 
-[`hbf::HbfDec`], [`hbf::HbfInt`], [`hbf::HbfDecCascade`], [`hbf::HbfIntCascade`]:
+[`hbf::HbfDec`], [`hbf::HbfInt`], [`hbf::HbfDec32`], [`hbf::HbfInt32`]:
 Fast `f32` symmetric FIR filters, optimized half-band filters, half-band filter decimators and integators and cascades.
-These are used in [`stabilizer-stream`](https://github.com/quartiq/stabilizer-stream) for online PSD calculation on log
-frequency scale for arbitrarily large amounts of data.
+These are used in [`stabilizer-stream`](https://github.com/quartiq/stabilizer-stream) for online PSD calculation for
+arbitrarily low offset frequencies.
 
 ## Delta Sigma modulator/noise shaper
 

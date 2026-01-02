@@ -138,7 +138,7 @@ impl<C, S> Split<C, S> {
     }
 
     /// Convert to intermediate buffered processor-major
-    pub fn intermediate<U, const N: usize>(self) -> Split<Intermediate<C, U, N>, S> {
+    pub fn intermediate<B>(self) -> Split<Intermediate<C, B>, S> {
         Split::new(Intermediate::new(self.config), self.state)
     }
 }
@@ -164,7 +164,7 @@ impl<C, S> Split<Transpose<C>, S> {
     }
 }
 
-impl<C, S, U, const N: usize> Split<Intermediate<C, U, N>, S> {
+impl<C, S, B> Split<Intermediate<C, B>, S> {
     /// Remove intermediate buffering
     pub fn major(self) -> Split<C, S> {
         Split::new(self.config.inner, self.state)
@@ -576,7 +576,7 @@ where
 //////////// SPLIT INTERMEDIATE ////////////
 
 impl<X: Copy, U: Copy + Default, Y, C0, C1, S0, S1, const N: usize> SplitProcess<X, Y, (S0, S1)>
-    for Intermediate<(C0, C1), U, N>
+    for Intermediate<(C0, C1), [U; N]>
 where
     C0: SplitProcess<X, U, S0>,
     C1: SplitProcess<U, Y, S1>,
@@ -602,7 +602,7 @@ where
 }
 
 impl<X: Copy, U: Copy + Default, C0, C1, S0, S1, const N: usize> SplitInplace<X, (S0, S1)>
-    for Intermediate<(C0, C1), U, N>
+    for Intermediate<(C0, C1), [U; N]>
 where
     C0: SplitProcess<X, U, S0>,
     C1: SplitProcess<U, X, S1>,

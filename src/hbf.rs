@@ -303,8 +303,10 @@ pub const HBF_TAPS: HbfTaps = (
 /// Passband width in units of lowest sample rate
 pub const HBF_PASSBAND: f32 = 0.4;
 
-/// Max lowest-rate block size (HbfIntCascade input, HbfDecCascade output)
-pub const HBF_CASCADE_BLOCK: usize = 1 << 6;
+/// Cascade block size
+///
+/// Heuristically performs well.
+pub const HBF_CASCADE_BLOCK: usize = 1 << 5;
 
 /// Half-band decimation filter cascade with optimal taps
 ///
@@ -346,21 +348,18 @@ type HbfDecConfig<const B: usize = HBF_CASCADE_BLOCK> = Intermediate<
                                 ChunkIn<&'static SymFir<[f32; HBF_TAPS.1.0.len()]>, 2>,
                                 &'static SymFir<[f32; HBF_TAPS.0.0.len()]>,
                             ),
-                            [f32; 2],
-                            B,
+                            [[f32; 2]; B],
                         >,
                     ),
-                    [f32; 4],
-                    B,
+                    [[f32; 4]; B],
                 >,
             ),
-            [f32; 8],
-            B,
+            [[f32; 8]; B],
         >,
     ),
-    [f32; 16],
-    B,
+    [[f32; 16]; B],
 >;
+
 /// HBF decimation cascade
 pub const HBF_DEC_CASCADE: HbfDecConfig = Intermediate::new((
     ChunkIn(&HBF_TAPS.4),
@@ -433,23 +432,19 @@ type HbfIntConfig<const B: usize = HBF_CASCADE_BLOCK> = Intermediate<
                                 &'static SymFir<[f32; HBF_TAPS.0.0.len()]>,
                                 ChunkOut<&'static SymFir<[f32; HBF_TAPS.1.0.len()]>, 2>,
                             ),
-                            [f32; 2],
-                            B,
+                            [[f32; 2]; B],
                         >,
                         ChunkOut<&'static SymFir<[f32; HBF_TAPS.2.0.len()]>, 2>,
                     ),
-                    [f32; 4],
-                    B,
+                    [[f32; 4]; B],
                 >,
                 ChunkOut<&'static SymFir<[f32; HBF_TAPS.3.0.len()]>, 2>,
             ),
-            [f32; 8],
-            B,
+            [[f32; 8]; B],
         >,
         ChunkOut<&'static SymFir<[f32; HBF_TAPS.4.0.len()]>, 2>,
     ),
-    [f32; 16],
-    B,
+    [[f32; 16]; B],
 >;
 
 /// HBF interpolation cascade

@@ -220,7 +220,7 @@ impl<X: Copy + Default, C: Inplace<X>, const N: usize> Inplace<[X; N]> for Trans
 //////////// INTERMEDIATE ////////////
 
 impl<X: Copy, U: Copy + Default, Y, P1: Process<X, U>, P2: Process<U, Y>, const N: usize>
-    Process<X, Y> for Intermediate<(P1, P2), U, N>
+    Process<X, Y> for Intermediate<(P1, P2), [U; N]>
 {
     fn process(&mut self, x: X) -> Y {
         self.inner.1.process(self.inner.0.process(x))
@@ -241,7 +241,7 @@ impl<X: Copy, U: Copy + Default, Y, P1: Process<X, U>, P2: Process<U, Y>, const 
 }
 
 impl<X: Copy, U: Copy + Default, P1: Process<X, U>, P2: Process<U, X>, const N: usize> Inplace<X>
-    for Intermediate<(P1, P2), U, N>
+    for Intermediate<(P1, P2), [U; N]>
 {
     fn inplace(&mut self, xy: &mut [X]) {
         let mut u = [U::default(); N];

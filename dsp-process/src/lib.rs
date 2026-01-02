@@ -65,12 +65,12 @@ impl<C, U, const N: usize> Minor<[C; N], U> {
 
 /// Chain of processors with intermediate buffer supporting block() from block()s
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Intermediate<P, U, const N: usize> {
+pub struct Intermediate<P, B> {
     /// The inner processors
     pub inner: P,
-    _marker: PhantomData<U>,
+    _marker: PhantomData<B>,
 }
-impl<P, U, const N: usize> Intermediate<P, U, N> {
+impl<P, B> Intermediate<P, B> {
     /// Create a new chain of processors
     pub const fn new(inner: P) -> Self {
         Self {
