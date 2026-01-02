@@ -198,7 +198,7 @@ pub type HbfTaps98 = (
 /// * rate change up to 2**5 = 32
 /// * lowest rate filter is at 0 index
 /// * use taps 0..n for 2**n interpolation/decimation
-#[allow(clippy::excessive_precision, clippy::type_complexity)]
+#[allow(clippy::excessive_precision)]
 pub const HBF_TAPS_98: HbfTaps98 = (
     // n=15 coefficients (effective number of DSP taps 4*15-1 = 59), transition band width df=.2 fs
     SymFir([
@@ -246,7 +246,7 @@ pub type HbfTaps = (
 
 /// * 140 dB stopband, 2 µdB passband ripple, limited by f32 dynamic range
 /// * otherwise like [`HBF_TAPS_98`].
-#[allow(clippy::excessive_precision, clippy::type_complexity)]
+#[allow(clippy::excessive_precision)]
 pub const HBF_TAPS: HbfTaps = (
     SymFir([
         7.60376281e-07,
@@ -308,155 +308,183 @@ pub const HBF_CASCADE_BLOCK: usize = 1 << 6;
 
 /// Half-band decimation filter cascade with optimal taps
 ///
-/// This is a no_alloc version without trait objects.
-/// The price to pay is fixed and flat memory usage independent
-/// of block size and cascade length.
-///
-/// See [HBF_TAPS].
-/// Supports rate changes of 1, 2, 4, 8, and 16.
-#[allow(clippy::type_complexity)]
-pub type HbfDecCascadeState = (
-    HbfDec<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + HBF_CASCADE_BLOCK << 3]>,
-    (
-        HbfDec<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + HBF_CASCADE_BLOCK << 2]>,
-        (
-            HbfDec<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + HBF_CASCADE_BLOCK << 1]>,
-            HbfDec<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
-        ),
-    ),
+/// See [HBF_TAPS] and [HBF_DEC_CASCADE].
+/// Supports rate changes are power of two up to 32.
+pub type HbfDec2 = HbfDec<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>;
+/// HBF Decimate-by-4 cascade
+pub type HbfDec4 = (
+    HbfDec<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 1)]>,
+    HbfDec2,
+);
+/// HBF Decimate-by-8 cascade
+pub type HbfDec8 = (
+    HbfDec<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 2)]>,
+    HbfDec4,
+);
+/// HBF Decimate-by-16 cascade
+pub type HbfDec16 = (
+    HbfDec<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 3)]>,
+    HbfDec8,
+);
+/// HBF Decimate-by-32 cascade
+pub type HbfDec32 = (
+    HbfDec<[f32; SymFir::<[f32; HBF_TAPS.4.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 4)]>,
+    HbfDec16,
 );
 
-/// HBF decimation cascade
-pub const HBF_DEC_CASCADE: Intermediate<
+type HbfDecConfig<const B: usize = HBF_CASCADE_BLOCK> = Intermediate<
     (
-        ChunkIn<&SymFir<[f32; HBF_TAPS.3.0.len()]>, 2>,
+        ChunkIn<&'static SymFir<[f32; HBF_TAPS.4.0.len()]>, 2>,
         Intermediate<
             (
-                ChunkIn<&SymFir<[f32; HBF_TAPS.2.0.len()]>, 2>,
+                ChunkIn<&'static SymFir<[f32; HBF_TAPS.3.0.len()]>, 2>,
                 Intermediate<
                     (
-                        ChunkIn<&SymFir<[f32; HBF_TAPS.1.0.len()]>, 2>,
-                        &SymFir<[f32; HBF_TAPS.0.0.len()]>,
+                        ChunkIn<&'static SymFir<[f32; HBF_TAPS.2.0.len()]>, 2>,
+                        Intermediate<
+                            (
+                                ChunkIn<&'static SymFir<[f32; HBF_TAPS.1.0.len()]>, 2>,
+                                &'static SymFir<[f32; HBF_TAPS.0.0.len()]>,
+                            ),
+                            [f32; 2],
+                            B,
+                        >,
                     ),
-                    [f32; 2],
-                    HBF_CASCADE_BLOCK,
+                    [f32; 4],
+                    B,
                 >,
             ),
-            [f32; 4],
-            HBF_CASCADE_BLOCK,
+            [f32; 8],
+            B,
         >,
     ),
-    [f32; 8],
-    HBF_CASCADE_BLOCK,
-> = Intermediate::new((
-    ChunkIn(&HBF_TAPS.3),
+    [f32; 16],
+    B,
+>;
+/// HBF decimation cascade
+pub const HBF_DEC_CASCADE: HbfDecConfig = Intermediate::new((
+    ChunkIn(&HBF_TAPS.4),
     Intermediate::new((
-        ChunkIn(&HBF_TAPS.2),
-        Intermediate::new((ChunkIn(&HBF_TAPS.1), &HBF_TAPS.0)),
+        ChunkIn(&HBF_TAPS.3),
+        Intermediate::new((
+            ChunkIn(&HBF_TAPS.2),
+            Intermediate::new((ChunkIn(&HBF_TAPS.1), &HBF_TAPS.0)),
+        )),
     )),
 ));
 
 /// Response length, effective number of taps
-pub trait ResponseLength {
-    /// Number of output samples in response to an impulse
-    fn response_length(depth: usize) -> usize;
-}
-
-impl ResponseLength for HbfDecCascadeState {
-    fn response_length(depth: usize) -> usize {
-        assert!(depth < 5);
-        let mut n = 0;
-        if depth > 0 {
-            n /= 2;
-            n += SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN;
-        }
-        if depth > 1 {
-            n /= 2;
-            n += SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN;
-        }
-        if depth > 2 {
-            n /= 2;
-            n += SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN;
-        }
-        if depth > 3 {
-            n /= 2;
-            n += SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN;
-        }
-        n
+pub const fn hbf_dec_response_length(depth: usize) -> usize {
+    assert!(depth < 5);
+    let mut n = 0;
+    if depth > 0 {
+        n /= 2;
+        n += SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN;
     }
+    if depth > 1 {
+        n /= 2;
+        n += SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN;
+    }
+    if depth > 2 {
+        n /= 2;
+        n += SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN;
+    }
+    if depth > 3 {
+        n /= 2;
+        n += SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN;
+    }
+    n
 }
 
 /// Half-band interpolation filter cascade with optimal taps.
 ///
-/// This is a no_alloc version without trait objects.
-/// The price to pay is fixed and flat memory usage independent
-/// of block size and cascade length.
-///
-/// See [HBF_TAPS].
-/// Supports rate changes of 1, 2, 4, 8, and 16.
-pub type HbfIntCascadeState = (
-    HbfInt<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>,
-    (
-        HbfInt<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + HBF_CASCADE_BLOCK << 1]>,
-        (
-            HbfInt<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + HBF_CASCADE_BLOCK << 2]>,
-            HbfInt<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + HBF_CASCADE_BLOCK << 3]>,
-        ),
-    ),
+/// See [HBF_TAPS] and [HBF_INT_CASCADE].
+/// Supports rate changes are power of two up to 32.
+pub type HbfInt2 = HbfInt<[f32; SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>;
+/// HBF interpolate-by-4 cascade
+pub type HbfInt4 = (
+    HbfInt2,
+    HbfInt<[f32; SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 1)]>,
+);
+/// HBF interpolate-by-8 cascade
+pub type HbfInt8 = (
+    HbfInt4,
+    HbfInt<[f32; SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 2)]>,
+);
+/// HBF interpolate-by-16 cascade
+pub type HbfInt16 = (
+    HbfInt8,
+    HbfInt<[f32; SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 3)]>,
+);
+/// HBF interpolate-by-32 cascade
+pub type HbfInt32 = (
+    HbfInt16,
+    HbfInt<[f32; SymFir::<[f32; HBF_TAPS.4.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 4)]>,
 );
 
-/// HBF interpolation cascade
-pub const HBF_INT_CASCADE: Intermediate<
+type HbfIntConfig<const B: usize = HBF_CASCADE_BLOCK> = Intermediate<
     (
-        &SymFir<[f32; HBF_TAPS.0.0.len()]>,
         Intermediate<
             (
-                ChunkOut<&SymFir<[f32; HBF_TAPS.1.0.len()]>, 2>,
                 Intermediate<
                     (
-                        ChunkOut<&SymFir<[f32; HBF_TAPS.2.0.len()]>, 2>,
-                        ChunkOut<&SymFir<[f32; HBF_TAPS.3.0.len()]>, 2>,
+                        Intermediate<
+                            (
+                                &'static SymFir<[f32; HBF_TAPS.0.0.len()]>,
+                                ChunkOut<&'static SymFir<[f32; HBF_TAPS.1.0.len()]>, 2>,
+                            ),
+                            [f32; 2],
+                            B,
+                        >,
+                        ChunkOut<&'static SymFir<[f32; HBF_TAPS.2.0.len()]>, 2>,
                     ),
-                    [f32; 8],
-                    { HBF_CASCADE_BLOCK / 2 },
+                    [f32; 4],
+                    B,
                 >,
+                ChunkOut<&'static SymFir<[f32; HBF_TAPS.3.0.len()]>, 2>,
             ),
-            [f32; 4],
-            { HBF_CASCADE_BLOCK / 2 },
+            [f32; 8],
+            B,
         >,
+        ChunkOut<&'static SymFir<[f32; HBF_TAPS.4.0.len()]>, 2>,
     ),
-    [f32; 2],
-    { HBF_CASCADE_BLOCK / 2 },
-> = Intermediate::new((
-    &HBF_TAPS.0,
+    [f32; 16],
+    B,
+>;
+
+/// HBF interpolation cascade
+pub const HBF_INT_CASCADE: HbfIntConfig = Intermediate::new((
     Intermediate::new((
-        ChunkOut(&HBF_TAPS.1),
-        Intermediate::new((ChunkOut(&HBF_TAPS.2), ChunkOut(&HBF_TAPS.3))),
+        Intermediate::new((
+            Intermediate::new((&HBF_TAPS.0, ChunkOut(&HBF_TAPS.1))),
+            ChunkOut(&HBF_TAPS.2),
+        )),
+        ChunkOut(&HBF_TAPS.3),
     )),
+    ChunkOut(&HBF_TAPS.4),
 ));
 
-impl ResponseLength for HbfIntCascadeState {
-    fn response_length(depth: usize) -> usize {
-        assert!(depth < 5);
-        let mut n = 0;
-        if depth > 0 {
-            n += SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN;
-            n *= 2;
-        }
-        if depth > 1 {
-            n += SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN;
-            n *= 2;
-        }
-        if depth > 2 {
-            n += SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN;
-            n *= 2;
-        }
-        if depth > 3 {
-            n += SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN;
-            n *= 2;
-        }
-        n
+/// Response length, effective number of taps
+pub const fn hbf_int_response_length(depth: usize) -> usize {
+    assert!(depth < 5);
+    let mut n = 0;
+    if depth > 0 {
+        n += SymFir::<[f32; HBF_TAPS.0.0.len()]>::LEN;
+        n *= 2;
     }
+    if depth > 1 {
+        n += SymFir::<[f32; HBF_TAPS.1.0.len()]>::LEN;
+        n *= 2;
+    }
+    if depth > 2 {
+        n += SymFir::<[f32; HBF_TAPS.2.0.len()]>::LEN;
+        n *= 2;
+    }
+    if depth > 3 {
+        n += SymFir::<[f32; HBF_TAPS.3.0.len()]>::LEN;
+        n *= 2;
+    }
+    n
 }
 
 #[cfg(test)]
@@ -483,41 +511,47 @@ mod test {
 
     #[test]
     fn decim() {
-        let mut h = HbfDecCascadeState::default();
+        let mut h = HbfDec16::default();
         const R: usize = 1 << 4;
         let mut y = vec![0.0; 2];
         let x: Vec<_> = (0..y.len() * R).map(|i| i as f32).collect();
-        HBF_DEC_CASCADE.block(&mut h, x.as_chunks::<R>().0, &mut y);
+        HBF_DEC_CASCADE
+            .inner
+            .1
+            .block(&mut h, x.as_chunks::<R>().0, &mut y);
         println!("{:?}", y);
     }
 
     #[test]
     fn response_length_dec() {
-        let mut h = HbfDecCascadeState::default();
+        let mut h = HbfDec16::default();
         const R: usize = 4;
         let mut y = [0.0; 100];
         let x: Vec<f32> = (0..y.len() << R).map(|_| rand::random()).collect();
-        HBF_DEC_CASCADE.block(&mut h, x.as_chunks::<{ 1 << R }>().0, &mut y);
+        HBF_DEC_CASCADE
+            .inner
+            .1
+            .block(&mut h, x.as_chunks::<{ 1 << R }>().0, &mut y);
         let x = vec![0.0; 1 << 10];
-        HBF_DEC_CASCADE.block(
+        HBF_DEC_CASCADE.inner.1.block(
             &mut h,
             x.as_chunks::<{ 1 << R }>().0,
             &mut y[..x.len() >> R],
         );
-        let n = HbfDecCascadeState::response_length(4);
+        let n = hbf_dec_response_length(R);
         assert!(y[n - 1] != 0.0);
         assert_eq!(y[n], 0.0);
     }
 
     #[test]
     fn interp() {
-        let mut h = HbfIntCascadeState::default();
+        let mut h = HbfInt16::default();
         const R: usize = 4;
-        let r = HbfIntCascadeState::response_length(R);
+        let r = hbf_int_response_length(R);
         let mut x = vec![0.0; (r >> R) + 1];
         x[0] = 1.0;
         let mut y = vec![[0.0; 1 << R]; x.len()];
-        HBF_INT_CASCADE.block(&mut h, &x, &mut y);
+        HBF_INT_CASCADE.inner.0.block(&mut h, &x, &mut y);
         println!("{:?}", y); // interpolator impulse response
         let y = y.as_flattened();
         assert_ne!(y[r], 0.0);
@@ -587,12 +621,12 @@ mod test {
     #[test]
     #[ignore]
     fn insn_casc() {
-        let mut h = HbfDecCascadeState::default();
+        let mut h = HbfDec16::default();
         const R: usize = 4;
         let mut x = [[9.0; 1 << R]; 1 << 6];
         let mut y = [0.0; 1 << 6];
         for _ in 0..1 << 20 {
-            HBF_DEC_CASCADE.block(&mut h, &x, &mut y);
+            HBF_DEC_CASCADE.inner.1.block(&mut h, &x, &mut y);
             x[33][1] = y[11]; // prevent the entire loop from being optimized away
         }
     }
