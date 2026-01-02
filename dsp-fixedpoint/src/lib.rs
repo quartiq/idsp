@@ -53,31 +53,31 @@ impl<T, A, const F: i8> Q<T, A, F> {
 ///
 /// `x*2**f`
 #[inline(always)]
-fn ssh<T: Shl<i8, Output = T> + Shr<i8, Output = T>>(x: T, f: i8) -> T {
+fn shs<T: Shl<i8, Output = T> + Shr<i8, Output = T>>(x: T, f: i8) -> T {
     if f >= 0 { x << f } else { x >> -f }
 }
 
 impl<T: Shl<i8, Output = T> + Shr<i8, Output = T>, A, const F: i8> Q<T, A, F> {
     /// Convert to a different number of fractional bits (truncating)
     pub fn scale<const F1: i8>(self) -> Q<T, A, F1> {
-        Q::new(ssh(self.inner, F1 - F))
+        Q::new(shs(self.inner, F1 - F))
     }
 
     /// Return the integer part
     pub fn trunc(self) -> Self {
-        ssh(self.inner, -F).into()
+        shs(self.inner, -F).into()
     }
 }
 
 impl<T: Shl<i8, Output = T> + Shr<i8, Output = T>, A, const F: i8> From<T> for Q<T, A, F> {
     fn from(value: T) -> Self {
-        Self::new(ssh(value, F))
+        Self::new(shs(value, F))
     }
 }
 
 impl<T: Shl<i8, Output = T> + Shr<i8, Output = T>, A, const F: i8> From<(T, i8)> for Q<T, A, F> {
     fn from(value: (T, i8)) -> Self {
-        Self::new(ssh(value.0, F - value.1))
+        Self::new(shs(value.0, F - value.1))
     }
 }
 
@@ -208,7 +208,7 @@ macro_rules! impl_mul_q {
         /// Integer truncation
         impl<A, const F: i8> From<Q<$q, A, F>> for $q {
             fn from(value: Q<$q, A, F>) -> $q {
-                ssh(value.inner, -F)
+                shs(value.inner, -F)
             }
         }
 
@@ -227,9 +227,9 @@ macro_rules! impl_mul_q {
 
             fn div(self, rhs: Self) -> Self::Output {
                 Self::new(if F >= 0 {
-                    ssh(self.inner as $a, F) / rhs.inner as $a
+                    shs(self.inner as $a, F) / rhs.inner as $a
                 } else {
-                    self.inner as $a / ssh(rhs.inner as $a, -F)
+                    self.inner as $a / shs(rhs.inner as $a, -F)
                 } as _)
             }
         }
@@ -239,7 +239,7 @@ macro_rules! impl_mul_q {
             type Output = $q;
 
             fn mul(self, rhs: $q) -> Self::Output {
-                ssh(self.inner as $a * rhs as $a, -F) as _
+                shs(self.inner as $a * rhs as $a, -F) as _
             }
         }
 
@@ -249,9 +249,9 @@ macro_rules! impl_mul_q {
 
             fn div(self, rhs: Q<$q, $a, F>) -> Self::Output {
                 (if F >= 0 {
-                    ssh(self as $a, F) / rhs.inner as $a
+                    shs(self as $a, F) / rhs.inner as $a
                 } else {
-                    self as $a / ssh(rhs.inner as $a, -F) as $a
+                    self as $a / shs(rhs.inner as $a, -F) as $a
                 }) as _
             }
         }
