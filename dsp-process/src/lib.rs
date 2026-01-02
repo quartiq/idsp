@@ -43,7 +43,7 @@ pub struct Minor<C: ?Sized, U> {
 
 impl<C, U> Minor<C, U> {
     /// Create a new chain
-    pub fn new(inner: C) -> Self {
+    pub const fn new(inner: C) -> Self {
         Self {
             inner,
             _intermediate: PhantomData,
@@ -72,7 +72,7 @@ pub struct Intermediate<P, U, const N: usize> {
 }
 impl<P, U, const N: usize> Intermediate<P, U, N> {
     /// Create a new chain of processors
-    pub fn new(inner: P) -> Self {
+    pub const fn new(inner: P) -> Self {
         Self {
             inner,
             _marker: PhantomData,

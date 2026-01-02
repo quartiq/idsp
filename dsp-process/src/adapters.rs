@@ -227,17 +227,11 @@ where
 /// Adapts a [X; Q] -> [Y; R] processor to [X; N = Q*_]->[Y; M = R*_]
 #[derive(Clone, Debug, Default)]
 pub struct ChunkInOut<P, const Q: usize, const R: usize>(pub P);
-impl<
-    P: Process<[X; Q], [Y; R]>,
-    X: Copy,
-    Y,
-    const Q: usize,
-    const N: usize,
-    const R: usize,
-    const M: usize,
-> Process<[X; N], [Y; M]> for ChunkInOut<P, Q, R>
+impl<P, X: Copy, Y, const Q: usize, const N: usize, const R: usize, const M: usize>
+    Process<[X; N], [Y; M]> for ChunkInOut<P, Q, R>
 where
     [Y; M]: Default,
+    P: Process<[X; Q], [Y; R]>,
 {
     fn process(&mut self, x: [X; N]) -> [Y; M] {
         const { assert!(N.is_multiple_of(Q)) }
@@ -279,18 +273,11 @@ where
         self.0.inplace(xy)
     }
 }
-impl<
-    C: SplitProcess<[X; Q], [Y; R], S>,
-    S,
-    X: Copy,
-    Y,
-    const Q: usize,
-    const N: usize,
-    const R: usize,
-    const M: usize,
-> SplitProcess<[X; N], [Y; M], S> for ChunkInOut<C, Q, R>
+impl<C, S, X: Copy, Y, const Q: usize, const N: usize, const R: usize, const M: usize>
+    SplitProcess<[X; N], [Y; M], S> for ChunkInOut<C, Q, R>
 where
     [Y; M]: Default,
+    C: SplitProcess<[X; Q], [Y; R], S>,
 {
     fn process(&self, state: &mut S, x: [X; N]) -> [Y; M] {
         const { assert!(N.is_multiple_of(Q)) }

@@ -32,7 +32,7 @@ impl<X: Copy, S: ?Sized, C: SplitInplace<X, S> + ?Sized> Inplace<X> for Split<&C
 
 impl<C, S> Split<C, S> {
     /// Create a new Split
-    pub fn new(config: C, state: S) -> Self {
+    pub const fn new(config: C, state: S) -> Self {
         Self { config, state }
     }
 
@@ -575,16 +575,11 @@ where
 
 //////////// SPLIT INTERMEDIATE ////////////
 
-impl<
-    X: Copy,
-    U: Copy + Default,
-    Y,
+impl<X: Copy, U: Copy + Default, Y, C0, C1, S0, S1, const N: usize> SplitProcess<X, Y, (S0, S1)>
+    for Intermediate<(C0, C1), U, N>
+where
     C0: SplitProcess<X, U, S0>,
     C1: SplitProcess<U, Y, S1>,
-    S0,
-    S1,
-    const N: usize,
-> SplitProcess<X, Y, (S0, S1)> for Intermediate<(C0, C1), U, N>
 {
     fn process(&self, state: &mut (S0, S1), x: X) -> Y {
         self.inner
@@ -606,15 +601,11 @@ impl<
     }
 }
 
-impl<
-    X: Copy,
-    U: Copy + Default,
+impl<X: Copy, U: Copy + Default, C0, C1, S0, S1, const N: usize> SplitInplace<X, (S0, S1)>
+    for Intermediate<(C0, C1), U, N>
+where
     C0: SplitProcess<X, U, S0>,
     C1: SplitProcess<U, X, S1>,
-    S0,
-    S1,
-    const N: usize,
-> SplitInplace<X, (S0, S1)> for Intermediate<(C0, C1), U, N>
 {
     fn inplace(&self, state: &mut (S0, S1), xy: &mut [X]) {
         let mut u = [U::default(); N];

@@ -41,10 +41,7 @@ pub trait Inplace<X: Copy>: Process<X> {
 /// * Allows the same filter to be applied to multiple states
 ///   (e.g. IQ data, multiple channels) guaranteeing consistency,
 ///   reducing memory usage, and improving caching.
-pub trait SplitProcess<X: Copy, Y = X, S = ()>
-where
-    S: ?Sized,
-{
+pub trait SplitProcess<X: Copy, Y = X, S: ?Sized = ()> {
     /// Process an input into an output
     ///
     /// See also [`Process::process`]
@@ -62,10 +59,7 @@ where
 }
 
 /// Inplace processing with a split state
-pub trait SplitInplace<X: Copy, S = ()>: SplitProcess<X, X, S>
-where
-    S: ?Sized,
-{
+pub trait SplitInplace<X: Copy, S: ?Sized = ()>: SplitProcess<X, X, S> {
     /// See also [`Inplace::inplace`]
     fn inplace(&self, state: &mut S, xy: &mut [X]) {
         for xy in xy.iter_mut() {
@@ -92,7 +86,7 @@ impl<X: Copy, T: Inplace<X>> Inplace<X> for &mut T {
     }
 }
 
-impl<X: Copy, Y, S, T: SplitProcess<X, Y, S>> SplitProcess<X, Y, S> for &T {
+impl<X: Copy, Y, S: ?Sized, T: SplitProcess<X, Y, S>> SplitProcess<X, Y, S> for &T {
     fn process(&self, state: &mut S, x: X) -> Y {
         T::process(self, state, x)
     }
@@ -102,13 +96,13 @@ impl<X: Copy, Y, S, T: SplitProcess<X, Y, S>> SplitProcess<X, Y, S> for &T {
     }
 }
 
-impl<X: Copy, S, T: SplitInplace<X, S>> SplitInplace<X, S> for &T {
+impl<X: Copy, S: ?Sized, T: SplitInplace<X, S>> SplitInplace<X, S> for &T {
     fn inplace(&self, state: &mut S, xy: &mut [X]) {
         T::inplace(self, state, xy)
     }
 }
 
-impl<X: Copy, Y, S, T: SplitProcess<X, Y, S>> SplitProcess<X, Y, S> for &mut T {
+impl<X: Copy, Y, S: ?Sized, T: SplitProcess<X, Y, S>> SplitProcess<X, Y, S> for &mut T {
     fn process(&self, state: &mut S, x: X) -> Y {
         T::process(self, state, x)
     }
@@ -118,7 +112,7 @@ impl<X: Copy, Y, S, T: SplitProcess<X, Y, S>> SplitProcess<X, Y, S> for &mut T {
     }
 }
 
-impl<X: Copy, S, T: SplitInplace<X, S>> SplitInplace<X, S> for &mut T {
+impl<X: Copy, S: ?Sized, T: SplitInplace<X, S>> SplitInplace<X, S> for &mut T {
     fn inplace(&self, state: &mut S, xy: &mut [X]) {
         T::inplace(self, state, xy)
     }
