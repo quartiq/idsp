@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
+use num_traits::AsPrimitive;
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
 use num_traits::float::FloatCore;
@@ -8,16 +9,20 @@ use num_traits::float::FloatCore;
 use core::{
     fmt, iter,
     marker::PhantomData,
+    num::Wrapping,
     ops::{Add, Div, Mul, Neg, Rem, Shl, Shr, Sub},
 };
 
+// TODO: Assign, Bit, BitAssign traits
+
 /// Fixed point with F fractional bits.
 ///
-/// * Q<i32, 32> is [-0.5, 0.5[
-/// * Q<i16, 15> is [-1, 1[
-/// * Q<u8, 4> is [0, 16-1/16]
+/// F negative is supported analogously
 ///
-/// F negative is supported analogously.
+/// * Q<i32, 31> is (-1..1).step_by(2^-31)
+/// * Q<i16, 20> is (-1/32..1/32).step_by(2^-20)
+/// * Q<u8, 4> is (0..16).step_by(1/16)
+/// * Q<u8, -2> is (0..1024).step_by(4)
 #[derive(
     Debug,
     Clone,
@@ -33,18 +38,18 @@ use core::{
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct Q<T, A, const F: i8> {
-    /// The inner value representing the fixed point number
-    pub inner: T,
     /// The accumulator type
     _accu: PhantomData<A>,
+    /// The inner value representation
+    pub inner: T,
 }
 
 impl<T, A, const F: i8> Q<T, A, F> {
     /// Create a new fixed point number
     pub const fn new(inner: T) -> Self {
         Self {
-            inner,
             _accu: PhantomData,
+            inner,
         }
     }
 }
@@ -53,29 +58,46 @@ impl<T, A, const F: i8> Q<T, A, F> {
 ///
 /// `x*2**f`
 #[inline(always)]
-fn shs<T: Shl<i8, Output = T> + Shr<i8, Output = T>>(x: T, f: i8) -> T {
-    if f >= 0 { x << f } else { x >> -f }
+fn shs<T: Shl<usize, Output = T> + Shr<usize, Output = T>>(x: T, f: i8) -> T {
+    if f >= 0 {
+        x << (f as _)
+    } else {
+        x >> (-f as _)
+    }
 }
 
-impl<T: Shl<i8, Output = T> + Shr<i8, Output = T>, A, const F: i8> Q<T, A, F> {
+/// Numerical summary trait
+pub trait Num<Other: 'static + Copy>:
+    'static
+    + Sized
+    + Copy
+    + Add<Self, Output = Self>
+    + Sub<Self, Output = Self>
+    + Mul<Self, Output = Self>
+    + Div<Self, Output = Self>
+    + Rem<Self, Output = Self>
+    + Shl<usize, Output = Self>
+    + Shr<usize, Output = Self>
+{
+    /// Convert to/from larger
+    fn as_(self) -> Other;
+}
+
+impl<T: Num<A>, A: Num<T>, const F: i8> Q<T, A, F> {
     /// Convert to a different number of fractional bits (truncating)
+    ///
+    /// Use this liberally for Add/Sub/Rem with Q's of different F.
     pub fn scale<const F1: i8>(self) -> Q<T, A, F1> {
         Q::new(shs(self.inner, F1 - F))
     }
 
     /// Return the integer part
     pub fn trunc(self) -> Self {
-        shs(self.inner, -F).into()
+        Self::new(shs(self.inner, -F))
     }
 }
 
-impl<T: Shl<i8, Output = T> + Shr<i8, Output = T>, A, const F: i8> From<T> for Q<T, A, F> {
-    fn from(value: T) -> Self {
-        Self::new(shs(value, F))
-    }
-}
-
-impl<T: Shl<i8, Output = T> + Shr<i8, Output = T>, A, const F: i8> From<(T, i8)> for Q<T, A, F> {
+impl<T: Num<A>, A: Num<T>, const F: i8> From<(T, i8)> for Q<T, A, F> {
     fn from(value: (T, i8)) -> Self {
         Self::new(shs(value.0, F - value.1))
     }
@@ -84,6 +106,36 @@ impl<T: Shl<i8, Output = T> + Shr<i8, Output = T>, A, const F: i8> From<(T, i8)>
 impl<T, A, const F: i8> From<Q<T, A, F>> for (T, i8) {
     fn from(value: Q<T, A, F>) -> Self {
         (value.inner, F)
+    }
+}
+
+impl<T: 'static + Copy, A, const F: i8> From<f32> for Q<T, A, F>
+where
+    f32: AsPrimitive<T>,
+{
+    fn from(value: f32) -> Self {
+        Self::new((value * (1u128 << F) as f32).round().as_())
+    }
+}
+
+impl<T: 'static + Copy, A, const F: i8> From<f64> for Q<T, A, F>
+where
+    f64: AsPrimitive<T>,
+{
+    fn from(value: f64) -> Self {
+        Self::new((value * (1u128 << F) as f64).round().as_())
+    }
+}
+
+impl<T: 'static + Copy + AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for f32 {
+    fn from(value: Q<T, A, F>) -> Self {
+        value.inner.as_() * (1.0 / (1u128 << F) as Self)
+    }
+}
+
+impl<T: 'static + Copy + AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for f64 {
+    fn from(value: Q<T, A, F>) -> Self {
+        AsPrimitive::<f64>::as_(value.inner) * (1.0 / (1u128 << F) as Self)
     }
 }
 
@@ -135,21 +187,40 @@ impl<T: Sub<T, Output = T>, A, const F: i8> Sub for Q<T, A, F> {
     }
 }
 
-/// Q*Q -> Q
-impl<T, A, const F: i8> Mul for Q<T, A, F>
-where
-    Self: Mul<T, Output = T>,
-{
+/// Q*Q' -> Q
+impl<T: Num<A>, A: Num<T>, const F: i8, const F1: i8> Mul<Q<T, A, F1>> for Q<T, A, F> {
     type Output = Self;
 
-    fn mul(self, rhs: Self) -> Self::Output {
-        Self::new(self * rhs.inner)
+    fn mul(self, rhs: Q<T, A, F1>) -> Self::Output {
+        Self::new(shs(self.inner.as_() * rhs.inner.as_(), -F1).as_())
+    }
+}
+
+/// Q*I -> I
+impl<T: Num<A>, A: Num<T>, const F: i8> Mul<T> for Q<T, A, F> {
+    type Output = T;
+
+    fn mul(self, rhs: T) -> Self::Output {
+        shs(self.inner.as_() * rhs.as_(), -F).as_()
+    }
+}
+
+/// Q/Q' -> Q
+impl<T: Num<A>, A: Num<T>, const F: i8, const F1: i8> Div<Q<T, A, F1>> for Q<T, A, F> {
+    type Output = Self;
+
+    fn div(self, rhs: Q<T, A, F1>) -> Self::Output {
+        Self::new(if F1 > 0 {
+            (shs(self.inner.as_(), F1) / rhs.inner.as_()).as_()
+        } else {
+            shs(self.inner, F1) / rhs.inner
+        })
     }
 }
 
 /// Q/I -> Q
-impl<T: Div<Output = T>, A, const F: i8> Div<T> for Q<T, A, F> {
-    type Output = Q<T, A, F>;
+impl<T: Div<T, Output = T>, A, const F: i8> Div<T> for Q<T, A, F> {
+    type Output = Self;
 
     fn div(self, rhs: T) -> Self::Output {
         Self::new(self.inner / rhs)
@@ -170,76 +241,71 @@ impl<T: iter::Product, A, const F: i8> iter::Product for Q<T, A, F> {
 
 impl<T, A, const F: i8> fmt::Display for Q<T, A, F>
 where
-    f64: From<Self>,
-    Self: Copy,
+    Self: Copy + Into<f64>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&f64::from(*self), f)
+        fmt::Display::fmt(&(*self).into(), f)
     }
 }
 
 impl<T, A, const F: i8> fmt::UpperExp for Q<T, A, F>
 where
-    f64: From<Self>,
-    Self: Copy,
+    Self: Copy + Into<f64>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::UpperExp::fmt(&f64::from(*self), f)
+        fmt::UpperExp::fmt(&(*self).into(), f)
     }
 }
 
 impl<T, A, const F: i8> fmt::LowerExp for Q<T, A, F>
 where
-    f64: From<Self>,
-    Self: Copy,
+    Self: Copy + Into<f64>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::LowerExp::fmt(&f64::from(*self), f)
+        fmt::LowerExp::fmt(&(*self).into(), f)
     }
 }
 
 // TODO: Binary, Octal, UpperHex, LowerHex
 
 macro_rules! impl_mul_q {
-    ($alias:ident, $q:ty, $a:ty) => {
-        /// Alias for fixed point integer T with accumulator A
+    ($alias:ident, $q:ty, $a:ty, $as:expr) => {
+        impl Num<$a> for $q {
+            #[inline(always)]
+            fn as_(self) -> $a {
+                $as(self)
+            }
+        }
+        impl Num<$q> for $a {
+            #[inline(always)]
+            fn as_(self) -> $q {
+                $as(self)
+            }
+        }
+
+        /// Fixed point with F fractional bits
         pub type $alias<const F: i8> = Q<$q, $a, F>;
 
-        /// Integer truncation
-        impl<A, const F: i8> From<Q<$q, A, F>> for $q {
-            fn from(value: Q<$q, A, F>) -> $q {
+        /// Scale from integer base type
+        impl<const F: i8> From<$q> for Q<$q, $a, F> {
+            fn from(value: $q) -> Self {
+                Self::new(shs(value, F))
+            }
+        }
+
+        /// Integer truncation into base type
+        impl<const F: i8> From<Q<$q, $a, F>> for $q {
+            fn from(value: Q<$q, $a, F>) -> $q {
                 shs(value.inner, -F)
             }
         }
 
         /// I*Q -> Q
-        impl<A, const F: i8> Mul<Q<$q, A, F>> for $q {
-            type Output = Q<$q, A, F>;
+        impl<const F: i8> Mul<Q<$q, $a, F>> for $q {
+            type Output = Q<$q, $a, F>;
 
-            fn mul(self, rhs: Q<$q, A, F>) -> Self::Output {
+            fn mul(self, rhs: Q<$q, $a, F>) -> Self::Output {
                 Q::new(self * rhs.inner)
-            }
-        }
-
-        /// Q/Q -> Q
-        impl<const F: i8> Div for Q<$q, $a, F> {
-            type Output = Self;
-
-            fn div(self, rhs: Self) -> Self::Output {
-                Self::new(if F >= 0 {
-                    shs(self.inner as $a, F) / rhs.inner as $a
-                } else {
-                    self.inner as $a / shs(rhs.inner as $a, -F)
-                } as _)
-            }
-        }
-
-        /// Q*I -> I
-        impl<const F: i8> Mul<$q> for Q<$q, $a, F> {
-            type Output = $q;
-
-            fn mul(self, rhs: $q) -> Self::Output {
-                shs(self.inner as $a * rhs as $a, -F) as _
             }
         }
 
@@ -248,47 +314,63 @@ macro_rules! impl_mul_q {
             type Output = $q;
 
             fn div(self, rhs: Q<$q, $a, F>) -> Self::Output {
-                (if F >= 0 {
-                    shs(self as $a, F) / rhs.inner as $a
+                if F > 0 {
+                    Num::<$q>::as_(shs(Num::<$a>::as_(self), F) / Num::<$a>::as_(rhs.inner))
                 } else {
-                    self as $a / shs(rhs.inner as $a, -F) as $a
-                }) as _
-            }
-        }
-
-        impl<const F: i8> From<f32> for Q<$q, $a, F> {
-            fn from(value: f32) -> Self {
-                Self::new((value * (1u128 << F) as f32).round() as _)
-            }
-        }
-
-        impl<const F: i8> From<f64> for Q<$q, $a, F> {
-            fn from(value: f64) -> Self {
-                Self::new((value * (1u128 << F) as f64).round() as _)
-            }
-        }
-
-        impl<const F: i8> From<Q<$q, $a, F>> for f32 {
-            fn from(value: Q<$q, $a, F>) -> Self {
-                value.inner as Self * (1.0 / (1u128 << F) as Self)
-            }
-        }
-
-        impl<const F: i8> From<Q<$q, $a, F>> for f64 {
-            fn from(value: Q<$q, $a, F>) -> Self {
-                value.inner as Self * (1.0 / (1u128 << F) as Self)
+                    shs(self, F) / rhs.inner
+                }
             }
         }
     };
 }
-impl_mul_q!(Q8, i8, i16);
-impl_mul_q!(Q16, i16, i32);
-impl_mul_q!(Q32, i32, i64);
-impl_mul_q!(Q64, i64, i128);
-impl_mul_q!(P8, u8, u16);
-impl_mul_q!(P16, u16, u32);
-impl_mul_q!(P32, u32, u64);
-impl_mul_q!(P64, u64, u128);
+// Signed
+impl_mul_q!(Q8, i8, i16, |x| x as _);
+impl_mul_q!(Q16, i16, i32, |x| x as _);
+impl_mul_q!(Q32, i32, i64, |x| x as _);
+impl_mul_q!(Q64, i64, i128, |x| x as _);
+// Unsigned (_P_ositive)
+impl_mul_q!(P8, u8, u16, |x| x as _);
+impl_mul_q!(P16, u16, u32, |x| x as _);
+impl_mul_q!(P32, u32, u64, |x| x as _);
+impl_mul_q!(P64, u64, u128, |x| x as _);
+// Wrapping signed
+impl_mul_q!(W8, Wrapping<i8>, Wrapping<i16>, |x: Wrapping<_>| Wrapping(
+    x.0 as _
+));
+impl_mul_q!(
+    W16,
+    Wrapping<i16>,
+    Wrapping<i32>,
+    |x: Wrapping<_>| Wrapping(x.0 as _)
+);
+impl_mul_q!(
+    W32,
+    Wrapping<i32>,
+    Wrapping<i64>,
+    |x: Wrapping<_>| Wrapping(x.0 as _)
+);
+impl_mul_q!(W64, Wrapping<i64>, Wrapping<i128>, |x: Wrapping<_>| {
+    Wrapping(x.0 as _)
+});
+// Wrapping unsigned
+impl_mul_q!(V8, Wrapping<u8>, Wrapping<u16>, |x: Wrapping<_>| Wrapping(
+    x.0 as _
+));
+impl_mul_q!(
+    V16,
+    Wrapping<u16>,
+    Wrapping<u32>,
+    |x: Wrapping<_>| Wrapping(x.0 as _)
+);
+impl_mul_q!(
+    V32,
+    Wrapping<u32>,
+    Wrapping<u64>,
+    |x: Wrapping<_>| Wrapping(x.0 as _)
+);
+impl_mul_q!(V64, Wrapping<u64>, Wrapping<u128>, |x: Wrapping<_>| {
+    Wrapping(x.0 as _)
+});
 
 #[cfg(test)]
 mod test {
@@ -296,8 +378,8 @@ mod test {
 
     #[test]
     fn simple() {
-        assert_eq!(Q32::<5>::from(4) * Q::from(3), (3 * 4).into());
-        assert_eq!(Q32::<5>::from(12) / Q::from(6), 2.into());
+        assert_eq!(Q32::<5>::from(4) * Q32::<5>::from(3), (3 * 4).into());
+        assert_eq!(Q32::<5>::from(12) / Q32::<5>::from(6), 2.into());
         assert_eq!(Q32::<4>::new(0x33) * 7, 7 * 3 + ((3 * 7) >> 4));
     }
 }
