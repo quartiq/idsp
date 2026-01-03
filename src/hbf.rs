@@ -578,7 +578,7 @@ mod test {
     }
 
     /// small 32 block size, single stage, 3 mul (11 tap) decimator
-    /// 0.6 cycles per input item, > 4 GS/s per core on Skylake
+    /// 2.5 cycles per input item, > 2 GS/s per core on Skylake
     #[test]
     #[ignore]
     fn insn_dec() {
@@ -595,7 +595,7 @@ mod test {
     }
 
     /// 1k block size, single stage, 23 mul (91 tap) decimator
-    /// 1.8 cycles: > 1 GS/s
+    /// 2.6 cycles: > 1 GS/s
     #[test]
     #[ignore]
     fn insn_dec2() {
@@ -612,7 +612,7 @@ mod test {
     }
 
     /// full block size full decimator cascade (depth 4, 1024 items per input block)
-    /// 1.2 cycles: > 2 GS/s
+    /// 2 cycles: > 2 GS/s
     #[test]
     #[ignore]
     fn insn_casc() {

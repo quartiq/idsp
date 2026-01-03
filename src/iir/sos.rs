@@ -274,7 +274,7 @@ mod test {
         config.inplace(state, xy0);
     }
 
-    // ~15 cycles/sample/sos on skylake, >300 MS/s
+    // ~20 cycles/sample/sos on skylake, >200 MS/s
     #[test]
     #[ignore]
     fn sos_insn() {

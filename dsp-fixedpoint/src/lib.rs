@@ -23,6 +23,12 @@ pub trait Base: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
     /// Signed shift (positive: left)
     ///
     /// `x*2**f`
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Base;
+    /// assert_eq!(1i32.shs(1), 2);
+    /// assert_eq!(4i32.shs(-1), 2);
+    /// ```
     #[inline(always)]
     fn shs(self, f: i8) -> Self {
         if f >= 0 {
@@ -33,21 +39,50 @@ pub trait Base: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
     }
 
     /// Number of bits
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Base;
+    /// assert_eq!(i32::BITS, 32);
+    /// ```
     const BITS: u32;
 
     /// Lowest value
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Base;
+    /// assert_eq!(i8::MIN, -128);
+    /// ```
     const MIN: Self;
 
     /// Highes value
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Base;
+    /// assert_eq!(i8::MAX, 127);
+    /// ```
     const MAX: Self;
 }
 
 /// Accumulator summary trait
 pub trait Accu<T>: Base {
     /// Convert to base
+    ///
+    /// This is a primitive cast.
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Accu;
+    /// assert_eq!(3i64.down(), 3i32);
+    /// ```
     fn down(self) -> T;
 
     /// Converto from base
+    ///
+    /// This is a primitive cast.
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Accu;
+    /// assert_eq!(i64::up(3i32), 3i64);
+    /// ```
     fn up(x: T) -> Self;
 }
 
@@ -60,6 +95,14 @@ pub trait Accu<T>: Base {
 /// * `Q<i16, _, 20>` is `(-1/32..1/32).step_by(2^-20)`
 /// * `Q<u8, _, 4>` is `(0..16).step_by(1/16)`
 /// * `Q<u8, _, -2>` is `(0..1024).step_by(4)`
+///
+///
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(Q8::<4>::from(3), Q8::new(3 << 4));
+/// assert_eq!(7 * Q8::<4>::from(1.5), 10);
+/// assert_eq!(7 / Q8::<4>::from(1.5), 4);
+/// ```
 #[derive(
     Debug,
     Clone,
@@ -83,6 +126,12 @@ pub struct Q<T, A, const F: i8> {
 
 impl<T, A, const F: i8> Q<T, A, F> {
     /// Step between distinct numbers
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q32;
+    /// assert_eq!(Q32::<31>::DELTA, 2f32.powi(-31));
+    /// assert_eq!(Q32::<-4>::DELTA, 2f32.powi(4));
+    /// ```
     pub const DELTA: f32 = if F > 0 {
         1.0 / (1u128 << F) as f32
     } else {
@@ -90,6 +139,11 @@ impl<T, A, const F: i8> Q<T, A, F> {
     };
 
     /// Create a new fixed point number from a given representation
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::P8;
+    /// assert_eq!(P8::<9>::new(3).inner, 3);
+    /// ```
     pub const fn new(inner: T) -> Self {
         Self {
             _accu: PhantomData,
@@ -100,22 +154,47 @@ impl<T, A, const F: i8> Q<T, A, F> {
 
 impl<T: Base, A, const F: i8> Q<T, A, F> {
     /// Number of bits of the base type
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q32;
+    /// assert_eq!(Q32::<7>::BITS, 32);
+    /// ```
     pub const BITS: u32 = T::BITS;
 
     /// Lowest value
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// assert_eq!(Q8::<4>::MIN, (-16.0).into());
+    /// ```
     pub const MIN: Self = Self::new(T::MIN);
 
     /// Highest value
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// assert_eq!(Q8::<4>::MAX, (16.0 - 1.0 / 16.0).into());
+    /// ```
     pub const MAX: Self = Self::new(T::MAX);
 
     /// Convert to a different number of fractional bits (truncating)
     ///
     /// Use this liberally for Add/Sub/Rem with Q's of different F.
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// assert_eq!(Q8::<4>::new(32).scale::<0>(), Q8::new(2));
+    /// ```
     pub fn scale<const F1: i8>(self) -> Q<T, A, F1> {
         Q::new(self.inner.shs(F1 - F))
     }
 
     /// Return the integer part
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// assert_eq!(Q8::<4>::new(0x35).trunc(), 0x3);
+    /// ```
     pub fn trunc(self) -> T {
         self.inner.shs(-F)
     }
@@ -123,6 +202,11 @@ impl<T: Base, A, const F: i8> Q<T, A, F> {
 
 impl<T: Base, A: Accu<T>, const F: i8> Q<T, A, F> {
     /// Number of bits of the accumulator type
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// assert_eq!(Q8::<4>::ACCU_BITS, 16);
+    /// ```
     pub const ACCU_BITS: u32 = A::BITS;
 }
 
@@ -138,6 +222,10 @@ impl<T, A, const F: i8> From<Q<T, A, F>> for (T, i8) {
     }
 }
 
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(8 * Q8::<4>::from(0.25f32), 2);
+/// ```
 impl<T: 'static + Copy, A, const F: i8> From<f32> for Q<T, A, F>
 where
     f32: AsPrimitive<T>,
@@ -147,6 +235,10 @@ where
     }
 }
 
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(8 * Q8::<4>::from(0.25f64), 2);
+/// ```
 impl<T: 'static + Copy, A, const F: i8> From<f64> for Q<T, A, F>
 where
     f64: AsPrimitive<T>,
@@ -156,12 +248,20 @@ where
     }
 }
 
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(f32::from(Q8::<4>::new(4)), 0.25);
+/// ```
 impl<T: AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for f32 {
     fn from(value: Q<T, A, F>) -> Self {
         value.inner.as_() * Q::<T, A, F>::DELTA
     }
 }
 
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(f64::from(Q8::<4>::new(4)), 0.25);
+/// ```
 impl<T: AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for f64 {
     fn from(value: Q<T, A, F>) -> Self {
         value.inner.as_() * Q::<T, A, F>::DELTA as Self
@@ -208,6 +308,12 @@ macro_rules! forward_sh_assign_op {
 forward_sh_assign_op!(ShrAssign::shr_assign);
 forward_sh_assign_op!(ShlAssign::shl_assign);
 
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(Q8::<3>::new(4) + Q8::new(5), Q8::new(9));
+/// assert_eq!(Q8::<3>::new(4) - Q8::new(3), Q8::new(1));
+/// assert_eq!(Q8::<3>::from(3.5) % Q8::from(1), Q8::from(0.5));
+/// ```
 macro_rules! forward_binop {
     ($tr:ident::$m:ident) => {
         impl<T: $tr<T, Output = T>, A, const F: i8> $tr for Q<T, A, F> {
@@ -226,8 +332,18 @@ forward_binop!(BitAnd::bitand);
 forward_binop!(BitOr::bitor);
 forward_binop!(BitXor::bitxor);
 
-/// The crucial exception to https://github.com/rust-lang/rust/pull/93208#issuecomment-1019310634
-/// See also the `Mul<Q>,Div<Q> for T` in `impl_q!()`
+/// The notable exception to standard rules
+/// (https://github.com/rust-lang/rust/pull/93208#issuecomment-1019310634)
+/// This is for performance reasons
+///
+/// Q*T -> Q, Q/T -> Q
+/// See also the T*Q -> T and T/Q -> T in impl_q!()
+///
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(Q8::<3>::new(4) * 2, Q8::new(8));
+/// assert_eq!(Q8::<3>::new(4) / 2, Q8::new(2));
+/// ```
 macro_rules! forward_binop_foreign {
     ($tr:ident::$m:ident) => {
         impl<T: $tr<T, Output = T>, A, const F: i8> $tr<T> for Q<T, A, F> {
@@ -261,7 +377,6 @@ macro_rules! forward_assign_op {
                 <T as $tr>::$m(&mut self.inner, rhs.inner)
             }
         }
-        forward_assign_op_foreign!($tr::$m);
     };
 }
 forward_assign_op!(RemAssign::rem_assign);
@@ -272,6 +387,13 @@ forward_assign_op!(BitOrAssign::bitor_assign);
 forward_assign_op!(BitXorAssign::bitxor_assign);
 
 /// Q *= Q'
+///
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// let mut q = Q8::<4>::from(0.25);
+/// q *= Q8::<3>::from(3);
+/// assert_eq!(q, Q8::from(0.75));
+/// ```
 impl<T: Copy, A: Accu<T> + Mul<A, Output = A>, const F: i8, const F1: i8> MulAssign<Q<T, A, F1>>
     for Q<T, A, F>
 {
@@ -281,6 +403,13 @@ impl<T: Copy, A: Accu<T> + Mul<A, Output = A>, const F: i8, const F1: i8> MulAss
 }
 
 /// Q /= Q'
+///
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// let mut q = Q8::<4>::from(0.75);
+/// q /= Q8::<3>::from(3);
+/// assert_eq!(q, Q8::from(0.25));
+/// ```
 impl<T: Base + Div<T, Output = T>, A: Accu<T> + Div<A, Output = A>, const F: i8, const F1: i8>
     DivAssign<Q<T, A, F1>> for Q<T, A, F>
 {
@@ -294,6 +423,11 @@ impl<T: Base + Div<T, Output = T>, A: Accu<T> + Div<A, Output = A>, const F: i8,
 }
 
 /// Q*Q -> Q
+///
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(Q8::<4>::from(0.75) * Q8::from(3), Q8::from(2.25));
+/// ```
 impl<T: Copy, A: Accu<T> + Mul<A, Output = A>, const F: i8> Mul for Q<T, A, F> {
     type Output = Self;
     fn mul(mut self, rhs: Self) -> Self::Output {
@@ -303,6 +437,11 @@ impl<T: Copy, A: Accu<T> + Mul<A, Output = A>, const F: i8> Mul for Q<T, A, F> {
 }
 
 /// Q/Q -> Q
+///
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(Q8::<4>::from(3) / Q8::from(2), Q8::from(1.5));
+/// ```
 impl<T: Base + Div<T, Output = T>, A: Accu<T> + Div<A, Output = A>, const F: i8> Div
     for Q<T, A, F>
 {
@@ -325,17 +464,22 @@ impl<T: iter::Product, A, const F: i8> iter::Product for Q<T, A, F> {
     }
 }
 
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// let q = Q8::<4>::new(7);
+/// assert_eq!(format!("{q} {q:e} {q:E}"), "0.4375 4.375e-1 4.375E-1");
+/// ```
 macro_rules! impl_fmt {
     ($tr:path) => {
         impl<T: Base, A, const F: i8> $tr for Q<T, A, F>
         where
-            Self: Copy + Into<f64> + Into<f32>,
+            Self: Copy + Into<f32> + Into<f64>,
         {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                if T::BITS > 24 {
-                    <f64 as $tr>::fmt(&(*self).into(), f)
-                } else {
+                if const { T::BITS <= f32::MANTISSA_DIGITS } {
                     <f32 as $tr>::fmt(&(*self).into(), f)
+                } else {
+                    <f64 as $tr>::fmt(&(*self).into(), f)
                 }
             }
         }
@@ -376,7 +520,7 @@ macro_rules! impl_q {
         }
 
         #[doc = concat!("Fixed point [`", stringify!($t), "`]")]
-        pub type $alias<const F: i8 = {<$t as Base>::BITS as i8 - 1}> = Q<$t, $a, F>;
+        pub type $alias<const F: i8 = {<$t as Base>::BITS as _}> = Q<$t, $a, F>;
 
         /// Scale from integer base type
         impl<const F: i8> From<$t> for Q<$t, $a, F> {
@@ -385,7 +529,7 @@ macro_rules! impl_q {
             }
         }
 
-        /// I*Q -> I
+        /// T*Q -> T
         impl<const F: i8> Mul<Q<$t, $a, F>> for $t {
             type Output = $t;
 
@@ -394,7 +538,7 @@ macro_rules! impl_q {
             }
         }
 
-        /// I/Q -> I
+        /// T/Q -> T
         impl<const F: i8> Div<Q<$t, $a, F>> for $t {
             type Output = $t;
 
