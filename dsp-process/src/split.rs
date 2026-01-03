@@ -91,7 +91,7 @@ impl<C0, C1, S0, S1> core::ops::Add<Split<C1, S1>> for Split<C0, S0> {
     type Output = Split<Parallel<(C0, C1)>, (S0, S1)>;
 
     fn add(self, rhs: Split<C1, S1>) -> Self::Output {
-        (self * rhs).parallel()
+        Split::from((self, rhs)).parallel()
     }
 }
 

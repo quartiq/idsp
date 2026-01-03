@@ -59,7 +59,7 @@ impl<const F: i8> SosClamp<F> {
 
     /// Summing junction offset referred to input
     pub fn set_input_offset(&mut self, i: i32) {
-        self.u = self.k() * i;
+        self.u = i * self.k();
     }
 }
 
@@ -270,11 +270,11 @@ mod test {
 
     // cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
 
-    pub fn pnm(config: &[Sos<29>; 4], state: &mut [SosState; 4], xy0: &mut [i32; 8]) {
+    pub fn pnm(config: &[Sos<29>; 4], state: &mut [SosState; 4], xy0: &mut [i32; 1 << 5]) {
         config.inplace(state, xy0);
     }
 
-    // ~20 insn/sample/sos on skylake, >200 MS/s
+    // ~15 cycles/sample/sos on skylake, >300 MS/s
     #[test]
     #[ignore]
     fn sos_insn() {

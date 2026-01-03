@@ -120,9 +120,9 @@ impl<T: Copy> Inplace<T> for &Neg where Self: Process<T> {}
 pub struct Offset<T>(pub T);
 
 /// Offset using `Add`
-impl<X: Copy, Y, T: core::ops::Add<X, Output = Y> + Copy> Process<X, Y> for &Offset<T> {
+impl<X: Copy + core::ops::Add<T, Output = Y>, Y, T: Copy> Process<X, Y> for &Offset<T> {
     fn process(&mut self, x: X) -> Y {
-        self.0 + x
+        x + self.0
     }
 }
 
@@ -134,9 +134,9 @@ impl<X: Copy, T> Inplace<X> for &Offset<T> where Self: Process<X> {}
 pub struct Gain<T>(pub T);
 
 /// Gain using `Mul`
-impl<X: Copy, Y, T: core::ops::Mul<X, Output = Y> + Copy> Process<X, Y> for &Gain<T> {
+impl<X: Copy + core::ops::Mul<T, Output = Y>, Y, T: Copy> Process<X, Y> for &Gain<T> {
     fn process(&mut self, x: X) -> Y {
-        self.0 * x
+        x * self.0
     }
 }
 

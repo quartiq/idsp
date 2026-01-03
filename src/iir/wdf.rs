@@ -65,33 +65,33 @@ impl Tpa {
         match self {
             Tpa::A => {
                 let c = x[1] - x[0];
-                let y = (a * c).wrapping_add(x[1]);
+                let y = (c * a).wrapping_add(x[1]);
                 [y.wrapping_add(c), y]
             }
             Tpa::B => {
                 let c = x[0] - x[1];
-                let y = (a * c).wrapping_add(x[1]);
+                let y = (c * a).wrapping_add(x[1]);
                 [y, y.wrapping_add(c)]
             }
             Tpa::B1 => {
                 let c = x[0] - x[1];
-                let y = a * c;
+                let y = c * a;
                 [y.wrapping_add(x[1]), y.wrapping_add(x[0])]
             }
             Tpa::X => [x[1], x[0]],
             Tpa::C => {
                 let c = x[1] - x[0];
-                let y = (a * c).wrapping_sub(x[1]);
+                let y = (c * a).wrapping_sub(x[1]);
                 [y, y.wrapping_add(c)]
             }
             Tpa::C1 => {
                 let c = x[1] - x[0];
-                let y = a * c;
+                let y = c * a;
                 [y.wrapping_sub(x[1]), y.wrapping_sub(x[0])]
             }
             Tpa::D => {
                 let c = x[0] - x[1];
-                let y = (a * c).wrapping_sub(x[1]);
+                let y = (c * a).wrapping_sub(x[1]);
                 [y.wrapping_add(c), y]
             }
             Tpa::Z => x,
