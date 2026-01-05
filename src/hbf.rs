@@ -41,15 +41,7 @@ use dsp_process::{ChunkIn, ChunkOut, Major, SplitProcess};
 /// The filters are optimized for decent block sizes and perform best (i.e. with negligible
 /// overhead) for blocks of 32 high-rate items or more, depending very much on architecture.
 
-#[derive(Clone, Debug, Default)]
-pub struct Taps<C>(pub C);
-
-impl<C, const M: usize> Taps<[C; M]> {
-    /// Response length, number of taps
-    pub const LEN: usize = 2 * M - 1;
-}
-
-impl<C, const M: usize> Taps<[C; M]> {
+impl<C, const M: usize> EvenSymmetric<[C; M]> {
     /// Perform the FIR convolution and yield results iteratively.
     #[inline]
     fn get<T, A>(&self, x: &[T]) -> impl Iterator<Item = A>
@@ -74,7 +66,7 @@ impl<C, const M: usize> Taps<[C; M]> {
 
 macro_rules! type_fir {
     ($name:ident, $odd:literal, $sym:literal) => {
-        #[doc = concat!("FIR taps for ODD=", stringify!($odd), ", SYM=", stringify!($sym))]
+        #[doc = concat!("FIR taps for odd = ", stringify!($odd), " and symmetric = ", stringify!($sym))]
         #[derive(Clone, Copy, Debug, Default)]
         #[repr(transparent)]
         pub struct $name<C>(pub C);
@@ -84,6 +76,7 @@ macro_rules! type_fir {
         }
 
         /// Decimate by R
+        /// Also intended for R=1
         impl<
             C: Copy,
             T: Copy + Default + Sub<T, Output = T> + Add<Output = T> + Mul<C, Output = T> + Sum,
@@ -92,12 +85,6 @@ macro_rules! type_fir {
             const R: usize,
         > SplitProcess<[T; R], T, [T; N]> for $name<[C; M]>
         {
-            fn process(&self, state: &mut [T; N], x: [T; R]) -> T {
-                let mut y = Default::default();
-                self.block(state, from_ref(&x), from_mut(&mut y));
-                y
-            }
-
             fn block(&self, state: &mut [T; N], x: &[[T; R]], y: &mut [T]) {
                 const { assert!((N - Self::LEN).is_multiple_of(R)) }
                 for (x, y) in x
@@ -134,6 +121,12 @@ macro_rules! type_fir {
                     state.copy_within(x.len()..x.len() + Self::LEN, 0);
                 }
             }
+
+            fn process(&self, state: &mut [T; N], x: [T; R]) -> T {
+                let mut y = T::default();
+                self.block(state, from_ref(&x), from_mut(&mut y));
+                y
+            }
         }
 
         impl<
@@ -144,8 +137,14 @@ macro_rules! type_fir {
             const R: usize,
         > SplitProcess<T, [T; R], [T; N]> for $name<[C; M]>
         {
-            fn process(&self, _state: &mut [T; N], _x: T) -> [T; R] {
+            fn block(&self, _state: &mut [T; N], _x: &[T], _y: &mut [[T; R]]) {
                 todo!()
+            }
+
+            fn process(&self, state: &mut [T; N], x: T) -> [T; R] {
+                let mut y = [T::default(); R];
+                self.block(state, from_ref(&x), from_mut(&mut y));
+                y
             }
         }
     };
@@ -165,7 +164,7 @@ type_fir!(EvenAntiSymmetric, false, false);
 #[derive(Clone, Debug)]
 pub struct HbfDec<T> {
     even: T, // at least N - M len
-    odd: T,  // N > 2*M - 1 (=SymFir::LEN)
+    odd: T,  // N > 2*M - 1 (=EvenSymmetric::LEN)
 }
 
 impl<T: Copy + Default, const N: usize> Default for HbfDec<[T; N]> {
@@ -182,7 +181,7 @@ impl<
     T: Copy + Default + Add<Output = T> + Sub<Output = T> + Mul<C, Output = T> + Sum,
     const M: usize,
     const N: usize,
-> SplitProcess<[T; 2], T, HbfDec<[T; N]>> for Taps<[C; M]>
+> SplitProcess<[T; 2], T, HbfDec<[T; N]>> for EvenSymmetric<[C; M]>
 {
     fn block(&self, state: &mut HbfDec<[T; N]>, x: &[[T; 2]], y: &mut [T]) {
         debug_assert_eq!(x.len(), y.len());
@@ -222,7 +221,7 @@ impl<
 /// Half band interpolator (interpolation rate 2) state
 #[derive(Clone, Debug)]
 pub struct HbfInt<T> {
-    x: T, // len N > SymFir::LEN
+    x: T, // len N > EvenSymmetric::LEN
 }
 
 impl<T: Default + Copy, const N: usize> Default for HbfInt<[T; N]> {
@@ -238,11 +237,9 @@ impl<
     T: Copy + Default + Add<Output = T> + Sub<Output = T> + Mul<C, Output = T> + Sum,
     const M: usize,
     const N: usize,
-> SplitProcess<T, [T; 2], HbfInt<[T; N]>> for Taps<[C; M]>
+> SplitProcess<T, [T; 2], HbfInt<[T; N]>> for EvenSymmetric<[C; M]>
 {
     fn block(&self, state: &mut HbfInt<[T; N]>, x: &[T], y: &mut [[T; 2]]) {
-        //return self.block(&mut state.x, x, y);
-
         debug_assert_eq!(x.len(), y.len());
         const { assert!(N > Self::LEN) }
         for (x, y) in x.chunks(N - Self::LEN).zip(y.chunks_mut(N - Self::LEN)) {
@@ -269,11 +266,11 @@ impl<
 
 /// Half band filter cascade taps for a 98 dB filter
 pub type HbfTaps98 = (
-    Taps<[f32; 15]>,
-    Taps<[f32; 6]>,
-    Taps<[f32; 3]>,
-    Taps<[f32; 3]>,
-    Taps<[f32; 2]>,
+    EvenSymmetric<[f32; 15]>,
+    EvenSymmetric<[f32; 6]>,
+    EvenSymmetric<[f32; 3]>,
+    EvenSymmetric<[f32; 3]>,
+    EvenSymmetric<[f32; 2]>,
 );
 
 /// Standard/optimal half-band filter cascade taps
@@ -289,7 +286,7 @@ pub type HbfTaps98 = (
 #[allow(clippy::excessive_precision)]
 pub const HBF_TAPS_98: HbfTaps98 = (
     // n=15 coefficients (effective number of DSP taps 4*15-1 = 59), transition band width df=.2 fs
-    Taps([
+    EvenSymmetric([
         7.02144012e-05,
         -2.43279582e-04,
         6.35026936e-04,
@@ -307,7 +304,7 @@ pub const HBF_TAPS_98: HbfTaps98 = (
         6.33592923e-01,
     ]),
     // 6, .47
-    Taps([
+    EvenSymmetric([
         -0.00086943,
         0.00577837,
         -0.02201674,
@@ -316,27 +313,27 @@ pub const HBF_TAPS_98: HbfTaps98 = (
         0.61979312,
     ]),
     // 3, .754
-    Taps([0.01414651, -0.10439639, 0.59026742]),
+    EvenSymmetric([0.01414651, -0.10439639, 0.59026742]),
     // 3, .877
-    Taps([0.01227974, -0.09930782, 0.58702834]),
+    EvenSymmetric([0.01227974, -0.09930782, 0.58702834]),
     // 2, .94
-    Taps([-0.06291796, 0.5629161]),
+    EvenSymmetric([-0.06291796, 0.5629161]),
 );
 
 /// Half band filter cascade taps
 pub type HbfTaps = (
-    Taps<[f32; 23]>,
-    Taps<[f32; 9]>,
-    Taps<[f32; 5]>,
-    Taps<[f32; 4]>,
-    Taps<[f32; 3]>,
+    EvenSymmetric<[f32; 23]>,
+    EvenSymmetric<[f32; 9]>,
+    EvenSymmetric<[f32; 5]>,
+    EvenSymmetric<[f32; 4]>,
+    EvenSymmetric<[f32; 3]>,
 );
 
 /// * 140 dB stopband, 2 µdB passband ripple, limited by f32 dynamic range
 /// * otherwise like [`HBF_TAPS_98`].
 #[allow(clippy::excessive_precision)]
 pub const HBF_TAPS: HbfTaps = (
-    Taps([
+    EvenSymmetric([
         7.60376281e-07,
         -3.77494189e-06,
         1.26458572e-05,
@@ -361,7 +358,7 @@ pub const HBF_TAPS: HbfTaps = (
         -2.06185386e-01,
         6.34588718e-01,
     ]),
-    Taps([
+    EvenSymmetric([
         3.13788260e-05,
         -2.90598691e-04,
         1.46009063e-03,
@@ -372,20 +369,20 @@ pub const HBF_TAPS: HbfTaps = (
         -1.80019379e-01,
         6.25149012e-01,
     ]),
-    Taps([
+    EvenSymmetric([
         7.62032287e-04,
         -7.64759816e-03,
         3.85545008e-02,
         -1.39896080e-01,
         6.08227193e-01,
     ]),
-    Taps([
+    EvenSymmetric([
         -2.65761488e-03,
         2.49805823e-02,
         -1.21497065e-01,
         5.99174082e-01,
     ]),
-    Taps([1.18773514e-02, -9.81294960e-02, 5.86252153e-01]),
+    EvenSymmetric([1.18773514e-02, -9.81294960e-02, 5.86252153e-01]),
 );
 
 /// Passband width in units of lowest sample rate
@@ -400,41 +397,42 @@ pub const HBF_CASCADE_BLOCK: usize = 1 << 5;
 ///
 /// See [HBF_TAPS] and [HBF_DEC_CASCADE].
 /// Supports rate changes are power of two up to 32.
-pub type HbfDec2 = HbfDec<[f32; Taps::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>;
+pub type HbfDec2 =
+    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>;
 /// HBF Decimate-by-4 cascade
 pub type HbfDec4 = (
-    HbfDec<[f32; Taps::<[f32; HBF_TAPS.1.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 1)]>,
+    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.1.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 1)]>,
     HbfDec2,
 );
 /// HBF Decimate-by-8 cascade
 pub type HbfDec8 = (
-    HbfDec<[f32; Taps::<[f32; HBF_TAPS.2.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 2)]>,
+    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.2.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 2)]>,
     HbfDec4,
 );
 /// HBF Decimate-by-16 cascade
 pub type HbfDec16 = (
-    HbfDec<[f32; Taps::<[f32; HBF_TAPS.3.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 3)]>,
+    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 3)]>,
     HbfDec8,
 );
 /// HBF Decimate-by-32 cascade
 pub type HbfDec32 = (
-    HbfDec<[f32; Taps::<[f32; HBF_TAPS.4.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 4)]>,
+    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.4.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 4)]>,
     HbfDec16,
 );
 
 type HbfDecConfig<const B: usize = HBF_CASCADE_BLOCK> = Major<
     (
-        ChunkIn<&'static Taps<[f32; HBF_TAPS.4.0.len()]>, 2>,
+        ChunkIn<&'static EvenSymmetric<[f32; HBF_TAPS.4.0.len()]>, 2>,
         Major<
             (
-                ChunkIn<&'static Taps<[f32; HBF_TAPS.3.0.len()]>, 2>,
+                ChunkIn<&'static EvenSymmetric<[f32; HBF_TAPS.3.0.len()]>, 2>,
                 Major<
                     (
-                        ChunkIn<&'static Taps<[f32; HBF_TAPS.2.0.len()]>, 2>,
+                        ChunkIn<&'static EvenSymmetric<[f32; HBF_TAPS.2.0.len()]>, 2>,
                         Major<
                             (
-                                ChunkIn<&'static Taps<[f32; HBF_TAPS.1.0.len()]>, 2>,
-                                &'static Taps<[f32; HBF_TAPS.0.0.len()]>,
+                                ChunkIn<&'static EvenSymmetric<[f32; HBF_TAPS.1.0.len()]>, 2>,
+                                &'static EvenSymmetric<[f32; HBF_TAPS.0.0.len()]>,
                             ),
                             [[f32; 2]; B],
                         >,
@@ -466,19 +464,19 @@ pub const fn hbf_dec_response_length(depth: usize) -> usize {
     let mut n = 0;
     if depth > 0 {
         n /= 2;
-        n += Taps::<[f32; HBF_TAPS.3.0.len()]>::LEN;
+        n += EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN;
     }
     if depth > 1 {
         n /= 2;
-        n += Taps::<[f32; HBF_TAPS.2.0.len()]>::LEN;
+        n += EvenSymmetric::<[f32; HBF_TAPS.2.0.len()]>::LEN;
     }
     if depth > 2 {
         n /= 2;
-        n += Taps::<[f32; HBF_TAPS.1.0.len()]>::LEN;
+        n += EvenSymmetric::<[f32; HBF_TAPS.1.0.len()]>::LEN;
     }
     if depth > 3 {
         n /= 2;
-        n += Taps::<[f32; HBF_TAPS.0.0.len()]>::LEN;
+        n += EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN;
     }
     n
 }
@@ -487,26 +485,27 @@ pub const fn hbf_dec_response_length(depth: usize) -> usize {
 ///
 /// See [HBF_TAPS] and [HBF_INT_CASCADE].
 /// Supports rate changes are power of two up to 32.
-pub type HbfInt2 = HbfInt<[f32; Taps::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>;
+pub type HbfInt2 =
+    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>;
 /// HBF interpolate-by-4 cascade
 pub type HbfInt4 = (
     HbfInt2,
-    HbfInt<[f32; Taps::<[f32; HBF_TAPS.1.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 1)]>,
+    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.1.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 1)]>,
 );
 /// HBF interpolate-by-8 cascade
 pub type HbfInt8 = (
     HbfInt4,
-    HbfInt<[f32; Taps::<[f32; HBF_TAPS.2.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 2)]>,
+    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.2.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 2)]>,
 );
 /// HBF interpolate-by-16 cascade
 pub type HbfInt16 = (
     HbfInt8,
-    HbfInt<[f32; Taps::<[f32; HBF_TAPS.3.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 3)]>,
+    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 3)]>,
 );
 /// HBF interpolate-by-32 cascade
 pub type HbfInt32 = (
     HbfInt16,
-    HbfInt<[f32; Taps::<[f32; HBF_TAPS.4.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 4)]>,
+    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.4.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 4)]>,
 );
 
 type HbfIntConfig<const B: usize = HBF_CASCADE_BLOCK> = Major<
@@ -517,20 +516,20 @@ type HbfIntConfig<const B: usize = HBF_CASCADE_BLOCK> = Major<
                     (
                         Major<
                             (
-                                &'static Taps<[f32; HBF_TAPS.0.0.len()]>,
-                                ChunkOut<&'static Taps<[f32; HBF_TAPS.1.0.len()]>, 2>,
+                                &'static EvenSymmetric<[f32; HBF_TAPS.0.0.len()]>,
+                                ChunkOut<&'static EvenSymmetric<[f32; HBF_TAPS.1.0.len()]>, 2>,
                             ),
                             [[f32; 2]; B],
                         >,
-                        ChunkOut<&'static Taps<[f32; HBF_TAPS.2.0.len()]>, 2>,
+                        ChunkOut<&'static EvenSymmetric<[f32; HBF_TAPS.2.0.len()]>, 2>,
                     ),
                     [[f32; 4]; B],
                 >,
-                ChunkOut<&'static Taps<[f32; HBF_TAPS.3.0.len()]>, 2>,
+                ChunkOut<&'static EvenSymmetric<[f32; HBF_TAPS.3.0.len()]>, 2>,
             ),
             [[f32; 8]; B],
         >,
-        ChunkOut<&'static Taps<[f32; HBF_TAPS.4.0.len()]>, 2>,
+        ChunkOut<&'static EvenSymmetric<[f32; HBF_TAPS.4.0.len()]>, 2>,
     ),
     [[f32; 16]; B],
 >;
@@ -552,19 +551,19 @@ pub const fn hbf_int_response_length(depth: usize) -> usize {
     assert!(depth < 5);
     let mut n = 0;
     if depth > 0 {
-        n += Taps::<[f32; HBF_TAPS.0.0.len()]>::LEN;
+        n += EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN;
         n *= 2;
     }
     if depth > 1 {
-        n += Taps::<[f32; HBF_TAPS.1.0.len()]>::LEN;
+        n += EvenSymmetric::<[f32; HBF_TAPS.1.0.len()]>::LEN;
         n *= 2;
     }
     if depth > 2 {
-        n += Taps::<[f32; HBF_TAPS.2.0.len()]>::LEN;
+        n += EvenSymmetric::<[f32; HBF_TAPS.2.0.len()]>::LEN;
         n *= 2;
     }
     if depth > 3 {
-        n += Taps::<[f32; HBF_TAPS.3.0.len()]>::LEN;
+        n += EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN;
         n *= 2;
     }
     n
@@ -578,7 +577,7 @@ mod test {
 
     #[test]
     fn test() {
-        let mut h = Split::new(Taps([0.5]), HbfDec::<[_; 5]>::default());
+        let mut h = Split::new(EvenSymmetric([0.5]), HbfDec::<[_; 5]>::default());
         h.as_mut().block(&[], &mut []);
 
         let x = [1.0; 8];
@@ -673,7 +672,7 @@ mod test {
         const N: usize = HBF_TAPS.4.0.len();
         assert_eq!(N, 3);
         const M: usize = 1 << 4;
-        let mut h = HbfDec::<[_; Taps::<[f32; N]>::LEN + M]>::default();
+        let mut h = HbfDec::<[_; EvenSymmetric::<[f32; N]>::LEN + M]>::default();
         let mut x = [[9.0; 2]; M];
         let mut y = [0.0; M];
         for _ in 0..1 << 25 {
@@ -690,7 +689,7 @@ mod test {
         const N: usize = HBF_TAPS.0.0.len();
         assert_eq!(N, 23);
         const M: usize = 1 << 9;
-        let mut h = HbfDec::<[_; Taps::<[f32; N]>::LEN + M]>::default();
+        let mut h = HbfDec::<[_; EvenSymmetric::<[f32; N]>::LEN + M]>::default();
         let mut x = [[9.0; 2]; M];
         let mut y = [0.0; M];
         for _ in 0..1 << 20 {
