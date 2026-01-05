@@ -86,16 +86,19 @@ pub trait Accu<T>: Base {
     fn up(x: T) -> Self;
 }
 
-/// Fixed point with F fractional bits
+/// Fixed point integer
 ///
-/// `F` positive indicates bits right of the decimal point.
+/// Generics:
+/// * `T`: Base integer
+/// * `A`: Accumulator for intermediate results
+/// * `F`: Number of fractional bits right of the decimal point
+///
 /// `F` negative is supported analogously.
 ///
 /// * `Q32<31>` is `(-1..1).step_by(2^-31)`
 /// * `Q<i16, _, 20>` is `(-1/32..1/32).step_by(2^-20)`
 /// * `Q<u8, _, 4>` is `(0..16).step_by(1/16)`
 /// * `Q<u8, _, -2>` is `(0..1024).step_by(4)`
-///
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
@@ -489,20 +492,39 @@ impl_fmt!(fmt::Display);
 impl_fmt!(fmt::UpperExp);
 impl_fmt!(fmt::LowerExp);
 
-// TODO: Binary, Octal, UpperHex, LowerHex
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(format!("{:b}", Q8::<4>::new(0x14)), "10100");
+/// assert_eq!(format!("{:b}", Q8::<4>::new(-0x14)), "11101100");
+/// ```
+macro_rules! impl_dot_fmt {
+    ($tr:path) => {
+        impl<T: $tr, A, const F: i8> $tr for Q<T, A, F> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.inner.fmt(f)
+            }
+        }
+    };
+}
+impl_dot_fmt!(fmt::Binary);
+impl_dot_fmt!(fmt::Octal);
+impl_dot_fmt!(fmt::UpperHex);
+impl_dot_fmt!(fmt::LowerHex);
+
+// TODO: dot format
 
 macro_rules! impl_q {
     // Primitive
     ($alias:ident<$t:ty, $a:ty>) => {
-        impl_q!($alias<$t, $a>, |x| x as _, <$a>::MIN, <$a>::MAX);
+        impl_q!($alias<$t, $a>, |x| x as _, <$a>::MIN, <$a>::MAX, <$a>::BITS);
     };
     // Newtype
     ($alias:ident<$t:ty, $a:ty>, $wrap:tt) => {
-        impl_q!($alias<$wrap<$t>, $wrap<$a>>, |x: $wrap<_>| $wrap(x.0 as _), Self(<$a>::MIN), Self(<$a>::MAX));
+        impl_q!($alias<$wrap<$t>, $wrap<$a>>, |x: $wrap<_>| $wrap(x.0 as _), Self(<$a>::MIN), Self(<$a>::MAX), <$a>::BITS);
     };
-    ($alias:ident<$t:ty, $a:ty>, $as:expr, $min:expr, $max:expr) => {
+    ($alias:ident<$t:ty, $a:ty>, $as:expr, $min:expr, $max:expr, $bits:expr) => {
         impl Base for $a {
-            const BITS: u32 = <$t as Base>::BITS * 2; // by convention
+            const BITS: u32 = $bits;
             const MIN: Self = $min;
             const MAX: Self = $max;
         }
@@ -592,6 +614,8 @@ impl_q!(V8<u8, u16>, Wrapping);
 impl_q!(V16<u16, u32>, Wrapping);
 impl_q!(V32<u32, u64>, Wrapping);
 impl_q!(V64<u64, u128>, Wrapping);
+
+// NonZero<T>, Saturating<T> don't implement Shr/Shl
 
 #[cfg(test)]
 mod test {
