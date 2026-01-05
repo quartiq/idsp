@@ -12,7 +12,6 @@ where
     C1: SplitInplace<Y, S1>,
 {
     fn process(&self, state: &mut (S0, S1), x: X) -> Y {
-        // TODO: defer to Minor
         self.1
             .process(&mut state.1, self.0.process(&mut state.0, x))
     }
