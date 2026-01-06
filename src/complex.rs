@@ -1,26 +1,73 @@
 use super::{atan2, cossin};
 
 /// A complex number in cartesian coordinates
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Complex<T> {
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct Complex<T>(
     /// Real and imaginary parts
-    pub iq: [T; 2],
-}
+    pub [T; 2],
+);
 
 impl<T: Copy> Complex<T> {
     /// Create a new `Complex<T>`
     pub const fn new(re: T, im: T) -> Self {
-        Self { iq: [re, im] }
+        Self([re, im])
     }
 
     /// The real part
     pub fn re(&self) -> T {
-        self.iq[0]
+        self.0[0]
     }
 
     /// The imaginary part
     pub fn im(&self) -> T {
-        self.iq[0]
+        self.0[1]
+    }
+}
+
+macro_rules! fwd_binop {
+    ($tr:ident, $meth:ident) => {
+        impl<T: Copy + core::ops::$tr<Output = T>> core::ops::$tr for Complex<T> {
+            type Output = Self;
+            fn $meth(self, rhs: Self) -> Self {
+                Self([self.0[0].$meth(rhs.0[0]), self.0[1].$meth(rhs.0[1])])
+            }
+        }
+    };
+}
+fwd_binop!(Add, add);
+fwd_binop!(Sub, sub);
+
+macro_rules! fwd_binop_inner {
+    ($tr:ident, $meth:ident) => {
+        impl<T: Copy + core::ops::$tr<Output = T>> core::ops::$tr<T> for Complex<T> {
+            type Output = Self;
+            fn $meth(self, rhs: T) -> Self {
+                Self([self.0[0].$meth(rhs), self.0[1].$meth(rhs)])
+            }
+        }
+    };
+}
+fwd_binop_inner!(Mul, mul);
+fwd_binop_inner!(Div, div);
+fwd_binop_inner!(Rem, rem);
+
+impl<T> core::iter::Sum for Complex<T>
+where
+    Self: Default + core::ops::Add<Output = Self>,
+{
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Default::default(), |c, i| c + i)
+    }
+}
+
+impl<T> core::iter::Product for Complex<T>
+where
+    Self: Default + core::ops::Mul<Output = Self>,
+{
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Default::default(), |c, i| c * i)
     }
 }
 
@@ -66,7 +113,7 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// assert_eq!(Complex::new(i32::MAX, i32::MAX).norm_sqr(), u32::MAX - 3);
     /// ```
     fn norm_sqr(&self) -> u32 {
-        let [x, y] = self.iq.map(|x| x as i64 * x as i64);
+        let [x, y] = self.0.map(|x| x as i64 * x as i64);
         ((x + y) >> 31) as _
     }
 
@@ -87,7 +134,7 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// assert_eq!(Complex::new(0, 0).log2(), -64);
     /// ```
     fn log2(&self) -> i32 {
-        let [x, y] = self.iq.map(|x| x as i64 * x as i64);
+        let [x, y] = self.0.map(|x| x as i64 * x as i64);
         -(x.wrapping_add(y).leading_zeros() as i32)
     }
 
