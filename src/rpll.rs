@@ -16,6 +16,7 @@ pub struct RPLL {
 }
 
 /// RPLL configuration
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct RPLLConfig {
     /// 1 << dt2 is the counter rate to update() rate ratio
     pub dt2: u8,

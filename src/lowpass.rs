@@ -16,6 +16,15 @@ pub struct Lowpass<const N: usize>(pub [i32; N]);
 #[derive(Clone, Debug)]
 pub struct LowpassState<const N: usize>(pub [i64; N]);
 
+impl<const N: usize> Default for LowpassState<N>
+where
+    [i64; N]: Default,
+{
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
 impl<const N: usize> SplitProcess<i32, i32, LowpassState<N>> for Lowpass<N> {
     /// The filter configuration `Config` contains the filter gains.
     ///

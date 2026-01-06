@@ -4,10 +4,11 @@ use dsp_process::SplitProcess;
 /// Lockin filter
 ///
 /// Combines two [`SplitProcess`] filters and an NCO to perform demodulation
-#[derive(Copy, Clone, Default)]
-pub struct Lockin<C> {
-    lp: C,
-}
+#[derive(Copy, Clone, Default, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Lockin<C>(
+    // Lowpass configuration
+    pub C,
+);
 
 impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<(i32, Complex<i32>), Complex<i32>, [S; 2]>
     for Lockin<C>
@@ -16,8 +17,8 @@ impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<(i32, Complex<i32>), Complex<
     fn process(&self, state: &mut [S; 2], x: (i32, Complex<i32>)) -> Complex<i32> {
         let mix = x.1.mul_scaled(x.0);
         Complex::new(
-            self.lp.process(&mut state[0], mix.re()),
-            self.lp.process(&mut state[1], mix.im()),
+            self.0.process(&mut state[0], mix.re()),
+            self.0.process(&mut state[1], mix.im()),
         )
     }
 }
