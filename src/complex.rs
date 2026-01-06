@@ -1,7 +1,20 @@
 use super::{atan2, cossin};
 
 /// A complex number in cartesian coordinates
-#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    bytemuck::Zeroable,
+    bytemuck::Pod,
+)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct Complex<T>(

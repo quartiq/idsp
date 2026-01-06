@@ -48,6 +48,7 @@ pyo3 = { version = "0.27.1", features = ["extension-module"], optional = true }
 numpy = { version = "0.27", optional = true }
 dsp-process.workspace = true
 dsp-fixedpoint.workspace = true
+bytemuck = { version = "1.24.0", features = ["derive"] }
 
 [dev-dependencies]
 quickcheck = "1.0.3"
