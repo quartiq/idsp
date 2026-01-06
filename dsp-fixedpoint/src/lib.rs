@@ -107,16 +107,7 @@ pub trait Accu<T>: Base {
 /// assert_eq!(7 / Q8::<4>::from(1.5), 4);
 /// ```
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    Default,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-    serde::Deserialize,
+    Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
 #[repr(transparent)]
 #[serde(transparent)]
@@ -506,6 +497,7 @@ macro_rules! impl_dot_fmt {
         }
     };
 }
+impl_dot_fmt!(fmt::Debug);
 impl_dot_fmt!(fmt::Binary);
 impl_dot_fmt!(fmt::Octal);
 impl_dot_fmt!(fmt::UpperHex);
