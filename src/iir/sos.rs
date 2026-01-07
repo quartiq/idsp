@@ -71,6 +71,49 @@ where
     }
 }
 
+impl<C: Const + Copy> Sos<C> {
+    /// A unity gain filter
+    ///
+    /// ```
+    /// # use idsp::iir::*;
+    /// # use dsp_process::SplitProcess;
+    /// let x0 = 3.0;
+    /// let y0 = Sos::<f32>::IDENTITY.process(&mut SosState::default(), x0);
+    /// assert_eq!(y0, x0);
+    /// ```
+    pub const IDENTITY: Self = Self::proportional(C::ONE);
+
+    /// A filter with the given proportional gain at all frequencies
+    ///
+    /// ```
+    /// # use idsp::iir::*;
+    /// # use dsp_process::SplitProcess;
+    /// let x0 = 3.0;
+    /// let y0 = Sos::<f32>::proportional(2.0).process(&mut SosState::default(), x0);
+    /// assert_eq!(y0, 2.0 * x0);
+    /// ```
+    pub const fn proportional(k: C) -> Self {
+        Self {
+            ba: [k, C::ZERO, C::ZERO, C::ZERO, C::ZERO],
+        }
+    }
+    /// A "hold" filter that ingests input and maintains output
+    ///
+    /// ```
+    /// # use idsp::iir::{Sos, SosState};
+    /// # use dsp_process::SplitProcess;
+    /// let mut state = SosState::<f32>::default();
+    /// state.xy[2] = 2.0;
+    /// let x0 = 7.0;
+    /// let y0 = Sos::<f32>::HOLD.process(&mut state, x0);
+    /// assert_eq!(y0, 2.0);
+    /// assert_eq!(state.xy, [x0, 0.0, y0, y0]);
+    /// ```
+    pub const HOLD: Self = Self {
+        ba: [C::ZERO, C::ZERO, C::ZERO, C::ONE, C::ZERO],
+    };
+}
+
 impl<C: Copy + Sum> Sos<C> {
     /// DC forward gain fro input to summing junction
     pub fn k(&self) -> C {

@@ -78,6 +78,19 @@ pub trait Const {
     const MAX: Self;
 }
 
+macro_rules! impl_const_float {
+    ($ty:ident) => {
+        impl Const for $ty {
+            const ZERO: Self = 0.0;
+            const MIN: Self = Self::MIN;
+            const MAX: Self = Self::MAX;
+            const ONE: Self = 1.0;
+        }
+    };
+}
+impl_const_float!(f32);
+impl_const_float!(f64);
+
 /// Conversion trait between base and accumulator type
 pub trait Accu<A> {
     /// Cast up to accumulator type
