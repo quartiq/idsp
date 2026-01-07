@@ -209,7 +209,7 @@ where
     ///     .lowpass()
     ///     .into();
     /// let mut xy = vec![3, -4, 5, 7, -3, 2];
-    /// iir.inplace(&mut SosState::default(), &mut xy);
+    /// iir.inplace(&mut DirectForm1::default(), &mut xy);
     /// assert_eq!(xy, [5, 3, 9, 25, 42, 49]);
     /// ```
     pub fn lowpass(&self) -> [[T; 3]; 2] {
@@ -235,7 +235,7 @@ where
     ///     .highpass()
     ///     .into();
     /// let mut xy = vec![3, -4, 5, 7, -3, 2];
-    /// iir.inplace(&mut SosState::default(), &mut xy);
+    /// iir.inplace(&mut DirectForm1::default(), &mut xy);
     /// assert_eq!(xy, [5, -9, 11, 12, -1, 17]);
     /// ```
     pub fn highpass(&self) -> [[T; 3]; 2] {
@@ -401,7 +401,7 @@ mod test {
     use dsp_process::SplitProcess;
     use num_complex::Complex64;
 
-    use crate::iir::{Sos, SosStateDither};
+    use crate::iir::{DirectForm1Dither, Sos};
 
     #[test]
     #[ignore]
@@ -412,7 +412,7 @@ mod test {
             .lowpass()
             .into();
         println!("{:?}", ba);
-        let mut xy = SosStateDither::default();
+        let mut xy = DirectForm1Dither::default();
         for _ in 0..(1 << 24) {
             ba.process(&mut xy, 1);
         }

@@ -67,7 +67,7 @@ mod _idsp {
                 ]))
             })
             .collect::<Result<Vec<_>, PyErr>>()?;
-        let mut state = vec![crate::iir::SosState::default(); sos.len()];
+        let mut state = vec![crate::iir::DirectForm1::default(); sos.len()];
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
         Split::new(&sos[..], &mut state[..]).inplace(xy);
         Ok(())
@@ -101,7 +101,7 @@ mod _idsp {
                 Ok(sos)
             })
             .collect::<Result<Vec<_>, PyErr>>()?;
-        let mut state = vec![crate::iir::SosStateWide::default(); sos.len()];
+        let mut state = vec![crate::iir::DirectForm1Wide::default(); sos.len()];
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
         Split::new(&sos[..], &mut state[..]).inplace(xy);
         Ok(())

@@ -1,6 +1,37 @@
 //! Half-band filters and cascades
 //!
 //! Used to perform very efficient high-dynamic range rate changes by powers of two.
+//!
+//! Symmetric and anti-symmetric FIR filter prototype.
+//!
+//! # Generics
+//! * `M`: number of taps, one-sided. The filter has effectively 2*M DSP taps
+//!
+//! # Half band decimation/interpolation filters
+//!
+//! Half-band filters (rate change of 2) and cascades of HBFs are implemented in
+//! [`HbfDec`] and [`HbfInt`] etc.
+//! The half-band filter has unique properties that make it preferable in many cases:
+//!
+//! * only needs M multiplications (fused multiply accumulate) for 4*M taps
+//! * HBF decimator stores less state than a generic FIR filter
+//! * as a FIR filter has linear phase/flat group delay
+//! * very small passband ripple and excellent stopband attenuation
+//! * as a cascade of decimation/interpolation filters, the higher-rate filters
+//!   need successively fewer taps, allowing the filtering to be dominated by
+//!   only the highest rate filter with the fewest taps
+//! * In a cascade of HBF the overall latency, group delay, and impulse response
+//!   length are dominated by the lowest-rate filter which, due to its manageable transition
+//!   band width (compared to single-stage filters) can be smaller, shorter, and faster.
+//! * high dynamic range and inherent stability compared with an IIR filter
+//! * can be combined with a CIC filter for non-power-of-two or even higher rate changes
+//!
+//! The implementations here are all `no_std` and `no-alloc`.
+//! They support (but don't require) in-place filtering to reduce memory usage.
+//! They unroll and optimize extremely well targetting current architectures,
+//! e.g. requiring less than 4 instructions per input item for the full `HbfDecCascade` on Skylake.
+//! The filters are optimized for decent block sizes and perform best (i.e. with negligible
+//! overhead) for blocks of 32 high-rate items or more, depending very much on architecture.
 
 use core::{
     iter::Sum,
@@ -9,37 +40,6 @@ use core::{
 };
 
 use dsp_process::{ChunkIn, ChunkOut, Major, SplitProcess};
-
-/// Symmetric and anti-symmetric FIR filter prototype.
-///
-/// # Generics
-/// * `M`: number of taps, one-sided. The filter has effectively 2*M DSP taps
-///
-/// # Half band decimation/interpolation filters
-///
-/// Half-band filters (rate change of 2) and cascades of HBFs are implemented in
-/// [`HbfDec`] and [`HbfInt`] etc.
-/// The half-band filter has unique properties that make it preferable in many cases:
-///
-/// * only needs M multiplications (fused multiply accumulate) for 4*M taps
-/// * HBF decimator stores less state than a generic FIR filter
-/// * as a FIR filter has linear phase/flat group delay
-/// * very small passband ripple and excellent stopband attenuation
-/// * as a cascade of decimation/interpolation filters, the higher-rate filters
-///   need successively fewer taps, allowing the filtering to be dominated by
-///   only the highest rate filter with the fewest taps
-/// * In a cascade of HBF the overall latency, group delay, and impulse response
-///   length are dominated by the lowest-rate filter which, due to its manageable transition
-///   band width (compared to single-stage filters) can be smaller, shorter, and faster.
-/// * high dynamic range and inherent stability compared with an IIR filter
-/// * can be combined with a CIC filter for non-power-of-two or even higher rate changes
-///
-/// The implementations here are all `no_std` and `no-alloc`.
-/// They support (but don't require) in-place filtering to reduce memory usage.
-/// They unroll and optimize extremely well targetting current architectures,
-/// e.g. requiring less than 4 instructions per input item for the full `HbfDecCascade` on Skylake.
-/// The filters are optimized for decent block sizes and perform best (i.e. with negligible
-/// overhead) for blocks of 32 high-rate items or more, depending very much on architecture.
 
 /// Perform the FIR convolution and yield results iteratively.
 #[inline]
@@ -86,7 +86,7 @@ macro_rules! type_fir {
         > SplitProcess<T, T, [T; N]> for $name<[C; M]>
         {
             fn block(&self, state: &mut [T; N], x: &[T], y: &mut [T]) {
-                for (x, y) in x.chunks(N - Self::LEN).zip(y.chunks_mut((N - Self::LEN))) {
+                for (x, y) in x.chunks(N - Self::LEN).zip(y.chunks_mut(N - Self::LEN)) {
                     state[Self::LEN..][..x.len()].copy_from_slice(x);
                     for (y, x) in y.iter_mut().zip(get::<_, _, _, $odd, $sym>(&self.0, state)) {
                         *y = x;

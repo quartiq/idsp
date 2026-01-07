@@ -78,7 +78,7 @@ impl<C: Const + Copy> Sos<C> {
     /// # use idsp::iir::*;
     /// # use dsp_process::SplitProcess;
     /// let x0 = 3.0;
-    /// let y0 = Sos::<f32>::IDENTITY.process(&mut SosState::default(), x0);
+    /// let y0 = Sos::<f32>::IDENTITY.process(&mut DirectForm1::default(), x0);
     /// assert_eq!(y0, x0);
     /// ```
     pub const IDENTITY: Self = Self::proportional(C::ONE);
@@ -89,7 +89,7 @@ impl<C: Const + Copy> Sos<C> {
     /// # use idsp::iir::*;
     /// # use dsp_process::SplitProcess;
     /// let x0 = 3.0;
-    /// let y0 = Sos::<f32>::proportional(2.0).process(&mut SosState::default(), x0);
+    /// let y0 = Sos::<f32>::proportional(2.0).process(&mut DirectForm1::default(), x0);
     /// assert_eq!(y0, 2.0 * x0);
     /// ```
     pub const fn proportional(k: C) -> Self {
@@ -100,9 +100,9 @@ impl<C: Const + Copy> Sos<C> {
     /// A "hold" filter that ingests input and maintains output
     ///
     /// ```
-    /// # use idsp::iir::{Sos, SosState};
+    /// # use idsp::iir::*;
     /// # use dsp_process::SplitProcess;
-    /// let mut state = SosState::<f32>::default();
+    /// let mut state = DirectForm1::<f32>::default();
     /// state.xy[2] = 2.0;
     /// let x0 = 7.0;
     /// let y0 = Sos::<f32>::HOLD.process(&mut state, x0);
@@ -140,7 +140,7 @@ impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> SosClamp<
 
 /// SOS state
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct SosState<T> {
+pub struct DirectForm1<T> {
     /// X,Y state
     ///
     /// Contents before `process()`: `[x1, x2, y1, y2]`
@@ -149,7 +149,7 @@ pub struct SosState<T> {
 
 /// SOS state with wide Y
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct SosStateWide {
+pub struct DirectForm1Wide {
     /// X state
     ///
     /// `[x1, x2]`
@@ -162,7 +162,7 @@ pub struct SosStateWide {
 
 /// SOS state with first order error feedback
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct SosStateDither {
+pub struct DirectForm1Dither {
     /// X,Y state
     ///
     /// `[x1, x2, y1, y2]`
@@ -171,10 +171,19 @@ pub struct SosStateDither {
     pub e: u32,
 }
 
+/// Direct form 2 transposed SOS state
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct DirectForm2Transposed<T> {
+    /// internal state
+    ///
+    /// `[u1, u2]`
+    pub u: [T; 2],
+}
+
 impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
-    SplitProcess<T, T, SosState<T>> for Sos<C>
+    SplitProcess<T, T, DirectForm1<T>> for Sos<C>
 {
-    fn process(&self, state: &mut SosState<T>, x0: T) -> T {
+    fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
         let xy = &mut state.xy;
         let ba = &self.ba;
         let y0 =
@@ -184,19 +193,45 @@ impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
     }
 }
 
-impl<T: Copy + Add<Output = T> + Ord, C> SplitProcess<T, T, SosState<T>> for SosClamp<C, T>
-where
-    Sos<C>: SplitProcess<T, T, SosState<T>>,
+impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2Transposed<T>>
+    for Sos<T>
 {
-    fn process(&self, state: &mut SosState<T>, x0: T) -> T {
+    fn process(&self, state: &mut DirectForm2Transposed<T>, x0: T) -> T {
+        let u = &mut state.u;
+        let ba = &self.ba;
+        let y0 = u[0] + ba[0] * x0;
+        u[0] = u[1] + ba[1] * x0 + ba[3] * y0;
+        u[1] = ba[2] * x0 + ba[4] * y0;
+        y0
+    }
+}
+
+impl<T: Copy + Add<Output = T> + Ord, C> SplitProcess<T, T, DirectForm1<T>> for SosClamp<C, T>
+where
+    Sos<C>: SplitProcess<T, T, DirectForm1<T>>,
+{
+    fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
         let y0 = (self.coeff.process(state, x0) + self.u).clamp(self.min, self.max);
         state.xy[2] = y0; // overwrite
         y0
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for Sos<Q<i32, i64, F>> {
-    fn process(&self, state: &mut SosStateWide, x0: i32) -> i32 {
+impl<T: Copy + Add<Output = T> + Mul<Output = T> + Ord> SplitProcess<T, T, DirectForm2Transposed<T>>
+    for SosClamp<T, T>
+{
+    fn process(&self, state: &mut DirectForm2Transposed<T>, x0: T) -> T {
+        let u = &mut state.u;
+        let ba = &self.coeff.ba;
+        let y0 = (u[0] + ba[0] * x0).clamp(self.min, self.max);
+        u[0] = u[1] + ba[1] * x0 + ba[3] * y0;
+        u[1] = self.u + ba[2] * x0 + ba[4] * y0;
+        y0
+    }
+}
+
+impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for Sos<Q<i32, i64, F>> {
+    fn process(&self, state: &mut DirectForm1Wide, x0: i32) -> i32 {
         let x = &mut state.x;
         let y = &mut state.y;
         let ba = &self.ba;
@@ -212,8 +247,8 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for Sos<Q<i32, i64, F>> {
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for SosClamp<Q<i32, i64, F>, i32> {
-    fn process(&self, state: &mut SosStateWide, x0: i32) -> i32 {
+impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for SosClamp<Q<i32, i64, F>, i32> {
+    fn process(&self, state: &mut DirectForm1Wide, x0: i32) -> i32 {
         let x = &mut state.x;
         let y = &mut state.y;
         let ba = &self.coeff.ba;
@@ -230,8 +265,8 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for SosClamp<Q<i32, i64, 
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for Sos<Q<i32, i64, F>> {
-    fn process(&self, state: &mut SosStateDither, x0: i32) -> i32 {
+impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for Sos<Q<i32, i64, F>> {
+    fn process(&self, state: &mut DirectForm1Dither, x0: i32) -> i32 {
         let xy = &mut state.xy;
         let e = &mut state.e;
         let ba = &self.ba;
@@ -245,8 +280,8 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for Sos<Q<i32, i64, F>>
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for SosClamp<Q<i32, i64, F>, i32> {
-    fn process(&self, state: &mut SosStateDither, x0: i32) -> i32 {
+impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for SosClamp<Q<i32, i64, F>, i32> {
+    fn process(&self, state: &mut DirectForm1Dither, x0: i32) -> i32 {
         let xy = &mut state.xy;
         let e = &mut state.e;
         let ba = &self.coeff.ba;
@@ -336,7 +371,7 @@ mod test {
 
     pub fn pnm(
         config: &[Sos<Q32<29>>; 4],
-        state: &mut [SosState<i32>; 4],
+        state: &mut [DirectForm1<i32>; 4],
         xy0: &mut [i32; 1 << 5],
     ) {
         config.inplace(state, xy0);

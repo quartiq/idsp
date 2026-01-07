@@ -61,6 +61,7 @@ pub trait Const {
 
     /// The multiplicative neutral element
     const ONE: Self;
+
     /// Lowest value
     ///
     /// ```
@@ -82,8 +83,8 @@ macro_rules! impl_const_float {
     ($ty:ident) => {
         impl Const for $ty {
             const ZERO: Self = 0.0;
-            const MIN: Self = Self::MIN;
-            const MAX: Self = Self::MAX;
+            const MIN: Self = <$ty>::MIN;
+            const MAX: Self = <$ty>::MAX;
             const ONE: Self = 1.0;
         }
     };
@@ -194,7 +195,15 @@ impl<T: Int, A, const F: i8> Int for Q<T, A, F> {
     const BITS: u32 = T::BITS;
 }
 
-impl<T: Const + Shift + Copy, A, const F: i8> Const for Q<T, A, F> {
+/// Helper trait to get const shl
+trait One {
+    const ONE: Self;
+}
+
+impl<T: Const + Shift + Copy, A, const F: i8> Const for Q<T, A, F>
+where
+    Self: One,
+{
     /// Lowest value
     ///
     /// ```
@@ -213,7 +222,13 @@ impl<T: Const + Shift + Copy, A, const F: i8> Const for Q<T, A, F> {
 
     const ZERO: Self = Self::new(T::ZERO);
 
-    const ONE: Self = Self::new(T::ONE); // FIXME!
+    /// Unit
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::{Const, Q8};
+    /// assert_eq!(Q8::<3>::ONE, Q8::new(1 << 3));
+    /// ```
+    const ONE: Self = <Self as One>::ONE;
 }
 
 impl<T: Int, A, const F: i8> Q<T, A, F> {
@@ -377,20 +392,21 @@ forward_binop!(BitAnd::bitand);
 forward_binop!(BitOr::bitor);
 forward_binop!(BitXor::bitxor);
 
-/// The notable exception to standard rules
-/// (https://github.com/rust-lang/rust/pull/93208#issuecomment-1019310634)
-/// This is for performance reasons
-///
-/// Q*T -> A, Q/T -> Q
-/// See also the T*Q -> T and T/Q -> T in impl_q!()
+// The notable exception to standard rules
+// (https://github.com/rust-lang/rust/pull/93208#issuecomment-1019310634)
+// This is for performance reasons
+//
+// Q*T -> A, Q/T -> Q
+// See also the T*Q -> T and T/Q -> T in impl_q!()
+//
+
+/// Wide multiplication to accumulator
 ///
 /// ```
 /// # use dsp_fixedpoint::{Q8, Q};
 /// assert_eq!(Q8::<3>::new(4) * 2, Q::new(8));
 /// assert_eq!(Q8::<3>::new(4) / 2, Q8::new(2));
 /// ```
-
-/// Wide multiplication to accumulator
 impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Mul<T> for Q<T, A, F> {
     type Output = Q<A, T, F>;
     #[inline]
@@ -611,6 +627,10 @@ macro_rules! impl_q {
 
         #[doc = concat!("Fixed point [`", stringify!($t), "`]")]
         pub type $alias<const F: i8 = {<$t as Int>::BITS as _}> = Q<$t, $a, F>;
+
+        impl<const F: i8> One for Q<$t, $a, F> {
+            const ONE: Self = Self::new($wrap(if F >= 0 {1 << F as usize} else {0}));
+        }
 
         /// Scale from integer base type
         impl<const F: i8> From<$t> for Q<$t, $a, F> {
