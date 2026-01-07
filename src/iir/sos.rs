@@ -1,6 +1,6 @@
 use core::{
     iter::Sum,
-    ops::{Add, Div, Mul, Neg},
+    ops::{Add, Div, Mul},
 };
 use dsp_fixedpoint::{Const, Q};
 use dsp_process::{SplitInplace, SplitProcess};
@@ -10,7 +10,7 @@ use dsp_process::{SplitInplace, SplitProcess};
 use num_traits::float::FloatCore as _;
 
 /// Second-order-section
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct Sos<C> {
     /// Coefficients
     ///
@@ -27,7 +27,7 @@ pub struct Sos<C> {
 }
 
 /// Second-order-section with offset and clamp
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct SosClamp<C, T = C> {
     /// Coefficients
     pub coeff: Sos<C>,
@@ -223,9 +223,9 @@ impl<T: Copy + Add<Output = T> + Mul<Output = T> + Ord> SplitProcess<T, T, Direc
     fn process(&self, state: &mut DirectForm2Transposed<T>, x0: T) -> T {
         let u = &mut state.u;
         let ba = &self.coeff.ba;
-        let y0 = (u[0] + ba[0] * x0).clamp(self.min, self.max);
+        let y0 = (u[0] + ba[0] * x0 + self.u).clamp(self.min, self.max);
         u[0] = u[1] + ba[1] * x0 + ba[3] * y0;
-        u[1] = self.u + ba[2] * x0 + ba[4] * y0;
+        u[1] = ba[2] * x0 + ba[4] * y0;
         y0
     }
 }
@@ -300,18 +300,20 @@ impl<C, T: Copy, S> SplitInplace<T, S> for SosClamp<C, T> where Self: SplitProce
 
 macro_rules! impl_from_float {
     ($ty:ident) => {
-        impl<C: From<$ty>> From<[[$ty; 3]; 2]> for Sos<C> {
+        impl<C: From<$ty>> From<[[$ty; 3]; 2]> for Sos<C>
+        where
+            Sos<C>: From<[$ty; 5]>,
+        {
             fn from(ba: [[$ty; 3]; 2]) -> Self {
                 let a0 = 1.0 / ba[1][0];
-                Self {
-                    ba: [
-                        (ba[0][0] * a0).into(),
-                        (ba[0][1] * a0).into(),
-                        (ba[0][2] * a0).into(),
-                        (-ba[1][1] * a0).into(),
-                        (-ba[1][2] * a0).into(),
-                    ],
-                }
+                [
+                    (ba[0][0] * a0).into(),
+                    (ba[0][1] * a0).into(),
+                    (ba[0][2] * a0).into(),
+                    (-ba[1][1] * a0).into(),
+                    (-ba[1][2] * a0).into(),
+                ]
+                .into()
             }
         }
     };
@@ -319,12 +321,12 @@ macro_rules! impl_from_float {
 impl_from_float!(f32);
 impl_from_float!(f64);
 
-impl<C, T, F> From<[[F; 3]; 2]> for SosClamp<C, T>
+impl<C, T, F> From<F> for SosClamp<C, T>
 where
-    Sos<C>: From<[[F; 3]; 2]>,
+    Sos<C>: From<F>,
     Self: Default,
 {
-    fn from(ba: [[F; 3]; 2]) -> Self {
+    fn from(ba: F) -> Self {
         Self {
             coeff: ba.into(),
             ..Default::default()
@@ -332,23 +334,10 @@ where
     }
 }
 
-impl<T: Copy + Neg<Output = T>, A, const F: i8> From<[T; 5]> for Sos<Q<T, A, F>> {
-    fn from(mut ba: [T; 5]) -> Self {
-        ba[3] = -ba[3];
-        ba[4] = -ba[4];
-        Self { ba: ba.map(Q::new) }
-    }
-}
-
-impl<C, T> From<[T; 5]> for SosClamp<C, T>
-where
-    Sos<C>: From<[T; 5]>,
-    Self: Default,
-{
+impl<C: From<T>, T> From<[T; 5]> for Sos<C> {
     fn from(ba: [T; 5]) -> Self {
         Self {
-            coeff: ba.into(),
-            ..Default::default()
+            ba: ba.map(Into::into),
         }
     }
 }

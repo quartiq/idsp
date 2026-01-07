@@ -22,14 +22,14 @@ pub enum Order {
 ///
 /// ```
 /// # use idsp::iir::*;
-/// let b: Biquad<f32> = PidBuilder::default()
+/// let b: Sos<f32> = PidBuilder::default()
 ///     .period(1e-3)
 ///     .gain(Action::I, 1e-3)
 ///     .gain(Action::P, 1.0)
 ///     .gain(Action::D, 1e2)
 ///     .limit(Action::I, 1e3)
 ///     .limit(Action::D, 1e1)
-///     .build()
+///     .build::<f32>()
 ///     .into();
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -167,12 +167,12 @@ impl<T: Float> PidBuilder<T> {
     ///
     /// ```
     /// # use idsp::iir::*;
-    /// let i: Biquad<f32> = PidBuilder::default()
+    /// let i: Sos<f32> = PidBuilder::default()
     ///     .gain(Action::P, 3.0)
     ///     .order(Order::P)
-    ///     .build()
+    ///     .build::<f32>()
     ///     .into();
-    /// assert_eq!(i, Biquad::proportional(3.0));
+    /// assert_eq!(i, Sos::proportional(3.0f32));
     /// ```
     ///
     /// # Panic
