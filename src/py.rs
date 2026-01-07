@@ -1,5 +1,6 @@
 #[pyo3::pymodule]
 mod _idsp {
+    use dsp_fixedpoint::Q32;
     use dsp_process::{Add, Identity, Inplace, Split};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
@@ -60,7 +61,7 @@ mod _idsp {
                     .ok_or(PyTypeError::new_err("order"))?
                     .try_into()
                     .or(Err(PyTypeError::new_err("shape")))?;
-                Ok(crate::iir::Sos::<29>::from([
+                Ok(crate::iir::Sos::<Q32<29>>::from([
                     [s[0], s[1], s[2]],
                     [s[3], s[4], s[5]],
                 ]))
@@ -90,8 +91,10 @@ mod _idsp {
                     .ok_or(PyTypeError::new_err("order"))?
                     .try_into()
                     .or(Err(PyTypeError::new_err("shape")))?;
-                let mut sos =
-                    crate::iir::SosClamp::<29>::from([[s[0], s[1], s[2]], [s[3], s[4], s[5]]]);
+                let mut sos = crate::iir::SosClamp::<Q32<29>, i32>::from([
+                    [s[0], s[1], s[2]],
+                    [s[3], s[4], s[5]],
+                ]);
                 sos.u = s[6].round() as _;
                 sos.min = s[7].round() as _;
                 sos.max = s[8].round() as _;

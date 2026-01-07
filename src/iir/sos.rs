@@ -1,4 +1,8 @@
-use dsp_fixedpoint::Q32;
+use core::{
+    iter::Sum,
+    ops::{Add, Div, Mul, Neg},
+};
+use dsp_fixedpoint::{Int, Q};
 use dsp_process::{SplitInplace, SplitProcess};
 
 #[cfg(not(feature = "std"))]
@@ -7,7 +11,7 @@ use num_traits::float::FloatCore as _;
 
 /// Second-order-section
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct Sos<const F: i8 = 29> {
+pub struct Sos<C> {
     /// Coefficients
     ///
     /// `[b0, b1, b2, a1, a2]`
@@ -19,57 +23,81 @@ pub struct Sos<const F: i8 = 29> {
     ///
     /// Note the a1, a2 sign. The transfer function is:
     /// `H(z) = (b0 + b1*z^-1 + b2*z^-2)/((1 << F) - a2*z^-1 - a2*z^-2)`
-    pub ba: [Q32<F>; 5],
+    pub ba: [C; 5],
 }
 
 /// Second-order-section with offset and clamp
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct SosClamp<const F: i8 = 29> {
+pub struct SosClamp<C, T = C> {
     /// Coefficients
-    pub coeff: Sos<F>,
+    pub coeff: Sos<C>,
     /// Summing junction offset
-    pub u: i32,
+    pub u: T,
     /// Summing junction min clamp
-    pub min: i32,
+    pub min: T,
     /// Summing junction min clamp
-    pub max: i32,
+    pub max: T,
 }
 
-impl<const F: i8> Default for SosClamp<F> {
+macro_rules! impl_default_float {
+    ($ty:ident) => {
+        impl Default for SosClamp<$ty, $ty> {
+            fn default() -> Self {
+                Self {
+                    coeff: Default::default(),
+                    u: 0.0,
+                    min: <$ty>::MIN,
+                    max: <$ty>::MAX,
+                }
+            }
+        }
+    };
+}
+impl_default_float!(f32);
+impl_default_float!(f64);
+
+impl<T, A, const F: i8> Default for SosClamp<Q<T, A, F>, T>
+where
+    Sos<Q<T, A, F>>: Default,
+    T: Default + Int,
+{
     fn default() -> Self {
         Self {
             coeff: Default::default(),
-            u: 0,
-            min: i32::MIN,
-            max: i32::MAX,
+            u: Default::default(),
+            min: T::MIN,
+            max: T::MAX,
         }
     }
 }
 
-impl<const F: i8> SosClamp<F> {
+impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> SosClamp<C, T> {
     /// DC forward gain fro input to summing junction
-    pub fn k(&self) -> Q32<F> {
+    pub fn k(&self) -> C
+    where
+        C: Copy + core::iter::Sum,
+    {
         self.coeff.ba[..3].iter().copied().sum()
     }
 
     /// Summing junction offset referred to input
-    pub fn input_offset(&self) -> i32 {
+    pub fn input_offset(&self) -> T {
         self.u / self.k()
     }
 
     /// Summing junction offset referred to input
-    pub fn set_input_offset(&mut self, i: i32) {
+    pub fn set_input_offset(&mut self, i: T) {
         self.u = i * self.k();
     }
 }
 
 /// SOS state
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct SosState {
+pub struct SosState<T> {
     /// X,Y state
     ///
-    /// `[x1, x2, y1, y2]`
-    pub xy: [i32; 4],
+    /// Contents before `process()`: `[x1, x2, y1, y2]`
+    pub xy: [T; 4],
 }
 
 /// SOS state with wide Y
@@ -96,47 +124,36 @@ pub struct SosStateDither {
     pub e: u32,
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosState> for Sos<F> {
-    fn process(&self, state: &mut SosState, x0: i32) -> i32 {
+impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
+    SplitProcess<T, T, SosState<T>> for Sos<C>
+{
+    fn process(&self, state: &mut SosState<T>, x0: T) -> T {
         let xy = &mut state.xy;
         let ba = &self.ba;
-        let mut acc = 0;
-        acc += x0 as i64 * ba[0].inner as i64;
-        acc += xy[0] as i64 * ba[1].inner as i64;
-        acc += xy[1] as i64 * ba[2].inner as i64;
-        acc += xy[2] as i64 * ba[3].inner as i64;
-        acc += xy[3] as i64 * ba[4].inner as i64;
-        let y0 = (acc >> F) as i32;
+        let y0 =
+            (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).into();
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosState> for SosClamp<F> {
-    fn process(&self, state: &mut SosState, x0: i32) -> i32 {
-        let xy = &mut state.xy;
-        let ba = &self.coeff.ba;
-        let mut acc = 0;
-        acc += x0 as i64 * ba[0].inner as i64;
-        acc += xy[0] as i64 * ba[1].inner as i64;
-        acc += xy[1] as i64 * ba[2].inner as i64;
-        acc += xy[2] as i64 * ba[3].inner as i64;
-        acc += xy[3] as i64 * ba[4].inner as i64;
-        let y0 = ((acc >> F) as i32 + self.u).clamp(self.min, self.max);
-        *xy = [x0, xy[0], y0, xy[2]];
+impl<T: Copy + Add<Output = T> + Ord, C> SplitProcess<T, T, SosState<T>> for SosClamp<C, T>
+where
+    Sos<C>: SplitProcess<T, T, SosState<T>>,
+{
+    fn process(&self, state: &mut SosState<T>, x0: T) -> T {
+        let y0 = (self.coeff.process(state, x0) + self.u).clamp(self.min, self.max);
+        state.xy[2] = y0; // overwrite
         y0
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for Sos<F> {
+impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for Sos<Q<i32, i64, F>> {
     fn process(&self, state: &mut SosStateWide, x0: i32) -> i32 {
         let x = &mut state.x;
         let y = &mut state.y;
         let ba = &self.ba;
-        let mut acc = 0;
-        acc += x0 as i64 * ba[0].inner as i64;
-        acc += x[0] as i64 * ba[1].inner as i64;
-        acc += x[1] as i64 * ba[2].inner as i64;
+        let mut acc = (ba[0] * x0 + ba[1] * x[0] + ba[2] * x[1]).inner;
         *x = [x0, x[0]];
         acc += (y[0] as u32 as i64 * ba[3].inner as i64) >> 32;
         acc += (y[0] >> 32) * ba[3].inner as i64;
@@ -148,15 +165,12 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for Sos<F> {
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for SosClamp<F> {
+impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for SosClamp<Q<i32, i64, F>, i32> {
     fn process(&self, state: &mut SosStateWide, x0: i32) -> i32 {
         let x = &mut state.x;
         let y = &mut state.y;
         let ba = &self.coeff.ba;
-        let mut acc = 0;
-        acc += x0 as i64 * ba[0].inner as i64;
-        acc += x[0] as i64 * ba[1].inner as i64;
-        acc += x[1] as i64 * ba[2].inner as i64;
+        let mut acc = (ba[0] * x0 + ba[1] * x[0] + ba[2] * x[1]).inner;
         *x = [x0, x[0]];
         acc += (y[0] as u32 as i64 * ba[3].inner as i64) >> 32;
         acc += (y[0] >> 32) * ba[3].inner as i64;
@@ -169,36 +183,28 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for SosClamp<F> {
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for Sos<F> {
+impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for Sos<Q<i32, i64, F>> {
     fn process(&self, state: &mut SosStateDither, x0: i32) -> i32 {
         let xy = &mut state.xy;
         let e = &mut state.e;
         let ba = &self.ba;
-        let mut acc = *e as i64;
-        acc += x0 as i64 * ba[0].inner as i64;
-        acc += xy[0] as i64 * ba[1].inner as i64;
-        acc += xy[1] as i64 * ba[2].inner as i64;
-        acc += xy[2] as i64 * ba[3].inner as i64;
-        acc += xy[3] as i64 * ba[4].inner as i64;
+        let mut acc = *e as i64
+            + (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).inner;
         acc <<= 32 - F;
         *e = acc as _;
-        let y0 = (acc >> 32) as i32;
+        let y0 = (acc >> 32) as _;
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for SosClamp<F> {
+impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for SosClamp<Q<i32, i64, F>, i32> {
     fn process(&self, state: &mut SosStateDither, x0: i32) -> i32 {
         let xy = &mut state.xy;
         let e = &mut state.e;
         let ba = &self.coeff.ba;
-        let mut acc = *e as i64;
-        acc += x0 as i64 * ba[0].inner as i64;
-        acc += xy[0] as i64 * ba[1].inner as i64;
-        acc += xy[1] as i64 * ba[2].inner as i64;
-        acc += xy[2] as i64 * ba[3].inner as i64;
-        acc += xy[3] as i64 * ba[4].inner as i64;
+        let mut acc = *e as i64
+            + (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).inner;
         acc <<= 32 - F;
         *e = acc as _;
         let y0 = ((acc >> 32) as i32 + self.u).clamp(self.min, self.max);
@@ -207,28 +213,36 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateDither> for SosClamp<F> {
     }
 }
 
-impl<const F: i8, S> SplitInplace<i32, S> for Sos<F> where Self: SplitProcess<i32, i32, S> {}
-impl<const F: i8, S> SplitInplace<i32, S> for SosClamp<F> where Self: SplitProcess<i32, i32, S> {}
+impl<C, T: Copy, S> SplitInplace<T, S> for Sos<C> where Self: SplitProcess<T, T, S> {}
+impl<C, T: Copy, S> SplitInplace<T, S> for SosClamp<C, T> where Self: SplitProcess<T, T, S> {}
 
-fn quantize<T: From<f64>>(ba: [[f64; 3]; 2]) -> [T; 5] {
-    let a0 = 1.0 / ba[1][0];
-    [
-        (ba[0][0] * a0).into(),
-        (ba[0][1] * a0).into(),
-        (ba[0][2] * a0).into(),
-        (-ba[1][1] * a0).into(),
-        (-ba[1][2] * a0).into(),
-    ]
+macro_rules! impl_from_float {
+    ($ty:ident) => {
+        impl<C: From<$ty>> From<[[$ty; 3]; 2]> for Sos<C> {
+            fn from(ba: [[$ty; 3]; 2]) -> Self {
+                let a0 = 1.0 / ba[1][0];
+                Self {
+                    ba: [
+                        (ba[0][0] * a0).into(),
+                        (ba[0][1] * a0).into(),
+                        (ba[0][2] * a0).into(),
+                        (-ba[1][1] * a0).into(),
+                        (-ba[1][2] * a0).into(),
+                    ],
+                }
+            }
+        }
+    };
 }
+impl_from_float!(f32);
+impl_from_float!(f64);
 
-impl<const F: i8> From<[[f64; 3]; 2]> for Sos<F> {
-    fn from(ba: [[f64; 3]; 2]) -> Self {
-        Self { ba: quantize(ba) }
-    }
-}
-
-impl<const F: i8> From<[[f64; 3]; 2]> for SosClamp<F> {
-    fn from(ba: [[f64; 3]; 2]) -> Self {
+impl<C, T, F> From<[[F; 3]; 2]> for SosClamp<C, T>
+where
+    Sos<C>: From<[[F; 3]; 2]>,
+    Self: Default,
+{
+    fn from(ba: [[F; 3]; 2]) -> Self {
         Self {
             coeff: ba.into(),
             ..Default::default()
@@ -236,18 +250,20 @@ impl<const F: i8> From<[[f64; 3]; 2]> for SosClamp<F> {
     }
 }
 
-impl<const F: i8> From<[i32; 5]> for Sos<F> {
-    fn from(mut ba: [i32; 5]) -> Self {
-        ba[3] *= -1;
-        ba[4] *= -1;
-        Self {
-            ba: ba.map(Q32::new),
-        }
+impl<T: Copy + Neg<Output = T>, A, const F: i8> From<[T; 5]> for Sos<Q<T, A, F>> {
+    fn from(mut ba: [T; 5]) -> Self {
+        ba[3] = -ba[3];
+        ba[4] = -ba[4];
+        Self { ba: ba.map(Q::new) }
     }
 }
 
-impl<const F: i8> From<[i32; 5]> for SosClamp<F> {
-    fn from(ba: [i32; 5]) -> Self {
+impl<C, T> From<[T; 5]> for SosClamp<C, T>
+where
+    Sos<C>: From<[T; 5]>,
+    Self: Default,
+{
+    fn from(ba: [T; 5]) -> Self {
         Self {
             coeff: ba.into(),
             ..Default::default()
@@ -259,6 +275,7 @@ impl<const F: i8> From<[i32; 5]> for SosClamp<F> {
 mod test {
     #![allow(dead_code)]
     use super::*;
+    use dsp_fixedpoint::Q32;
     use dsp_process::SplitInplace;
     // No manual tuning needed here.
     // Compiler knows best how and when:
@@ -270,7 +287,11 @@ mod test {
 
     // cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
 
-    pub fn pnm(config: &[Sos<29>; 4], state: &mut [SosState; 4], xy0: &mut [i32; 1 << 5]) {
+    pub fn pnm(
+        config: &[Sos<Q32<29>>; 4],
+        state: &mut [SosState<i32>; 4],
+        xy0: &mut [i32; 1 << 5],
+    ) {
         config.inplace(state, xy0);
     }
 
@@ -288,7 +309,10 @@ mod test {
         let mut state = Default::default();
         let mut x = [977371917; 1 << 7];
         for _ in 0..1 << 20 {
-            for x in x.as_chunks_mut().0 {
+            let (x, []) = x.as_chunks_mut() else {
+                unreachable!()
+            };
+            for x in x {
                 pnm(&cfg, &mut state, x);
             }
             x[9] = x[63];

@@ -18,17 +18,21 @@ use core::{
 
 /// Shift summary trait
 ///
-/// Wrapping supports `Sh{lr}<usize>`
-pub trait Base: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
+/// Wrapping supports `Sh{lr}<usize>` only.
+pub trait Shift: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
     /// Signed shift (positive: left)
     ///
     /// `x*2**f`
     ///
     /// ```
-    /// # use dsp_fixedpoint::Base;
+    /// # use dsp_fixedpoint::Shift;
     /// assert_eq!(1i32.shs(1), 2);
     /// assert_eq!(4i32.shs(-1), 2);
     /// ```
+    fn shs(self, f: i8) -> Self;
+}
+
+impl<T: Copy + Shl<usize, Output = T> + Shr<usize, Output = T>> Shift for T {
     #[inline(always)]
     fn shs(self, f: i8) -> Self {
         if f >= 0 {
@@ -37,11 +41,14 @@ pub trait Base: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
             self >> (-f as _)
         }
     }
+}
 
+/// Integer bits
+pub trait Int {
     /// Number of bits
     ///
     /// ```
-    /// # use dsp_fixedpoint::Base;
+    /// # use dsp_fixedpoint::Int;
     /// assert_eq!(i32::BITS, 32);
     /// ```
     const BITS: u32;
@@ -49,7 +56,7 @@ pub trait Base: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
     /// Lowest value
     ///
     /// ```
-    /// # use dsp_fixedpoint::Base;
+    /// # use dsp_fixedpoint::Int;
     /// assert_eq!(i8::MIN, -128);
     /// ```
     const MIN: Self;
@@ -57,33 +64,42 @@ pub trait Base: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
     /// Highes value
     ///
     /// ```
-    /// # use dsp_fixedpoint::Base;
+    /// # use dsp_fixedpoint::Int;
     /// assert_eq!(i8::MAX, 127);
     /// ```
     const MAX: Self;
 }
 
-/// Accumulator summary trait
-pub trait Accu<T>: Base {
-    /// Convert to base
+/// Conversion trait between base and accumulator type
+pub trait Accu<A> {
+    /// Cast up to accumulator type
     ///
     /// This is a primitive cast.
     ///
     /// ```
     /// # use dsp_fixedpoint::Accu;
-    /// assert_eq!(3i64.down(), 3i32);
+    /// assert_eq!(3i32.up(), 3i64);
     /// ```
-    fn down(self) -> T;
+    fn up(self) -> A;
 
-    /// Converto from base
+    /// Cast down from accumulator type
     ///
     /// This is a primitive cast.
     ///
     /// ```
     /// # use dsp_fixedpoint::Accu;
-    /// assert_eq!(i64::up(3i32), 3i64);
+    /// assert_eq!(i16::down(3i32), 3i16);
     /// ```
-    fn up(x: T) -> Self;
+    fn down(a: A) -> Self;
+
+    // /// Cast to f32
+    // fn as_f32(self) -> f32;
+    // /// Cast to f64
+    // fn as_f64(self) -> f64;
+    // /// Cast from f32
+    // fn f32_as(value: f64) -> Self;
+    // /// Cast from f64
+    // fn f64_as(value: f64) -> Self;
 }
 
 /// Fixed point integer
@@ -138,6 +154,7 @@ impl<T, A, const F: i8> Q<T, A, F> {
     /// # use dsp_fixedpoint::P8;
     /// assert_eq!(P8::<9>::new(3).inner, 3);
     /// ```
+    #[inline(always)]
     pub const fn new(inner: T) -> Self {
         Self {
             _accu: PhantomData,
@@ -146,31 +163,33 @@ impl<T, A, const F: i8> Q<T, A, F> {
     }
 }
 
-impl<T: Base, A, const F: i8> Q<T, A, F> {
+impl<T: Int, A, const F: i8> Int for Q<T, A, F> {
     /// Number of bits of the base type
     ///
     /// ```
-    /// # use dsp_fixedpoint::Q32;
+    /// # use dsp_fixedpoint::{Int, Q32};
     /// assert_eq!(Q32::<7>::BITS, 32);
     /// ```
-    pub const BITS: u32 = T::BITS;
+    const BITS: u32 = T::BITS;
 
     /// Lowest value
     ///
     /// ```
-    /// # use dsp_fixedpoint::Q8;
+    /// # use dsp_fixedpoint::{Int, Q8};
     /// assert_eq!(Q8::<4>::MIN, (-16.0).into());
     /// ```
-    pub const MIN: Self = Self::new(T::MIN);
+    const MIN: Self = Self::new(T::MIN);
 
     /// Highest value
     ///
     /// ```
-    /// # use dsp_fixedpoint::Q8;
+    /// # use dsp_fixedpoint::{Int, Q8};
     /// assert_eq!(Q8::<4>::MAX, (16.0 - 1.0 / 16.0).into());
     /// ```
-    pub const MAX: Self = Self::new(T::MAX);
+    const MAX: Self = Self::new(T::MAX);
+}
 
+impl<T: Int, A, const F: i8> Q<T, A, F> {
     /// Convert to a different number of fractional bits (truncating)
     ///
     /// Use this liberally for Add/Sub/Rem with Q's of different F.
@@ -179,7 +198,10 @@ impl<T: Base, A, const F: i8> Q<T, A, F> {
     /// # use dsp_fixedpoint::Q8;
     /// assert_eq!(Q8::<4>::new(32).scale::<0>(), Q8::new(2));
     /// ```
-    pub fn scale<const F1: i8>(self) -> Q<T, A, F1> {
+    pub fn scale<const F1: i8>(self) -> Q<T, A, F1>
+    where
+        T: Shift,
+    {
         Q::new(self.inner.shs(F1 - F))
     }
 
@@ -189,27 +211,22 @@ impl<T: Base, A, const F: i8> Q<T, A, F> {
     /// # use dsp_fixedpoint::Q8;
     /// assert_eq!(Q8::<4>::new(0x35).trunc(), 0x3);
     /// ```
-    pub fn trunc(self) -> T {
+    pub fn trunc(self) -> T
+    where
+        T: Shift,
+    {
         self.inner.shs(-F)
     }
 }
 
-impl<T: Base, A: Accu<T>, const F: i8> Q<T, A, F> {
-    /// Number of bits of the accumulator type
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::Q8;
-    /// assert_eq!(Q8::<4>::ACCU_BITS, 16);
-    /// ```
-    pub const ACCU_BITS: u32 = A::BITS;
-}
-
-impl<T: Base, A: Accu<T>, const F: i8> From<(T, i8)> for Q<T, A, F> {
+/// Lossy conversion from a dynamically scaled integer
+impl<T: Accu<A> + Shift, A, const F: i8> From<(T, i8)> for Q<T, A, F> {
     fn from(value: (T, i8)) -> Self {
         Self::new(value.0.shs(F - value.1))
     }
 }
 
+/// Lossless conversion into a dynamically scaled integer
 impl<T, A, const F: i8> From<Q<T, A, F>> for (T, i8) {
     fn from(value: Q<T, A, F>) -> Self {
         (value.inner, F)
@@ -304,8 +321,8 @@ forward_sh_assign_op!(ShlAssign::shl_assign);
 
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// assert_eq!(Q8::<3>::new(4) + Q8::new(5), Q8::new(9));
-/// assert_eq!(Q8::<3>::new(4) - Q8::new(3), Q8::new(1));
+/// assert_eq!(Q8::<3>::from(3.5) + Q8::from(5.2), Q8::from(8.7));
+/// assert_eq!(Q8::<3>::from(4.0) - Q8::from(3.2), Q8::from(0.8));
 /// assert_eq!(Q8::<3>::from(3.5) % Q8::from(1), Q8::from(0.5));
 /// ```
 macro_rules! forward_binop {
@@ -334,23 +351,26 @@ forward_binop!(BitXor::bitxor);
 /// See also the T*Q -> T and T/Q -> T in impl_q!()
 ///
 /// ```
-/// # use dsp_fixedpoint::Q8;
-/// assert_eq!(Q8::<3>::new(4) * 2, Q8::new(8));
+/// # use dsp_fixedpoint::{Q8, Q};
+/// assert_eq!(Q8::<3>::new(4) * 2, Q::new(8));
 /// assert_eq!(Q8::<3>::new(4) / 2, Q8::new(2));
 /// ```
-macro_rules! forward_binop_foreign {
-    ($tr:ident::$m:ident) => {
-        impl<T: $tr<T, Output = T>, A, const F: i8> $tr<T> for Q<T, A, F> {
-            type Output = Self;
 
-            fn $m(self, rhs: T) -> Self::Output {
-                Self::new(<T as $tr<T>>::$m(self.inner, rhs))
-            }
-        }
-    };
+/// Wide multiplication to accumulator
+impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Mul<T> for Q<T, A, F> {
+    type Output = Q<A, T, F>;
+    #[inline(always)]
+    fn mul(self, rhs: T) -> Q<A, T, F> {
+        Q::new(self.inner.up() * rhs.up())
+    }
 }
-forward_binop_foreign!(Mul::mul);
-forward_binop_foreign!(Div::div);
+
+impl<T: Div<Output = T>, A, const F: i8> Div<T> for Q<T, A, F> {
+    type Output = Self;
+    fn div(self, rhs: T) -> Self {
+        Q::new(self.inner / rhs)
+    }
+}
 
 macro_rules! forward_assign_op_foreign {
     ($tr:ident::$m:ident) => {
@@ -388,11 +408,11 @@ forward_assign_op!(BitXorAssign::bitxor_assign);
 /// q *= Q8::<3>::from(3);
 /// assert_eq!(q, Q8::from(0.75));
 /// ```
-impl<T: Copy, A: Accu<T> + Mul<A, Output = A>, const F: i8, const F1: i8> MulAssign<Q<T, A, F1>>
-    for Q<T, A, F>
+impl<T: Copy + Accu<A>, A: Shift + Mul<A, Output = A>, const F: i8, const F1: i8>
+    MulAssign<Q<T, A, F1>> for Q<T, A, F>
 {
     fn mul_assign(&mut self, rhs: Q<T, A, F1>) {
-        self.inner = (A::up(self.inner) * A::up(rhs.inner)).shs(-F1).down();
+        self.inner = T::down((self.inner.up() * rhs.inner.up()).shs(-F1));
     }
 }
 
@@ -404,12 +424,16 @@ impl<T: Copy, A: Accu<T> + Mul<A, Output = A>, const F: i8, const F1: i8> MulAss
 /// q /= Q8::<3>::from(3);
 /// assert_eq!(q, Q8::from(0.25));
 /// ```
-impl<T: Base + Div<T, Output = T>, A: Accu<T> + Div<A, Output = A>, const F: i8, const F1: i8>
-    DivAssign<Q<T, A, F1>> for Q<T, A, F>
+impl<
+    T: Copy + Shift + Accu<A> + Div<T, Output = T>,
+    A: Shift + Div<A, Output = A>,
+    const F: i8,
+    const F1: i8,
+> DivAssign<Q<T, A, F1>> for Q<T, A, F>
 {
     fn div_assign(&mut self, rhs: Q<T, A, F1>) {
         self.inner = if F1 > 0 {
-            (A::up(self.inner).shs(F1) / A::up(rhs.inner)).down()
+            T::down(self.inner.up().shs(F1) / rhs.inner.up())
         } else {
             self.inner.shs(F1) / rhs.inner
         };
@@ -422,7 +446,10 @@ impl<T: Base + Div<T, Output = T>, A: Accu<T> + Div<A, Output = A>, const F: i8,
 /// # use dsp_fixedpoint::Q8;
 /// assert_eq!(Q8::<4>::from(0.75) * Q8::from(3), Q8::from(2.25));
 /// ```
-impl<T: Copy, A: Accu<T> + Mul<A, Output = A>, const F: i8> Mul for Q<T, A, F> {
+impl<T, A, const F: i8> Mul for Q<T, A, F>
+where
+    Self: MulAssign,
+{
     type Output = Self;
     fn mul(mut self, rhs: Self) -> Self::Output {
         self *= rhs;
@@ -436,8 +463,9 @@ impl<T: Copy, A: Accu<T> + Mul<A, Output = A>, const F: i8> Mul for Q<T, A, F> {
 /// # use dsp_fixedpoint::Q8;
 /// assert_eq!(Q8::<4>::from(3) / Q8::from(2), Q8::from(1.5));
 /// ```
-impl<T: Base + Div<T, Output = T>, A: Accu<T> + Div<A, Output = A>, const F: i8> Div
-    for Q<T, A, F>
+impl<T, A, const F: i8> Div for Q<T, A, F>
+where
+    Self: DivAssign,
 {
     type Output = Self;
     fn div(mut self, rhs: Self) -> Self::Output {
@@ -465,7 +493,7 @@ impl<T: iter::Product, A, const F: i8> iter::Product for Q<T, A, F> {
 /// ```
 macro_rules! impl_fmt {
     ($tr:path) => {
-        impl<T: Base, A, const F: i8> $tr for Q<T, A, F>
+        impl<T: Int, A, const F: i8> $tr for Q<T, A, F>
         where
             Self: Copy + Into<f32> + Into<f64>,
         {
@@ -485,6 +513,7 @@ impl_fmt!(fmt::LowerExp);
 
 /// ```
 /// # use dsp_fixedpoint::Q8;
+/// assert_eq!(format!("{:?}", Q8::<4>::new(0x14)), "20");
 /// assert_eq!(format!("{:b}", Q8::<4>::new(0x14)), "10100");
 /// assert_eq!(format!("{:b}", Q8::<4>::new(-0x14)), "11101100");
 /// ```
@@ -508,33 +537,32 @@ impl_dot_fmt!(fmt::LowerHex);
 macro_rules! impl_q {
     // Primitive
     ($alias:ident<$t:ty, $a:ty>) => {
-        impl_q!($alias<$t, $a>, |x| x as _, <$a>::MIN, <$a>::MAX, <$a>::BITS);
+        impl_q!($alias<$t, $a>, |x| x as _, <$t>::MIN, <$t>::MAX, <$t>::BITS);
     };
     // Newtype
     ($alias:ident<$t:ty, $a:ty>, $wrap:tt) => {
-        impl_q!($alias<$wrap<$t>, $wrap<$a>>, |x: $wrap<_>| $wrap(x.0 as _), Self(<$a>::MIN), Self(<$a>::MAX), <$a>::BITS);
+        impl_q!($alias<$wrap<$t>, $wrap<$a>>, |x: $wrap<_>| $wrap(x.0 as _), Self(<$t>::MIN), Self(<$t>::MAX), <$t>::BITS);
     };
     ($alias:ident<$t:ty, $a:ty>, $as:expr, $min:expr, $max:expr, $bits:expr) => {
-        impl Base for $a {
+        impl Int for $t {
             const BITS: u32 = $bits;
             const MIN: Self = $min;
             const MAX: Self = $max;
         }
 
-        impl Accu<$t> for $a {
+        impl Accu<$a> for $t {
             #[inline(always)]
-            fn down(self) -> $t {
+            fn up(self) -> $a {
                 $as(self)
             }
-
             #[inline(always)]
-            fn up(x: $t) -> Self {
-                $as(x)
+            fn down(a: $a) -> Self {
+                $as(a)
             }
         }
 
         #[doc = concat!("Fixed point [`", stringify!($t), "`]")]
-        pub type $alias<const F: i8 = {<$t as Base>::BITS as _}> = Q<$t, $a, F>;
+        pub type $alias<const F: i8 = {<$t as Int>::BITS as _}> = Q<$t, $a, F>;
 
         /// Scale from integer base type
         impl<const F: i8> From<$t> for Q<$t, $a, F> {
@@ -543,12 +571,26 @@ macro_rules! impl_q {
             }
         }
 
+        /// Scale from integer base type
+        impl<const F: i8> From<Q<$t, $a, F>> for $t {
+            fn from(value: Q<$t, $a, F>) -> Self {
+                value.inner.shs(F)
+            }
+        }
+
+        /// Scale from integer accu type
+        impl<const F: i8> From<Q<$a, $t, F>> for $t {
+            fn from(value: Q<$a, $t, F>) -> Self {
+                <$t>::down(value.inner.shs(-F))
+            }
+        }
+
         /// T*Q -> T
         impl<const F: i8> Mul<Q<$t, $a, F>> for $t {
             type Output = $t;
 
             fn mul(self, rhs: Q<$t, $a, F>) -> Self::Output {
-                (<$a>::up(self) * <$a>::up(rhs.inner)).shs(-F).down()
+                <$t>::down((self.up() * rhs.inner.up()).shs(-F))
             }
         }
 
@@ -558,7 +600,7 @@ macro_rules! impl_q {
 
             fn div(self, rhs: Q<$t, $a, F>) -> Self::Output {
                 if F > 0 {
-                    (<$a>::up(self).shs(F) / <$a>::up(rhs.inner)).down()
+                    <$t>::down(self.up().shs(F) / rhs.inner.up())
                 } else {
                     self.shs(F) / rhs.inner
                 }
@@ -567,41 +609,41 @@ macro_rules! impl_q {
     };
 }
 // Signed
-impl Base for i8 {
-    const BITS: u32 = Self::BITS;
-    const MIN: Self = Self::MIN;
-    const MAX: Self = Self::MAX;
-}
+// impl Int for i128 {
+//     const BITS: u32 = Self::BITS;
+//     const MIN: Self = Self::MIN;
+//     const MAX: Self = Self::MAX;
+// }
 impl_q!(Q8<i8, i16>);
 impl_q!(Q16<i16, i32>);
 impl_q!(Q32<i32, i64>);
 impl_q!(Q64<i64, i128>);
 // Unsigned (_P_ositive)
-impl Base for u8 {
-    const BITS: u32 = Self::BITS;
-    const MIN: Self = Self::MIN;
-    const MAX: Self = Self::MAX;
-}
+// impl Int for u8 {
+//     const BITS: u32 = Self::BITS;
+//     const MIN: Self = Self::MIN;
+//     const MAX: Self = Self::MAX;
+// }
 impl_q!(P8<u8, u16>);
 impl_q!(P16<u16, u32>);
 impl_q!(P32<u32, u64>);
 impl_q!(P64<u64, u128>);
 // _W_rapping signed
-impl Base for Wrapping<i8> {
-    const BITS: u32 = i8::BITS;
-    const MIN: Self = Self(i8::MIN);
-    const MAX: Self = Self(i8::MAX);
-}
+// impl Int for Wrapping<i8> {
+//     const BITS: u32 = i8::BITS;
+//     const MIN: Self = Self(i8::MIN);
+//     const MAX: Self = Self(i8::MAX);
+// }
 impl_q!(W8<i8, i16>, Wrapping);
 impl_q!(W16<i16, i32>, Wrapping);
 impl_q!(W32<i32, i64>, Wrapping);
 impl_q!(W64<i64, i128>, Wrapping);
 // Wrapping vnsigned
-impl Base for Wrapping<u8> {
-    const BITS: u32 = u8::BITS;
-    const MIN: Self = Self(u8::MIN);
-    const MAX: Self = Self(u8::MAX);
-}
+// impl Int for Wrapping<u8> {
+//     const BITS: u32 = u8::BITS;
+//     const MIN: Self = Self(u8::MIN);
+//     const MAX: Self = Self(u8::MAX);
+// }
 impl_q!(V8<u8, u16>, Wrapping);
 impl_q!(V16<u16, u32>, Wrapping);
 impl_q!(V32<u32, u64>, Wrapping);
