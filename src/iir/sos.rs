@@ -2,7 +2,7 @@ use core::{
     iter::Sum,
     ops::{Add, Div, Mul, Neg},
 };
-use dsp_fixedpoint::{Int, Q};
+use dsp_fixedpoint::{Const, Q};
 use dsp_process::{SplitInplace, SplitProcess};
 
 #[cfg(not(feature = "std"))]
@@ -59,25 +59,29 @@ impl_default_float!(f64);
 impl<T, A, const F: i8> Default for SosClamp<Q<T, A, F>, T>
 where
     Sos<Q<T, A, F>>: Default,
-    T: Default + Int,
+    T: Const,
 {
     fn default() -> Self {
         Self {
             coeff: Default::default(),
-            u: Default::default(),
+            u: T::ZERO,
             min: T::MIN,
             max: T::MAX,
         }
     }
 }
 
+impl<C: Copy + Sum> Sos<C> {
+    /// DC forward gain fro input to summing junction
+    pub fn k(&self) -> C {
+        self.ba[..3].iter().copied().sum()
+    }
+}
+
 impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> SosClamp<C, T> {
     /// DC forward gain fro input to summing junction
-    pub fn k(&self) -> C
-    where
-        C: Copy + core::iter::Sum,
-    {
-        self.coeff.ba[..3].iter().copied().sum()
+    pub fn k(&self) -> C {
+        self.coeff.k()
     }
 
     /// Summing junction offset referred to input
@@ -156,9 +160,9 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for Sos<Q<i32, i64, F>> {
         let mut acc = (ba[0] * x0 + ba[1] * x[0] + ba[2] * x[1]).inner;
         *x = [x0, x[0]];
         acc += (y[0] as u32 as i64 * ba[3].inner as i64) >> 32;
-        acc += (y[0] >> 32) * ba[3].inner as i64;
+        acc += (y[0] >> 32) as i32 as i64 * ba[3].inner as i64;
         acc += (y[1] as u32 as i64 * ba[4].inner as i64) >> 32;
-        acc += (y[1] >> 32) * ba[4].inner as i64;
+        acc += (y[1] >> 32) as i32 as i64 * ba[4].inner as i64;
         acc <<= 32 - F;
         *y = [acc, y[0]];
         (acc >> 32) as _
@@ -173,9 +177,9 @@ impl<const F: i8> SplitProcess<i32, i32, SosStateWide> for SosClamp<Q<i32, i64, 
         let mut acc = (ba[0] * x0 + ba[1] * x[0] + ba[2] * x[1]).inner;
         *x = [x0, x[0]];
         acc += (y[0] as u32 as i64 * ba[3].inner as i64) >> 32;
-        acc += (y[0] >> 32) * ba[3].inner as i64;
+        acc += (y[0] >> 32) as i32 as i64 * ba[3].inner as i64;
         acc += (y[1] as u32 as i64 * ba[4].inner as i64) >> 32;
-        acc += (y[1] >> 32) * ba[4].inner as i64;
+        acc += (y[1] >> 32) as i32 as i64 * ba[4].inner as i64;
         acc <<= 32 - F;
         let y0 = ((acc >> 32) as i32 + self.u).clamp(self.min, self.max);
         *y = [((y0 as i64) << 32) | acc as u32 as i64, y[0]];
@@ -309,13 +313,13 @@ mod test {
         let mut state = Default::default();
         let mut x = [977371917; 1 << 7];
         for _ in 0..1 << 20 {
+            x[9] = x[63];
             let (x, []) = x.as_chunks_mut() else {
                 unreachable!()
             };
             for x in x {
                 pnm(&cfg, &mut state, x);
             }
-            x[9] = x[63];
         }
     }
 }

@@ -52,7 +52,15 @@ pub trait Int {
     /// assert_eq!(i32::BITS, 32);
     /// ```
     const BITS: u32;
+}
 
+/// Constants
+pub trait Const {
+    /// The additive neutral element
+    const ZERO: Self;
+
+    /// The multiplicative neutral element
+    const ONE: Self;
     /// Lowest value
     ///
     /// ```
@@ -154,7 +162,7 @@ impl<T, A, const F: i8> Q<T, A, F> {
     /// # use dsp_fixedpoint::P8;
     /// assert_eq!(P8::<9>::new(3).inner, 3);
     /// ```
-    #[inline(always)]
+    #[inline]
     pub const fn new(inner: T) -> Self {
         Self {
             _accu: PhantomData,
@@ -171,11 +179,13 @@ impl<T: Int, A, const F: i8> Int for Q<T, A, F> {
     /// assert_eq!(Q32::<7>::BITS, 32);
     /// ```
     const BITS: u32 = T::BITS;
+}
 
+impl<T: Const + Shift + Copy, A, const F: i8> Const for Q<T, A, F> {
     /// Lowest value
     ///
     /// ```
-    /// # use dsp_fixedpoint::{Int, Q8};
+    /// # use dsp_fixedpoint::{Const, Q8};
     /// assert_eq!(Q8::<4>::MIN, (-16.0).into());
     /// ```
     const MIN: Self = Self::new(T::MIN);
@@ -183,10 +193,14 @@ impl<T: Int, A, const F: i8> Int for Q<T, A, F> {
     /// Highest value
     ///
     /// ```
-    /// # use dsp_fixedpoint::{Int, Q8};
+    /// # use dsp_fixedpoint::{Const, Q8};
     /// assert_eq!(Q8::<4>::MAX, (16.0 - 1.0 / 16.0).into());
     /// ```
     const MAX: Self = Self::new(T::MAX);
+
+    const ZERO: Self = Self::new(T::ZERO);
+
+    const ONE: Self = Self::new(T::ONE); // FIXME!
 }
 
 impl<T: Int, A, const F: i8> Q<T, A, F> {
@@ -198,6 +212,7 @@ impl<T: Int, A, const F: i8> Q<T, A, F> {
     /// # use dsp_fixedpoint::Q8;
     /// assert_eq!(Q8::<4>::new(32).scale::<0>(), Q8::new(2));
     /// ```
+    #[inline]
     pub fn scale<const F1: i8>(self) -> Q<T, A, F1>
     where
         T: Shift,
@@ -211,6 +226,7 @@ impl<T: Int, A, const F: i8> Q<T, A, F> {
     /// # use dsp_fixedpoint::Q8;
     /// assert_eq!(Q8::<4>::new(0x35).trunc(), 0x3);
     /// ```
+    #[inline]
     pub fn trunc(self) -> T
     where
         T: Shift,
@@ -241,6 +257,7 @@ impl<T: 'static + Copy, A, const F: i8> From<f32> for Q<T, A, F>
 where
     f32: AsPrimitive<T>,
 {
+    #[inline]
     fn from(value: f32) -> Self {
         Self::new((value * const { 1.0 / Self::DELTA }).round().as_())
     }
@@ -254,6 +271,7 @@ impl<T: 'static + Copy, A, const F: i8> From<f64> for Q<T, A, F>
 where
     f64: AsPrimitive<T>,
 {
+    #[inline]
     fn from(value: f64) -> Self {
         Self::new((value * const { 1.0 / Self::DELTA as f64 }).round().as_())
     }
@@ -264,6 +282,7 @@ where
 /// assert_eq!(f32::from(Q8::<4>::new(4)), 0.25);
 /// ```
 impl<T: AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for f32 {
+    #[inline]
     fn from(value: Q<T, A, F>) -> Self {
         value.inner.as_() * Q::<T, A, F>::DELTA
     }
@@ -274,6 +293,7 @@ impl<T: AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for f32 {
 /// assert_eq!(f64::from(Q8::<4>::new(4)), 0.25);
 /// ```
 impl<T: AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for f64 {
+    #[inline]
     fn from(value: Q<T, A, F>) -> Self {
         value.inner.as_() * Q::<T, A, F>::DELTA as Self
     }
@@ -283,7 +303,7 @@ macro_rules! forward_unop {
     ($tr:ident::$m:ident) => {
         impl<T: $tr<Output = T>, A, const F: i8> $tr for Q<T, A, F> {
             type Output = Self;
-
+            #[inline]
             fn $m(self) -> Self::Output {
                 Self::new(<T as $tr>::$m(self.inner))
             }
@@ -297,7 +317,7 @@ macro_rules! forward_sh_op {
     ($tr:ident::$m:ident) => {
         impl<U, T: $tr<U, Output = T>, A, const F: i8> $tr<U> for Q<T, A, F> {
             type Output = Self;
-
+            #[inline]
             fn $m(self, rhs: U) -> Self::Output {
                 Self::new(<T as $tr<U>>::$m(self.inner, rhs))
             }
@@ -310,6 +330,7 @@ forward_sh_op!(Shl::shl);
 macro_rules! forward_sh_assign_op {
     ($tr:ident::$m:ident) => {
         impl<T: $tr<U>, U, A, const F: i8> $tr<U> for Q<T, A, F> {
+            #[inline]
             fn $m(&mut self, rhs: U) {
                 <T as $tr<U>>::$m(&mut self.inner, rhs)
             }
@@ -329,7 +350,7 @@ macro_rules! forward_binop {
     ($tr:ident::$m:ident) => {
         impl<T: $tr<T, Output = T>, A, const F: i8> $tr for Q<T, A, F> {
             type Output = Self;
-
+            #[inline]
             fn $m(self, rhs: Self) -> Self::Output {
                 Self::new(<T as $tr>::$m(self.inner, rhs.inner))
             }
@@ -347,7 +368,7 @@ forward_binop!(BitXor::bitxor);
 /// (https://github.com/rust-lang/rust/pull/93208#issuecomment-1019310634)
 /// This is for performance reasons
 ///
-/// Q*T -> Q, Q/T -> Q
+/// Q*T -> A, Q/T -> Q
 /// See also the T*Q -> T and T/Q -> T in impl_q!()
 ///
 /// ```
@@ -359,7 +380,7 @@ forward_binop!(BitXor::bitxor);
 /// Wide multiplication to accumulator
 impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Mul<T> for Q<T, A, F> {
     type Output = Q<A, T, F>;
-    #[inline(always)]
+    #[inline]
     fn mul(self, rhs: T) -> Q<A, T, F> {
         Q::new(self.inner.up() * rhs.up())
     }
@@ -367,6 +388,7 @@ impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Mul<T> for Q<T, A, F> {
 
 impl<T: Div<Output = T>, A, const F: i8> Div<T> for Q<T, A, F> {
     type Output = Self;
+    #[inline]
     fn div(self, rhs: T) -> Self {
         Q::new(self.inner / rhs)
     }
@@ -375,6 +397,7 @@ impl<T: Div<Output = T>, A, const F: i8> Div<T> for Q<T, A, F> {
 macro_rules! forward_assign_op_foreign {
     ($tr:ident::$m:ident) => {
         impl<T: $tr<T>, A, const F: i8> $tr<T> for Q<T, A, F> {
+            #[inline]
             fn $m(&mut self, rhs: T) {
                 <T as $tr>::$m(&mut self.inner, rhs)
             }
@@ -387,6 +410,7 @@ forward_assign_op_foreign!(DivAssign::div_assign);
 macro_rules! forward_assign_op {
     ($tr:ident::$m:ident) => {
         impl<T: $tr<T>, A, const F: i8> $tr for Q<T, A, F> {
+            #[inline]
             fn $m(&mut self, rhs: Self) {
                 <T as $tr>::$m(&mut self.inner, rhs.inner)
             }
@@ -411,6 +435,7 @@ forward_assign_op!(BitXorAssign::bitxor_assign);
 impl<T: Copy + Accu<A>, A: Shift + Mul<A, Output = A>, const F: i8, const F1: i8>
     MulAssign<Q<T, A, F1>> for Q<T, A, F>
 {
+    #[inline]
     fn mul_assign(&mut self, rhs: Q<T, A, F1>) {
         self.inner = T::down((self.inner.up() * rhs.inner.up()).shs(-F1));
     }
@@ -431,6 +456,7 @@ impl<
     const F1: i8,
 > DivAssign<Q<T, A, F1>> for Q<T, A, F>
 {
+    #[inline]
     fn div_assign(&mut self, rhs: Q<T, A, F1>) {
         self.inner = if F1 > 0 {
             T::down(self.inner.up().shs(F1) / rhs.inner.up())
@@ -451,6 +477,7 @@ where
     Self: MulAssign,
 {
     type Output = Self;
+    #[inline]
     fn mul(mut self, rhs: Self) -> Self::Output {
         self *= rhs;
         self
@@ -468,6 +495,7 @@ where
     Self: DivAssign,
 {
     type Output = Self;
+    #[inline]
     fn div(mut self, rhs: Self) -> Self::Output {
         self /= rhs;
         self
@@ -475,12 +503,14 @@ where
 }
 
 impl<T: iter::Sum, A, const F: i8> iter::Sum for Q<T, A, F> {
+    #[inline]
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         Self::new(iter.map(|i| i.inner).sum())
     }
 }
 
 impl<T: iter::Product, A, const F: i8> iter::Product for Q<T, A, F> {
+    #[inline]
     fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
         Self::new(iter.map(|i| i.inner).product())
     }
@@ -537,17 +567,22 @@ impl_dot_fmt!(fmt::LowerHex);
 macro_rules! impl_q {
     // Primitive
     ($alias:ident<$t:ty, $a:ty>) => {
-        impl_q!($alias<$t, $a>, |x| x as _, <$t>::MIN, <$t>::MAX, <$t>::BITS);
+        impl_q!($alias<$t, $a>, $t, |x| x as _, core::convert::identity);
     };
     // Newtype
     ($alias:ident<$t:ty, $a:ty>, $wrap:tt) => {
-        impl_q!($alias<$wrap<$t>, $wrap<$a>>, |x: $wrap<_>| $wrap(x.0 as _), Self(<$t>::MIN), Self(<$t>::MAX), <$t>::BITS);
+        impl_q!($alias<$wrap<$t>, $wrap<$a>>, $t, |x: $wrap<_>| $wrap(x.0 as _), $wrap);
     };
-    ($alias:ident<$t:ty, $a:ty>, $as:expr, $min:expr, $max:expr, $bits:expr) => {
+    // Common
+    ($alias:ident<$t:ty, $a:ty>, $inner:ty, $as:expr, $wrap:expr) => {
         impl Int for $t {
-            const BITS: u32 = $bits;
-            const MIN: Self = $min;
-            const MAX: Self = $max;
+            const BITS: u32 = <$inner>::BITS;
+        }
+        impl Const for $t {
+            const MIN: Self = $wrap(<$inner>::MIN);
+            const MAX: Self = $wrap(<$inner>::MAX);
+            const ZERO: Self = $wrap(0);
+            const ONE: Self = $wrap(1);
         }
 
         impl Accu<$a> for $t {
@@ -566,6 +601,7 @@ macro_rules! impl_q {
 
         /// Scale from integer base type
         impl<const F: i8> From<$t> for Q<$t, $a, F> {
+            #[inline]
             fn from(value: $t) -> Self {
                 Self::new(value.shs(F))
             }
@@ -573,6 +609,7 @@ macro_rules! impl_q {
 
         /// Scale from integer base type
         impl<const F: i8> From<Q<$t, $a, F>> for $t {
+            #[inline]
             fn from(value: Q<$t, $a, F>) -> Self {
                 value.inner.shs(F)
             }
@@ -580,17 +617,23 @@ macro_rules! impl_q {
 
         /// Scale from integer accu type
         impl<const F: i8> From<Q<$a, $t, F>> for $t {
+            #[inline]
             fn from(value: Q<$a, $t, F>) -> Self {
                 <$t>::down(value.inner.shs(-F))
             }
         }
 
         /// T*Q -> T
-        impl<const F: i8> Mul<Q<$t, $a, F>> for $t {
+        impl<const F: i8> Mul<Q<$t, $a, F>> for $t
+        where
+            Q<$t, $a, F>: Mul<$t, Output=Q<$a, $t, F>>,
+            Q<$a, $t, F>: Into<$t>
+        {
             type Output = $t;
 
+            #[inline]
             fn mul(self, rhs: Q<$t, $a, F>) -> Self::Output {
-                <$t>::down((self.up() * rhs.inner.up()).shs(-F))
+                (rhs*self).into()
             }
         }
 
@@ -598,6 +641,7 @@ macro_rules! impl_q {
         impl<const F: i8> Div<Q<$t, $a, F>> for $t {
             type Output = $t;
 
+            #[inline]
             fn div(self, rhs: Q<$t, $a, F>) -> Self::Output {
                 if F > 0 {
                     <$t>::down(self.up().shs(F) / rhs.inner.up())
@@ -609,41 +653,21 @@ macro_rules! impl_q {
     };
 }
 // Signed
-// impl Int for i128 {
-//     const BITS: u32 = Self::BITS;
-//     const MIN: Self = Self::MIN;
-//     const MAX: Self = Self::MAX;
-// }
 impl_q!(Q8<i8, i16>);
 impl_q!(Q16<i16, i32>);
 impl_q!(Q32<i32, i64>);
 impl_q!(Q64<i64, i128>);
 // Unsigned (_P_ositive)
-// impl Int for u8 {
-//     const BITS: u32 = Self::BITS;
-//     const MIN: Self = Self::MIN;
-//     const MAX: Self = Self::MAX;
-// }
 impl_q!(P8<u8, u16>);
 impl_q!(P16<u16, u32>);
 impl_q!(P32<u32, u64>);
 impl_q!(P64<u64, u128>);
 // _W_rapping signed
-// impl Int for Wrapping<i8> {
-//     const BITS: u32 = i8::BITS;
-//     const MIN: Self = Self(i8::MIN);
-//     const MAX: Self = Self(i8::MAX);
-// }
 impl_q!(W8<i8, i16>, Wrapping);
 impl_q!(W16<i16, i32>, Wrapping);
 impl_q!(W32<i32, i64>, Wrapping);
 impl_q!(W64<i64, i128>, Wrapping);
 // Wrapping vnsigned
-// impl Int for Wrapping<u8> {
-//     const BITS: u32 = u8::BITS;
-//     const MIN: Self = Self(u8::MIN);
-//     const MAX: Self = Self(u8::MAX);
-// }
 impl_q!(V8<u8, u16>, Wrapping);
 impl_q!(V16<u16, u32>, Wrapping);
 impl_q!(V32<u32, u64>, Wrapping);
