@@ -39,8 +39,15 @@ impl<T: Copy> Complex<T> {
     }
 }
 
+impl<T: Copy + core::ops::Neg<Output = T>> Complex<T> {
+    /// Conjugate
+    pub fn conj(self) -> Self {
+        Self([self.0[0], -self.0[1]])
+    }
+}
+
 macro_rules! fwd_binop {
-    ($tr:ident, $meth:ident) => {
+    ($tr:ident::$meth:ident) => {
         impl<T: Copy + core::ops::$tr<Output = T>> core::ops::$tr for Complex<T> {
             type Output = Self;
             fn $meth(self, rhs: Self) -> Self {
@@ -49,11 +56,14 @@ macro_rules! fwd_binop {
         }
     };
 }
-fwd_binop!(Add, add);
-fwd_binop!(Sub, sub);
+fwd_binop!(Add::add);
+fwd_binop!(Sub::sub);
+fwd_binop!(BitAnd::bitand);
+fwd_binop!(BitOr::bitor);
+fwd_binop!(BitXor::bitxor);
 
 macro_rules! fwd_binop_inner {
-    ($tr:ident, $meth:ident) => {
+    ($tr:ident::$meth:ident) => {
         impl<T: Copy + core::ops::$tr<Output = T>> core::ops::$tr<T> for Complex<T> {
             type Output = Self;
             fn $meth(self, rhs: T) -> Self {
@@ -62,9 +72,37 @@ macro_rules! fwd_binop_inner {
         }
     };
 }
-fwd_binop_inner!(Mul, mul);
-fwd_binop_inner!(Div, div);
-fwd_binop_inner!(Rem, rem);
+fwd_binop_inner!(Mul::mul);
+fwd_binop_inner!(Div::div);
+fwd_binop_inner!(Rem::rem);
+fwd_binop_inner!(BitAnd::bitand);
+fwd_binop_inner!(BitOr::bitor);
+fwd_binop_inner!(BitXor::bitxor);
+
+macro_rules! fwd_unop {
+    ($tr:ident::$meth:ident) => {
+        impl<T: Copy + core::ops::$tr<Output = T>> core::ops::$tr for Complex<T> {
+            type Output = Self;
+            fn $meth(self) -> Self {
+                Self([self.0[0].$meth(), self.0[1].$meth()])
+            }
+        }
+    };
+}
+fwd_unop!(Not::not);
+fwd_unop!(Neg::neg);
+
+impl<T: Copy + core::ops::Mul<Output = T> + core::ops::Add<Output = T> + core::ops::Sub<Output = T>>
+    core::ops::Mul for Complex<T>
+{
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self {
+        Self([
+            self.0[0] * rhs.0[0] - self.0[1] * rhs.0[1],
+            self.0[0] * rhs.0[1] + self.0[1] * rhs.0[0],
+        ])
+    }
+}
 
 impl<T> core::iter::Sum for Complex<T>
 where
@@ -130,7 +168,7 @@ impl ComplexExt<i32, u32> for Complex<i32> {
         ((x + y) >> 31) as _
     }
 
-    /// log2(power) re full scale approximation
+    /// trunc(log2(power)) re full scale (approximation)
     ///
     /// TODO: scale up, interpolate
     ///
