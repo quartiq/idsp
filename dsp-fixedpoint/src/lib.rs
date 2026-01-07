@@ -57,24 +57,41 @@ pub trait Int {
 /// Constants
 pub trait Const {
     /// The additive neutral element
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Const;
+    /// assert_eq!(<i8 as Const>::ZERO, 0);
+    /// assert_eq!(<f32 as Const>::ZERO, 0.0);
+    /// ```
     const ZERO: Self;
 
     /// The multiplicative neutral element
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Const;
+    /// assert_eq!(<i8 as Const>::ONE, 1);
+    /// assert_eq!(<f32 as Const>::ONE, 1.0);
+    /// ```
     const ONE: Self;
 
     /// Lowest value
     ///
+    /// Negative infinity for floating point values.
+    ///
     /// ```
-    /// # use dsp_fixedpoint::Int;
-    /// assert_eq!(i8::MIN, -128);
+    /// # use dsp_fixedpoint::Const;
+    /// assert_eq!(<i8 as Const>::MIN, -128);
+    /// assert_eq!(<f32 as Const>::MIN, f32::NEG_INFINITY);
     /// ```
     const MIN: Self;
 
-    /// Highes value
+    /// Highest value
+    ///
+    /// Positive infinity for floating point values.
     ///
     /// ```
-    /// # use dsp_fixedpoint::Int;
-    /// assert_eq!(i8::MAX, 127);
+    /// # use dsp_fixedpoint::Const;
+    /// assert_eq!(<i8 as Const>::MAX, 127);
     /// ```
     const MAX: Self;
 }
@@ -83,8 +100,8 @@ macro_rules! impl_const_float {
     ($ty:ident) => {
         impl Const for $ty {
             const ZERO: Self = 0.0;
-            const MIN: Self = <$ty>::MIN;
-            const MAX: Self = <$ty>::MAX;
+            const MIN: Self = <$ty>::NEG_INFINITY;
+            const MAX: Self = <$ty>::INFINITY;
             const ONE: Self = 1.0;
         }
     };
@@ -228,7 +245,7 @@ where
     /// # use dsp_fixedpoint::{Const, Q8};
     /// assert_eq!(Q8::<3>::ONE, Q8::new(1 << 3));
     /// ```
-    const ONE: Self = <Self as One>::ONE;
+    const ONE: Self = One::ONE;
 }
 
 impl<T: Int, A, const F: i8> Q<T, A, F> {
