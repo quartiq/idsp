@@ -34,10 +34,10 @@ Tools to handle, track, and unwrap phase signals or generate them.
 
 ## IIR/Biquad
 
-[`iir::Biquad`] are fixed point (`i8`, `i16`, `i32`, `i64`) and floating point (`f32`, `f64`) biquad IIR filters.
+[`iir::Sos`] are fixed point (`i8`, `i16`, `i32`, `i64`) and floating point (`f32`, `f64`) biquad IIR filters.
 Robust and clean clipping and offset (anti-windup, no derivative kick, dynamically adjustable gains and gain limits) suitable for PID controller applications.
-Three kinds of filter actions: Direct Form 1, Direct Form 2 Transposed, and Direct Form 1 with noise shaping supported.
-Coefficient sharing for multiple channels.
+Three kinds of filter actions: Direct Form 1, Direct Form 2 Transposed, Direct Form 1 with noise shaping, and Direct Form 1 with wide output storage are supported.
+Coefficient sharing for multiple channels is supported through [`dsp_process::SplitProcess`], [`dsp_process::Channels`].
 
 ### Comparison
 
