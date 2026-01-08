@@ -2,7 +2,7 @@ use core::{
     iter::Sum,
     ops::{Add, Div, Mul},
 };
-use dsp_fixedpoint::{Const, Q};
+use dsp_fixedpoint::{Clamp, Const, Q};
 use dsp_process::{SplitInplace, SplitProcess};
 
 #[cfg(not(feature = "std"))]
@@ -180,6 +180,13 @@ pub struct DirectForm2Transposed<T> {
     pub u: [T; 2],
 }
 
+/// ```
+/// use dsp_process::SplitProcess;
+/// use idsp::iir::*;
+/// let x = 3.0f32;
+/// let y = Biquad::<f32>::IDENTITY.process(&mut DirectForm1::default(), x);
+/// assert_eq!(x, y);
+/// ```
 impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
     SplitProcess<T, T, DirectForm1<T>> for Biquad<C>
 {
@@ -193,6 +200,13 @@ impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
     }
 }
 
+/// ```
+/// use dsp_process::SplitProcess;
+/// use idsp::iir::*;
+/// let x = 3.0f32;
+/// let y = Biquad::<f32>::IDENTITY.process(&mut DirectForm2Transposed::default(), x);
+/// assert_eq!(x, y);
+/// ```
 impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2Transposed<T>>
     for Biquad<T>
 {
@@ -206,7 +220,15 @@ impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2
     }
 }
 
-impl<T: Copy + Add<Output = T> + Ord, C> SplitProcess<T, T, DirectForm1<T>> for BiquadClamp<C, T>
+/// ```
+/// use dsp_process::SplitProcess;
+/// use idsp::iir::*;
+/// let x = 3.0f32;
+/// let y = BiquadClamp::<f32, f32>::from(Biquad::IDENTITY)
+///     .process(&mut DirectForm2Transposed::default(), x);
+/// assert_eq!(x, y);
+/// ```
+impl<T: Copy + Add<Output = T> + Clamp, C> SplitProcess<T, T, DirectForm1<T>> for BiquadClamp<C, T>
 where
     Biquad<C>: SplitProcess<T, T, DirectForm1<T>>,
 {
@@ -217,8 +239,8 @@ where
     }
 }
 
-impl<T: Copy + Add<Output = T> + Mul<Output = T> + Ord> SplitProcess<T, T, DirectForm2Transposed<T>>
-    for BiquadClamp<T, T>
+impl<T: Copy + Add<Output = T> + Mul<Output = T> + Clamp>
+    SplitProcess<T, T, DirectForm2Transposed<T>> for BiquadClamp<T, T>
 {
     fn process(&self, state: &mut DirectForm2Transposed<T>, x0: T) -> T {
         let u = &mut state.u;
@@ -259,7 +281,7 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for BiquadClamp<Q<i32,
         acc += (y[1] as u32 as i64 * ba[4].inner as i64) >> 32;
         acc += (y[1] >> 32) as i32 as i64 * ba[4].inner as i64;
         acc <<= 32 - F;
-        let y0 = ((acc >> 32) as i32 + self.u).clamp(self.min, self.max);
+        let y0 = Clamp::clamp((acc >> 32) as i32 + self.u, self.min, self.max);
         *y = [((y0 as i64) << 32) | acc as u32 as i64, y[0]];
         y0
     }
@@ -289,7 +311,7 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for BiquadClamp<Q<i3
             + (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).inner;
         acc <<= 32 - F;
         *e = acc as _;
-        let y0 = ((acc >> 32) as i32 + self.u).clamp(self.min, self.max);
+        let y0 = Clamp::clamp((acc >> 32) as i32 + self.u, self.min, self.max);
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
