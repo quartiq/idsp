@@ -311,9 +311,11 @@ pub struct Pid<T> {
     /// Sample period in SI units
     #[tree(skip)]
     pub period: T,
+
     /// Output scale in SI units
     #[tree(skip)]
     pub y_scale: T,
+
     /// Output/input scale in SI units
     #[tree(skip)]
     pub b_scale: T,
@@ -343,11 +345,10 @@ impl<T: Float + Default> Default for Pid<T> {
 
 impl<T, C, Y> From<Pid<T>> for BiquadClamp<C, Y>
 where
-    PidBuilder<T>: Into<Biquad<C>>,
+    PidBuilder<T>: Into<BiquadClamp<C, Y>>,
     Y: Copy + From<T> + Mul<C, Output = Y> + Div<C, Output = Y>,
     C: core::iter::Sum + Copy,
     T: Float,
-    BiquadClamp<C, Y>: Default,
 {
     /// Return the `Biquad`
     ///
@@ -365,7 +366,6 @@ where
             period: value.period,
             order: value.order,
         }
-        .into()
         .into();
         biquad.set_input_offset((-value.setpoint * value.y_scale).into());
         biquad.min = (value.min * value.y_scale).into();

@@ -123,7 +123,7 @@ pub struct BiquadClamp<C, T = C> {
     /// ```
     pub u: T,
 
-    /// Summing junction min clamp
+    /// Summing junction lower limit
     ///
     /// ```
     /// # use idsp::iir::*;
@@ -133,7 +133,8 @@ pub struct BiquadClamp<C, T = C> {
     /// assert_eq!(i.process(&mut DirectForm1::default(), 0.0), 5.0);
     /// ```
     pub min: T,
-    /// Summing junction min clamp
+
+    /// Summing junction upper limit
     ///
     /// ```
     /// # use idsp::iir::*;
@@ -145,31 +146,13 @@ pub struct BiquadClamp<C, T = C> {
     pub max: T,
 }
 
-macro_rules! impl_default_float {
-    ($ty:ident) => {
-        impl Default for BiquadClamp<$ty, $ty> {
-            fn default() -> Self {
-                Self {
-                    coeff: Default::default(),
-                    u: 0.0,
-                    min: <$ty>::MIN,
-                    max: <$ty>::MAX,
-                }
-            }
-        }
-    };
-}
-impl_default_float!(f32);
-impl_default_float!(f64);
-
-impl<T, A, const F: i8> Default for BiquadClamp<Q<T, A, F>, T>
+impl<C, T: Const> Default for BiquadClamp<C, T>
 where
-    Biquad<Q<T, A, F>>: Default,
-    T: Const,
+    Biquad<C>: Default,
 {
     fn default() -> Self {
         Self {
-            coeff: Default::default(),
+            coeff: Biquad::default(),
             u: T::ZERO,
             min: T::MIN,
             max: T::MAX,
@@ -233,11 +216,6 @@ impl<C: Copy + Sum> Biquad<C> {
 }
 
 impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> BiquadClamp<C, T> {
-    /// DC forward gain fro input to summing junction
-    pub fn forward_gain(&self) -> C {
-        self.coeff.forward_gain()
-    }
-
     /// Summing junction offset referred to input
     ///
     /// ```
@@ -247,7 +225,7 @@ impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> BiquadCla
     /// assert_eq!(i.input_offset(), 2.0);
     /// ```
     pub fn input_offset(&self) -> T {
-        self.u / self.forward_gain()
+        self.u / self.coeff.forward_gain()
     }
 
     /// Summing junction offset referred to input
@@ -259,7 +237,7 @@ impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> BiquadCla
     /// assert_eq!(i.u, 6.0);
     /// ```
     pub fn set_input_offset(&mut self, i: T) {
-        self.u = i * self.forward_gain();
+        self.u = i * self.coeff.forward_gain();
     }
 }
 
@@ -494,9 +472,9 @@ where
     Biquad<C>: From<F>,
     Self: Default,
 {
-    fn from(ba: F) -> Self {
+    fn from(coeff: F) -> Self {
         Self {
-            coeff: ba.into(),
+            coeff: coeff.into(),
             ..Default::default()
         }
     }
