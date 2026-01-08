@@ -185,7 +185,7 @@ where
         self.clamp += wrap;
         match self.clamp {
             Wrap::Negative => Q::min_value(),
-            Wrap::None => Q::zero(),
+            Wrap::None => x,
             Wrap::Positive => Q::max_value(),
         }
     }
