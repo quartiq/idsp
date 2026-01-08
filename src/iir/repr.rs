@@ -1,19 +1,16 @@
 use core::any::Any;
 use miniconf::Tree;
 use num_traits::{AsPrimitive, Float, FloatConst};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::{
-    Coefficient,
-    iir::{Biquad, Pid, Shape},
-};
+use crate::iir::{Pid, Shape, SosClamp};
 
 /// Floating point BA coefficients before quantization
 #[derive(Debug, Clone, Tree)]
 #[tree(meta(doc, typename))]
 pub struct Ba<T> {
     /// Coefficient array: [[b0, b1, b2], [a0, a1, a2]]
-    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: Deserialize<'de>", any="T: Any"))]
+    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: DeserializeOwned", any="T: Any"))]
     pub ba: [[T; 3]; 2],
     /// Summing junction offset
     pub u: T,
@@ -74,7 +71,7 @@ pub struct FilterRepr<T> {
     /// Relative to passband gain
     pub shelf: T,
     /// Q/Bandwidth/Slope
-    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: Deserialize<'de>", any="T: Any"))]
+    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: DeserializeOwned", any="T: Any"))]
     pub shape: Shape<T>,
     /// Summing junction offset
     pub offset: T,
@@ -109,32 +106,36 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
 /// struct Foo {
 ///     #[tree(typ="&str", with=str_leaf, defer=self.repr)]
 ///     typ: (),
-///     repr: idsp::iir::BiquadRepr<f32, f32>,
+///     repr: idsp::iir::BiquadRepr<f32>,
 /// }
 /// ```
 #[derive(
     Debug,
     Clone,
     Tree,
-    strum::EnumString,
     strum::AsRefStr,
-    strum::FromRepr,
+    strum::EnumString,
     strum::EnumDiscriminants,
     strum::IntoStaticStr,
 )]
 #[strum_discriminants(derive(serde::Serialize, serde::Deserialize), allow(missing_docs))]
 #[tree(meta(doc = "Representation of a biquad", typename))]
-pub enum BiquadRepr<T, C>
+pub enum BiquadRepr<T, C = T, Y = T>
 where
-    C: Coefficient,
-    T: Float + FloatConst + Default,
+    Ba<T>: Default,
+    Pid<T>: Default,
+    SosClamp<C, Y>: Default,
+    FilterRepr<T>: Default,
 {
     /// Normalized SI unit coefficients
     Ba(Ba<T>),
     /// Raw, unscaled, possibly fixed point machine unit coefficients
     Raw(
-        #[tree(with=miniconf::leaf, bounds(serialize="C: Serialize", deserialize="C: Deserialize<'de>", any="C: Any"))]
-         Biquad<C>,
+        #[tree(with=miniconf::leaf, bounds(
+            serialize="C: Serialize, Y: Serialize",
+            deserialize="C: DeserializeOwned, Y: DeserializeOwned",
+            any="C: Any, Y: Any"))]
+        SosClamp<C, Y>,
     ),
     /// A PID
     Pid(Pid<T>),
@@ -142,20 +143,23 @@ where
     Filter(FilterRepr<T>),
 }
 
-impl<T, C> Default for BiquadRepr<T, C>
+impl<T, C, Y> Default for BiquadRepr<T, C, Y>
 where
-    C: Coefficient,
-    T: Float + FloatConst + Default,
+    Ba<T>: Default,
+    Pid<T>: Default,
+    SosClamp<C, Y>: Default,
+    FilterRepr<T>: Default,
 {
     fn default() -> Self {
         Self::Ba(Default::default())
     }
 }
 
-impl<T, C> BiquadRepr<T, C>
+impl<T, C, Y> BiquadRepr<T, C, Y>
 where
-    C: Coefficient + AsPrimitive<C> + AsPrimitive<T>,
-    T: AsPrimitive<C> + Float + FloatConst + Default,
+    SosClamp<C, Y>: Default + Clone + From<Pid<T>> + From<[[T; 3]; 2]>,
+    T: 'static + Float + FloatConst + Default + Into<Y>,
+    f32: AsPrimitive<T>,
 {
     /// Build a biquad
     ///
@@ -168,23 +172,25 @@ where
     /// * `y_scale`: The y output scale from desired units to machine units.
     ///   E.g. a `max` setting will lead to a `y=y_scale*max` upper limit
     ///   of the filter in machine units.
-    pub fn build<I>(&self, period: T, b_scale: T, y_scale: T) -> Biquad<C>
-    where
-        T: AsPrimitive<I>,
-        I: Float + AsPrimitive<C>,
-        C: AsPrimitive<I>,
-        f32: AsPrimitive<T>,
-    {
+    pub fn build(&self, period: T, b_scale: T, y_scale: T) -> SosClamp<C, Y> {
         match self {
             Self::Ba(ba) => {
-                let mut b = Biquad::from(&[ba.ba[0].map(|b| b * b_scale), ba.ba[1]]);
-                b.set_u((ba.u * y_scale).as_());
-                b.set_min((ba.min * y_scale).as_());
-                b.set_max((ba.max * y_scale).as_());
+                let mut bba = ba.ba.clone();
+                bba[0] = bba[0].map(|b| b * b_scale);
+                let mut b = SosClamp::from(bba);
+                b.u = (ba.u * y_scale).into();
+                b.min = (ba.min * y_scale).into();
+                b.max = (ba.max * y_scale).into();
                 b
             }
             Self::Raw(raw) => raw.clone(),
-            Self::Pid(pid) => pid.build::<_, I>(period, b_scale, y_scale),
+            Self::Pid(pid) => {
+                let mut pid = pid.clone();
+                pid.period = period;
+                pid.b_scale = b_scale;
+                pid.y_scale = y_scale;
+                pid.into()
+            }
             Self::Filter(filter) => {
                 let mut f = crate::iir::Filter::default();
                 f.gain_db(filter.gain);
@@ -203,10 +209,10 @@ where
                     Typ::Peaking => f.peaking(),
                 };
                 ba[0] = ba[0].map(|b| b * b_scale);
-                let mut b = Biquad::from(&ba);
-                b.set_u((filter.offset * y_scale).as_());
-                b.set_min((filter.min * y_scale).as_());
-                b.set_max((filter.max * y_scale).as_());
+                let mut b = SosClamp::from(ba);
+                b.u = (filter.offset * y_scale).into();
+                b.min = (filter.min * y_scale).into();
+                b.max = (filter.max * y_scale).into();
                 b
             }
         }
