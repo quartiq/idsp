@@ -11,7 +11,7 @@ use num_traits::float::FloatCore as _;
 
 /// Second-order-section
 #[derive(Clone, Debug, Default, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
-pub struct Sos<C> {
+pub struct Biquad<C> {
     /// Coefficients
     ///
     /// `[b0, b1, b2, a1, a2]`
@@ -28,9 +28,9 @@ pub struct Sos<C> {
 
 /// Second-order-section with offset and clamp
 #[derive(Clone, Debug, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
-pub struct SosClamp<C, T = C> {
+pub struct BiquadClamp<C, T = C> {
     /// Coefficients
-    pub coeff: Sos<C>,
+    pub coeff: Biquad<C>,
     /// Summing junction offset
     pub u: T,
     /// Summing junction min clamp
@@ -41,7 +41,7 @@ pub struct SosClamp<C, T = C> {
 
 macro_rules! impl_default_float {
     ($ty:ident) => {
-        impl Default for SosClamp<$ty, $ty> {
+        impl Default for BiquadClamp<$ty, $ty> {
             fn default() -> Self {
                 Self {
                     coeff: Default::default(),
@@ -56,9 +56,9 @@ macro_rules! impl_default_float {
 impl_default_float!(f32);
 impl_default_float!(f64);
 
-impl<T, A, const F: i8> Default for SosClamp<Q<T, A, F>, T>
+impl<T, A, const F: i8> Default for BiquadClamp<Q<T, A, F>, T>
 where
-    Sos<Q<T, A, F>>: Default,
+    Biquad<Q<T, A, F>>: Default,
     T: Const,
 {
     fn default() -> Self {
@@ -71,14 +71,14 @@ where
     }
 }
 
-impl<C: Const + Copy> Sos<C> {
+impl<C: Const + Copy> Biquad<C> {
     /// A unity gain filter
     ///
     /// ```
     /// # use idsp::iir::*;
     /// # use dsp_process::SplitProcess;
     /// let x0 = 3.0;
-    /// let y0 = Sos::<f32>::IDENTITY.process(&mut DirectForm1::default(), x0);
+    /// let y0 = Biquad::<f32>::IDENTITY.process(&mut DirectForm1::default(), x0);
     /// assert_eq!(y0, x0);
     /// ```
     pub const IDENTITY: Self = Self::proportional(C::ONE);
@@ -89,7 +89,7 @@ impl<C: Const + Copy> Sos<C> {
     /// # use idsp::iir::*;
     /// # use dsp_process::SplitProcess;
     /// let x0 = 3.0;
-    /// let y0 = Sos::<f32>::proportional(2.0).process(&mut DirectForm1::default(), x0);
+    /// let y0 = Biquad::<f32>::proportional(2.0).process(&mut DirectForm1::default(), x0);
     /// assert_eq!(y0, 2.0 * x0);
     /// ```
     pub const fn proportional(k: C) -> Self {
@@ -105,7 +105,7 @@ impl<C: Const + Copy> Sos<C> {
     /// let mut state = DirectForm1::<f32>::default();
     /// state.xy[2] = 2.0;
     /// let x0 = 7.0;
-    /// let y0 = Sos::<f32>::HOLD.process(&mut state, x0);
+    /// let y0 = Biquad::<f32>::HOLD.process(&mut state, x0);
     /// assert_eq!(y0, 2.0);
     /// assert_eq!(state.xy, [x0, 0.0, y0, y0]);
     /// ```
@@ -114,14 +114,14 @@ impl<C: Const + Copy> Sos<C> {
     };
 }
 
-impl<C: Copy + Sum> Sos<C> {
+impl<C: Copy + Sum> Biquad<C> {
     /// DC forward gain fro input to summing junction
     pub fn k(&self) -> C {
         self.ba[..3].iter().copied().sum()
     }
 }
 
-impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> SosClamp<C, T> {
+impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> BiquadClamp<C, T> {
     /// DC forward gain fro input to summing junction
     pub fn k(&self) -> C {
         self.coeff.k()
@@ -181,7 +181,7 @@ pub struct DirectForm2Transposed<T> {
 }
 
 impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
-    SplitProcess<T, T, DirectForm1<T>> for Sos<C>
+    SplitProcess<T, T, DirectForm1<T>> for Biquad<C>
 {
     fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
         let xy = &mut state.xy;
@@ -194,7 +194,7 @@ impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
 }
 
 impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2Transposed<T>>
-    for Sos<T>
+    for Biquad<T>
 {
     fn process(&self, state: &mut DirectForm2Transposed<T>, x0: T) -> T {
         let u = &mut state.u;
@@ -206,9 +206,9 @@ impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2
     }
 }
 
-impl<T: Copy + Add<Output = T> + Ord, C> SplitProcess<T, T, DirectForm1<T>> for SosClamp<C, T>
+impl<T: Copy + Add<Output = T> + Ord, C> SplitProcess<T, T, DirectForm1<T>> for BiquadClamp<C, T>
 where
-    Sos<C>: SplitProcess<T, T, DirectForm1<T>>,
+    Biquad<C>: SplitProcess<T, T, DirectForm1<T>>,
 {
     fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
         let y0 = (self.coeff.process(state, x0) + self.u).clamp(self.min, self.max);
@@ -218,7 +218,7 @@ where
 }
 
 impl<T: Copy + Add<Output = T> + Mul<Output = T> + Ord> SplitProcess<T, T, DirectForm2Transposed<T>>
-    for SosClamp<T, T>
+    for BiquadClamp<T, T>
 {
     fn process(&self, state: &mut DirectForm2Transposed<T>, x0: T) -> T {
         let u = &mut state.u;
@@ -230,7 +230,7 @@ impl<T: Copy + Add<Output = T> + Mul<Output = T> + Ord> SplitProcess<T, T, Direc
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for Sos<Q<i32, i64, F>> {
+impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for Biquad<Q<i32, i64, F>> {
     fn process(&self, state: &mut DirectForm1Wide, x0: i32) -> i32 {
         let x = &mut state.x;
         let y = &mut state.y;
@@ -247,7 +247,7 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for Sos<Q<i32, i64, F>
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for SosClamp<Q<i32, i64, F>, i32> {
+impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for BiquadClamp<Q<i32, i64, F>, i32> {
     fn process(&self, state: &mut DirectForm1Wide, x0: i32) -> i32 {
         let x = &mut state.x;
         let y = &mut state.y;
@@ -265,7 +265,7 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for SosClamp<Q<i32, i6
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for Sos<Q<i32, i64, F>> {
+impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for Biquad<Q<i32, i64, F>> {
     fn process(&self, state: &mut DirectForm1Dither, x0: i32) -> i32 {
         let xy = &mut state.xy;
         let e = &mut state.e;
@@ -280,7 +280,7 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for Sos<Q<i32, i64, 
     }
 }
 
-impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for SosClamp<Q<i32, i64, F>, i32> {
+impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for BiquadClamp<Q<i32, i64, F>, i32> {
     fn process(&self, state: &mut DirectForm1Dither, x0: i32) -> i32 {
         let xy = &mut state.xy;
         let e = &mut state.e;
@@ -295,14 +295,14 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for SosClamp<Q<i32, 
     }
 }
 
-impl<C, T: Copy, S> SplitInplace<T, S> for Sos<C> where Self: SplitProcess<T, T, S> {}
-impl<C, T: Copy, S> SplitInplace<T, S> for SosClamp<C, T> where Self: SplitProcess<T, T, S> {}
+impl<C, T: Copy, S> SplitInplace<T, S> for Biquad<C> where Self: SplitProcess<T, T, S> {}
+impl<C, T: Copy, S> SplitInplace<T, S> for BiquadClamp<C, T> where Self: SplitProcess<T, T, S> {}
 
 macro_rules! impl_from_float {
     ($ty:ident) => {
-        impl<C: From<$ty>> From<[[$ty; 3]; 2]> for Sos<C>
+        impl<C: From<$ty>> From<[[$ty; 3]; 2]> for Biquad<C>
         where
-            Sos<C>: From<[$ty; 5]>,
+            Biquad<C>: From<[$ty; 5]>,
         {
             fn from(ba: [[$ty; 3]; 2]) -> Self {
                 let a0 = 1.0 / ba[1][0];
@@ -321,9 +321,9 @@ macro_rules! impl_from_float {
 impl_from_float!(f32);
 impl_from_float!(f64);
 
-impl<C, T, F> From<F> for SosClamp<C, T>
+impl<C, T, F> From<F> for BiquadClamp<C, T>
 where
-    Sos<C>: From<F>,
+    Biquad<C>: From<F>,
     Self: Default,
 {
     fn from(ba: F) -> Self {
@@ -334,7 +334,7 @@ where
     }
 }
 
-impl<C: From<T>, T> From<[T; 5]> for Sos<C> {
+impl<C: From<T>, T> From<[T; 5]> for Biquad<C> {
     fn from(ba: [T; 5]) -> Self {
         Self {
             ba: ba.map(Into::into),
@@ -359,7 +359,7 @@ mod test {
     // cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
 
     pub fn pnm(
-        config: &[Sos<Q32<29>>; 4],
+        config: &[Biquad<Q32<29>>; 4],
         state: &mut [DirectForm1<i32>; 4],
         xy0: &mut [i32; 1 << 5],
     ) {
@@ -376,7 +376,7 @@ mod test {
             [[1., 3., 5.], [55., -17., 17.]],
             [[1., 8., 5.], [77., -7., 7.]],
         ]
-        .map(|c| Sos::from(c));
+        .map(|c| Biquad::from(c));
         let mut state = Default::default();
         let mut x = [977371917; 1 << 7];
         for _ in 0..1 << 20 {

@@ -5,7 +5,7 @@ use miniconf::Tree;
 use num_traits::{Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
-use crate::iir::{Sos, SosClamp};
+use crate::iir::{Biquad, BiquadClamp};
 
 /// Feedback term order
 #[derive(Clone, Debug, Copy, Serialize, Deserialize, Default, PartialEq, PartialOrd)]
@@ -25,7 +25,7 @@ pub enum Order {
 ///
 /// ```
 /// # use idsp::iir::*;
-/// let b: Sos<f32> = PidBuilder::default()
+/// let b: Biquad<f32> = PidBuilder::default()
 ///     .period(1e-3)
 ///     .gain(Action::I, 1e-3)
 ///     .gain(Action::P, 1.0)
@@ -108,7 +108,7 @@ impl<T: Float> PidBuilder<T> {
     /// # use dsp_process::SplitProcess;
     /// let tau = 1e-3;
     /// let ki = 1e-4;
-    /// let i: Sos<f32> = PidBuilder::default().period(tau).gain(Action::I, ki).into();
+    /// let i: Biquad<f32> = PidBuilder::default().period(tau).gain(Action::I, ki).into();
     /// let x0 = 5.0;
     /// let y0 = i.process(&mut DirectForm1::default(), x0);
     /// assert!((y0 / (x0 * tau * ki) - 1.0).abs() < 2.0 * f32::EPSILON);
@@ -134,7 +134,7 @@ impl<T: Float> PidBuilder<T> {
     /// # use idsp::iir::*;
     /// # use dsp_process::SplitProcess;
     /// let ki_limit = 1e3;
-    /// let i: Sos<f32> = PidBuilder::default()
+    /// let i: Biquad<f32> = PidBuilder::default()
     ///     .gain(Action::I, 8.0)
     ///     .limit(Action::I, ki_limit)
     ///     .into();
@@ -178,11 +178,11 @@ where
     ///
     /// ```
     /// # use idsp::iir::*;
-    /// let i: Sos<f32> = PidBuilder::default()
+    /// let i: Biquad<f32> = PidBuilder::default()
     ///     .gain(Action::P, 3.0)
     ///     .order(Order::P)
     ///     .into();
-    /// assert_eq!(i, Sos::proportional(3.0f32));
+    /// assert_eq!(i, Biquad::proportional(3.0f32));
     /// ```
     ///
     /// # Panic
@@ -237,10 +237,10 @@ where
     }
 }
 
-impl<C, T> From<PidBuilder<T>> for Sos<C>
+impl<C, T> From<PidBuilder<T>> for Biquad<C>
 where
     PidBuilder<T>: Into<[C; 5]>,
-    [C; 5]: Into<Sos<C>>,
+    [C; 5]: Into<Biquad<C>>,
 {
     fn from(value: PidBuilder<T>) -> Self {
         value.into().into()
@@ -341,21 +341,21 @@ impl<T: Float + Default> Default for Pid<T> {
     }
 }
 
-impl<T, C, Y> From<Pid<T>> for SosClamp<C, Y>
+impl<T, C, Y> From<Pid<T>> for BiquadClamp<C, Y>
 where
-    PidBuilder<T>: Into<Sos<C>>,
+    PidBuilder<T>: Into<Biquad<C>>,
     Y: Copy + From<T> + Mul<C, Output = Y> + Div<C, Output = Y>,
     C: core::iter::Sum + Copy,
     T: Float,
-    SosClamp<C, Y>: Default,
+    BiquadClamp<C, Y>: Default,
 {
     /// Return the `Biquad`
     ///
     /// Builder intermediate type `I`, coefficient type C
-    fn from(value: Pid<T>) -> SosClamp<C, Y> {
+    fn from(value: Pid<T>) -> BiquadClamp<C, Y> {
         let p = value.gains.value[Action::P as usize];
         // FIXME: apply b_scale only to ba[..3]!
-        let mut biquad: SosClamp<C, Y> = PidBuilder {
+        let mut biquad: BiquadClamp<C, Y> = PidBuilder {
             gain: value.gains.value.map(|g| value.b_scale * g.copysign(p)),
             limit: value.limits.value.map(|l| {
                 // infinite gain limit is meaningful but json can only do null/nan
@@ -382,7 +382,7 @@ mod test {
 
     #[test]
     fn pid() {
-        let b: Sos<f32> = PidBuilder::default()
+        let b: Biquad<f32> = PidBuilder::default()
             .period(1.0)
             .gain(Action::I, 1e-3)
             .gain(Action::P, 1.0)
@@ -409,7 +409,7 @@ mod test {
     #[test]
     fn pid_i32() {
         use dsp_fixedpoint::Q32;
-        let b: Sos<Q32<29>> = PidBuilder::<f32>::default()
+        let b: Biquad<Q32<29>> = PidBuilder::<f32>::default()
             .period(1.0)
             .gain(Action::I, 1e-5)
             .gain(Action::P, 1e-2)
@@ -424,7 +424,7 @@ mod test {
     fn units() {
         let ki = 5e-2;
         let tau = 3e-3;
-        let b: Sos<f32> = PidBuilder::default().period(tau).gain(Action::I, ki).into();
+        let b: Biquad<f32> = PidBuilder::default().period(tau).gain(Action::I, ki).into();
         let mut xy = DirectForm1::default();
         for i in 1..10 {
             let y_have = b.process(&mut xy, 1.0);

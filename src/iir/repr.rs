@@ -3,7 +3,7 @@ use miniconf::Tree;
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::iir::{Pid, Shape, SosClamp};
+use crate::iir::{BiquadClamp, Pid, Shape};
 
 /// Floating point BA coefficients before quantization
 #[derive(Debug, Clone, Tree)]
@@ -124,7 +124,7 @@ pub enum BiquadRepr<T, C = T, Y = T>
 where
     Ba<T>: Default,
     Pid<T>: Default,
-    SosClamp<C, Y>: Default,
+    BiquadClamp<C, Y>: Default,
     FilterRepr<T>: Default,
 {
     /// Normalized SI unit coefficients
@@ -135,7 +135,7 @@ where
             serialize="C: Serialize, Y: Serialize",
             deserialize="C: DeserializeOwned, Y: DeserializeOwned",
             any="C: Any, Y: Any"))]
-        SosClamp<C, Y>,
+        BiquadClamp<C, Y>,
     ),
     /// A PID
     Pid(Pid<T>),
@@ -147,7 +147,7 @@ impl<T, C, Y> Default for BiquadRepr<T, C, Y>
 where
     Ba<T>: Default,
     Pid<T>: Default,
-    SosClamp<C, Y>: Default,
+    BiquadClamp<C, Y>: Default,
     FilterRepr<T>: Default,
 {
     fn default() -> Self {
@@ -157,7 +157,7 @@ where
 
 impl<T, C, Y> BiquadRepr<T, C, Y>
 where
-    SosClamp<C, Y>: Default + Clone + From<Pid<T>> + From<[[T; 3]; 2]>,
+    BiquadClamp<C, Y>: Default + Clone + From<Pid<T>> + From<[[T; 3]; 2]>,
     T: 'static + Float + FloatConst + Default + Into<Y>,
     f32: AsPrimitive<T>,
 {
@@ -172,12 +172,12 @@ where
     /// * `y_scale`: The y output scale from desired units to machine units.
     ///   E.g. a `max` setting will lead to a `y=y_scale*max` upper limit
     ///   of the filter in machine units.
-    pub fn build(&self, period: T, b_scale: T, y_scale: T) -> SosClamp<C, Y> {
+    pub fn build(&self, period: T, b_scale: T, y_scale: T) -> BiquadClamp<C, Y> {
         match self {
             Self::Ba(ba) => {
                 let mut bba = ba.ba.clone();
                 bba[0] = bba[0].map(|b| b * b_scale);
-                let mut b = SosClamp::from(bba);
+                let mut b = BiquadClamp::from(bba);
                 b.u = (ba.u * y_scale).into();
                 b.min = (ba.min * y_scale).into();
                 b.max = (ba.max * y_scale).into();
@@ -209,7 +209,7 @@ where
                     Typ::Peaking => f.peaking(),
                 };
                 ba[0] = ba[0].map(|b| b * b_scale);
-                let mut b = SosClamp::from(ba);
+                let mut b = BiquadClamp::from(ba);
                 b.u = (filter.offset * y_scale).into();
                 b.min = (filter.min * y_scale).into();
                 b.max = (filter.max * y_scale).into();

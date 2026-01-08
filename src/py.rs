@@ -61,7 +61,7 @@ mod _idsp {
                     .ok_or(PyTypeError::new_err("order"))?
                     .try_into()
                     .or(Err(PyTypeError::new_err("shape")))?;
-                Ok(crate::iir::Sos::<Q32<29>>::from([
+                Ok(crate::iir::Biquad::<Q32<29>>::from([
                     [s[0], s[1], s[2]],
                     [s[3], s[4], s[5]],
                 ]))
@@ -91,7 +91,7 @@ mod _idsp {
                     .ok_or(PyTypeError::new_err("order"))?
                     .try_into()
                     .or(Err(PyTypeError::new_err("shape")))?;
-                let mut sos = crate::iir::SosClamp::<Q32<29>, i32>::from([
+                let mut sos = crate::iir::BiquadClamp::<Q32<29>, i32>::from([
                     [s[0], s[1], s[2]],
                     [s[3], s[4], s[5]],
                 ]);

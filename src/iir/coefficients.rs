@@ -203,7 +203,7 @@ where
     /// use dsp_fixedpoint::Q32;
     /// use dsp_process::SplitInplace;
     /// use idsp::iir::*;
-    /// let iir: Sos<Q32<30>> = Filter::default()
+    /// let iir: Biquad<Q32<30>> = Filter::default()
     ///     .critical_frequency(0.1)
     ///     .gain(1000.0)
     ///     .lowpass()
@@ -229,7 +229,7 @@ where
     /// use dsp_fixedpoint::Q32;
     /// use dsp_process::SplitInplace;
     /// use idsp::iir::*;
-    /// let iir: Sos<Q32<30>> = Filter::default()
+    /// let iir: Biquad<Q32<30>> = Filter::default()
     ///     .critical_frequency(0.1)
     ///     .gain(1000.0)
     ///     .highpass()
@@ -401,12 +401,12 @@ mod test {
     use dsp_process::SplitProcess;
     use num_complex::Complex64;
 
-    use crate::iir::{DirectForm1Dither, Sos};
+    use crate::iir::{Biquad, DirectForm1Dither};
 
     #[test]
     #[ignore]
     fn lowpass_noise_shaping() {
-        let ba: Sos<Q32<29>> = Filter::default()
+        let ba: Biquad<Q32<29>> = Filter::default()
             .critical_frequency(1e-5f64)
             .gain(1e3)
             .lowpass()
@@ -468,7 +468,7 @@ mod test {
         }
 
         // Quantize and back
-        let bai: [f64; _] = Sos::<Q32<30>>::from(*ba).ba.map(|c| c.into());
+        let bai: [f64; _] = Biquad::<Q32<30>>::from(*ba).ba.map(|c| c.into());
         let bai = [[bai[0], bai[1], bai[2]], [1.0, -bai[3], -bai[4]]];
         println!("{bai:?}");
 
