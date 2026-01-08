@@ -9,7 +9,87 @@ use dsp_process::{SplitInplace, SplitProcess};
 #[allow(unused_imports)]
 use num_traits::float::FloatCore as _;
 
-/// Second-order-section
+/// Biquad IIR (second order section)
+///
+/// A biquadratic IIR filter supports up to two zeros and two poles in the transfer function.
+///
+/// The Biquad performs the following operation to compute a new output sample `y0` from a new
+/// input sample `x0` given its configuration and previous samples:
+///
+/// `y0 = b0*x0 + b1*x1 + b2*x2 + a1*y1 + a2*y2`
+///
+/// This implementation here saves storage and improves caching opportunities by decoupling
+/// filter configuration (coefficients, limits and offset) from filter state
+/// and thus supports both (a) sharing a single filter between multiple states ("channels") and (b)
+/// rapid switching of filters (tuning, transfer) for a given state without copying either
+/// state of configuration.
+///
+/// # Filter architecture
+///
+/// Direct Form 1 (DF1) and Direct Form 2 transposed (DF2T) are the only IIR filter
+/// structures with an (effective in the case of TDF2) single summing junction
+/// this allows clamping of the output before feedback.
+///
+/// DF1 allows atomic coefficient change because only inputs and outputs are stored.
+/// The summing junction pipelining of TDF2 would require incremental
+/// coefficient changes and is thus less amenable to online tuning.
+///
+/// DF2T needs less state storage (2 instead of 4). This is in addition to the coefficient
+/// storage (5 plus 2 limits plus 1 offset)
+///
+/// DF2T is less efficient and less accurate for fixed-point architectures as quantization
+/// happens at each intermediate summing junction in addition to the output quantization. This is
+/// especially true for common `i64 + i32 * i32 -> i64` MACC architectures.
+/// One could use wide state storage for fixed point DF2T but that would negate the storage
+/// and processing advantages.
+///
+/// # Coefficients
+///
+/// `ba: [T; 5] = [b0, b1, b2, a1, a2]` is the coefficients type.
+/// To represent the IIR coefficients, this contains the feed-forward
+/// coefficients `b0, b1, b2` followed by the feed-back coefficients
+/// `a1, a2`, all five normalized such that `a0 = 1`.
+///
+/// The summing junction of the [`BiquadClamp`] filter also receives an offset `u`
+/// and applies clamping such that `min <= y <= max`.
+///
+/// See [`crate::iir::Filter`] and [`crate::iir::PidBuilder`] for ways to generate coefficients.
+///
+/// # Fixed point
+///
+/// Coefficient scaling for fixed point (i.e. integer) processing relies on [`dsp_fixedpoint::Q`].
+///
+/// Choose the number of fractional bits to meet coefficient range (e.g. potentially `a1 = 2`
+/// for a double integrator) and guard bits.
+///
+/// # PID controller
+///
+/// The IIR coefficients can be mapped to other transfer function
+/// representations, for example PID controllers as described in
+/// <https://hackmd.io/IACbwcOTSt6Adj3_F9bKuw> and
+/// <https://arxiv.org/abs/1508.06319>.
+///
+/// Using a Biquad as a template for a PID controller achieves several important properties:
+///
+/// * Its transfer function is universal in the sense that any biquadratic
+///   transfer function can be implemented (high-passes, gain limits, second
+///   order integrators with inherent anti-windup, notches etc) without code
+///   changes preserving all features.
+/// * It inherits a universal implementation of "integrator anti-windup", also
+///   and especially in the presence of set-point changes and in the presence
+///   of proportional or derivative gain without any back-off that would reduce
+///   steady-state output range.
+/// * It has universal derivative-kick (undesired, unlimited, and un-physical
+///   amplification of set-point changes by the derivative term) avoidance.
+/// * An offset at the input of an IIR filter (a.k.a. "set-point") is
+///   equivalent to an offset at the summing junction (in output units).
+///   They are related by the overall (DC feed-forward) gain of the filter.
+/// * It stores only previous outputs and inputs. These have direct and
+///   invariant interpretation (independent of coefficients and offset).
+///   Therefore it can trivially implement bump-less transfer between any
+///   coefficients/offset sets.
+/// * Cascading multiple IIR filters allows stable and robust
+///   implementation of transfer functions beyond biquadratic terms.
 #[derive(Clone, Debug, Default, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct Biquad<C> {
     /// Coefficients
@@ -31,11 +111,37 @@ pub struct Biquad<C> {
 pub struct BiquadClamp<C, T = C> {
     /// Coefficients
     pub coeff: Biquad<C>,
+
     /// Summing junction offset
+    ///
+    /// ```
+    /// # use idsp::iir::*;
+    /// # use dsp_process::SplitProcess;
+    /// let mut i = BiquadClamp::<f32>::default();
+    /// i.u = 5.0;
+    /// assert_eq!(i.process(&mut DirectForm1::default(), 0.0), 5.0);
+    /// ```
     pub u: T,
+
     /// Summing junction min clamp
+    ///
+    /// ```
+    /// # use idsp::iir::*;
+    /// # use dsp_process::SplitProcess;
+    /// let mut i = BiquadClamp::<f32>::default();
+    /// i.min = 5.0;
+    /// assert_eq!(i.process(&mut DirectForm1::default(), 0.0), 5.0);
+    /// ```
     pub min: T,
     /// Summing junction min clamp
+    ///
+    /// ```
+    /// # use idsp::iir::*;
+    /// # use dsp_process::SplitProcess;
+    /// let mut i = BiquadClamp::<f32>::default();
+    /// i.max = -5.0;
+    /// assert_eq!(i.process(&mut DirectForm1::default(), 0.0), -5.0);
+    /// ```
     pub max: T,
 }
 
@@ -116,25 +222,44 @@ impl<C: Const + Copy> Biquad<C> {
 
 impl<C: Copy + Sum> Biquad<C> {
     /// DC forward gain fro input to summing junction
-    pub fn k(&self) -> C {
+    ///
+    /// ```
+    /// # use idsp::iir::*;
+    /// assert_eq!(Biquad::proportional(3.0).forward_gain(), 3.0);
+    /// ```
+    pub fn forward_gain(&self) -> C {
         self.ba[..3].iter().copied().sum()
     }
 }
 
 impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> BiquadClamp<C, T> {
     /// DC forward gain fro input to summing junction
-    pub fn k(&self) -> C {
-        self.coeff.k()
+    pub fn forward_gain(&self) -> C {
+        self.coeff.forward_gain()
     }
 
     /// Summing junction offset referred to input
+    ///
+    /// ```
+    /// # use idsp::iir::*;
+    /// let mut i = BiquadClamp::from(Biquad::proportional(3.0));
+    /// i.u = 6.0;
+    /// assert_eq!(i.input_offset(), 2.0);
+    /// ```
     pub fn input_offset(&self) -> T {
-        self.u / self.k()
+        self.u / self.forward_gain()
     }
 
     /// Summing junction offset referred to input
+    ///
+    /// ```
+    /// # use idsp::iir::*;
+    /// let mut i = BiquadClamp::from(Biquad::proportional(3.0));
+    /// i.set_input_offset(2.0);
+    /// assert_eq!(i.u, 6.0);
+    /// ```
     pub fn set_input_offset(&mut self, i: T) {
-        self.u = i * self.k();
+        self.u = i * self.forward_gain();
     }
 }
 
@@ -181,11 +306,15 @@ pub struct DirectForm2Transposed<T> {
 }
 
 /// ```
-/// use dsp_process::SplitProcess;
-/// use idsp::iir::*;
-/// let x = 3.0f32;
-/// let y = Biquad::<f32>::IDENTITY.process(&mut DirectForm1::default(), x);
-/// assert_eq!(x, y);
+/// # use dsp_process::SplitProcess;
+/// # use idsp::iir::*;
+/// let mut state = DirectForm1 {
+///     xy: [0.0, 1.0, 2.0, 3.0],
+/// };
+/// let x0 = 4.0;
+/// let y0 = Biquad::<f32>::IDENTITY.process(&mut state, x0);
+/// assert_eq!(y0, x0);
+/// assert_eq!(state.xy, [x0, 0.0, y0, 2.0]);
 /// ```
 impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
     SplitProcess<T, T, DirectForm1<T>> for Biquad<C>
@@ -203,8 +332,10 @@ impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
 /// ```
 /// use dsp_process::SplitProcess;
 /// use idsp::iir::*;
+/// let biquad = Biquad::<f32>::IDENTITY;
+/// let mut state = DirectForm2Transposed::default();
 /// let x = 3.0f32;
-/// let y = Biquad::<f32>::IDENTITY.process(&mut DirectForm2Transposed::default(), x);
+/// let y = biquad.process(&mut state, x);
 /// assert_eq!(x, y);
 /// ```
 impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2Transposed<T>>
@@ -223,9 +354,10 @@ impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2
 /// ```
 /// use dsp_process::SplitProcess;
 /// use idsp::iir::*;
+/// let biquad = BiquadClamp::<f32, f32>::from(Biquad::IDENTITY);
+/// let mut state = DirectForm2Transposed::default();
 /// let x = 3.0f32;
-/// let y = BiquadClamp::<f32, f32>::from(Biquad::IDENTITY)
-///     .process(&mut DirectForm2Transposed::default(), x);
+/// let y = biquad.process(&mut state, x);
 /// assert_eq!(x, y);
 /// ```
 impl<T: Copy + Add<Output = T> + Clamp, C> SplitProcess<T, T, DirectForm1<T>> for BiquadClamp<C, T>
@@ -281,12 +413,26 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for BiquadClamp<Q<i32,
         acc += (y[1] as u32 as i64 * ba[4].inner as i64) >> 32;
         acc += (y[1] >> 32) as i32 as i64 * ba[4].inner as i64;
         acc <<= 32 - F;
-        let y0 = Clamp::clamp((acc >> 32) as i32 + self.u, self.min, self.max);
+        let y0 = Ord::clamp((acc >> 32) as i32 + self.u, self.min, self.max);
         *y = [((y0 as i64) << 32) | acc as u32 as i64, y[0]];
         y0
     }
 }
 
+/// ```
+/// # use dsp_process::SplitProcess;
+/// # use dsp_fixedpoint::Q32;
+/// # use idsp::iir::*;
+/// let mut state = DirectForm1Dither {
+///     xy: [1, 2, 3, 4],
+///     e: 5,
+/// };
+/// let x0 = 6;
+/// let y0 = Biquad::<Q32<30>>::IDENTITY.process(&mut state, x0);
+/// assert_eq!(y0, x0);
+/// assert_eq!(state.xy, [x0, 1, y0, 3]);
+/// assert_eq!(state.e, 20);
+/// ```
 impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for Biquad<Q<i32, i64, F>> {
     fn process(&self, state: &mut DirectForm1Dither, x0: i32) -> i32 {
         let xy = &mut state.xy;
@@ -311,7 +457,7 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for BiquadClamp<Q<i3
             + (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).inner;
         acc <<= 32 - F;
         *e = acc as _;
-        let y0 = Clamp::clamp((acc >> 32) as i32 + self.u, self.min, self.max);
+        let y0 = Ord::clamp((acc >> 32) as i32 + self.u, self.min, self.max);
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
@@ -378,12 +524,12 @@ mod test {
     //   register allocate variables
     //   manage pipeline and insn issue
 
-    // cargo asm idsp::iir::sos::pnm --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
+    // cargo asm idsp::iir::biquad::test::pnm -p idsp --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
 
     pub fn pnm(
         config: &[Biquad<Q32<29>>; 4],
         state: &mut [DirectForm1<i32>; 4],
-        xy0: &mut [i32; 1 << 5],
+        xy0: &mut [i32; 1 << 3],
     ) {
         config.inplace(state, xy0);
     }
