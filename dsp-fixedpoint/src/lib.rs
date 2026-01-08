@@ -297,52 +297,32 @@ impl<T, A, const F: i8> From<Q<T, A, F>> for (T, i8) {
 /// ```
 /// # use dsp_fixedpoint::Q8;
 /// assert_eq!(8 * Q8::<4>::from(0.25f32), 2);
-/// ```
-impl<T: 'static + Copy, A, const F: i8> From<f32> for Q<T, A, F>
-where
-    f32: AsPrimitive<T>,
-{
-    #[inline]
-    fn from(value: f32) -> Self {
-        Self::new((value * const { 1.0 / Self::DELTA }).round().as_())
-    }
-}
-
-/// ```
-/// # use dsp_fixedpoint::Q8;
 /// assert_eq!(8 * Q8::<4>::from(0.25f64), 2);
-/// ```
-impl<T: 'static + Copy, A, const F: i8> From<f64> for Q<T, A, F>
-where
-    f64: AsPrimitive<T>,
-{
-    #[inline]
-    fn from(value: f64) -> Self {
-        Self::new((value * const { 1.0 / Self::DELTA as f64 }).round().as_())
-    }
-}
-
-/// ```
-/// # use dsp_fixedpoint::Q8;
 /// assert_eq!(f32::from(Q8::<4>::new(4)), 0.25);
-/// ```
-impl<T: AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for f32 {
-    #[inline]
-    fn from(value: Q<T, A, F>) -> Self {
-        value.inner.as_() * Q::<T, A, F>::DELTA
-    }
-}
-
-/// ```
-/// # use dsp_fixedpoint::Q8;
 /// assert_eq!(f64::from(Q8::<4>::new(4)), 0.25);
 /// ```
-impl<T: AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for f64 {
-    #[inline]
-    fn from(value: Q<T, A, F>) -> Self {
-        value.inner.as_() * Q::<T, A, F>::DELTA as Self
-    }
+macro_rules! impl_from_float {
+    ($ty:ident) => {
+        impl<T: 'static + Copy, A, const F: i8> From<$ty> for Q<T, A, F>
+        where
+            $ty: AsPrimitive<T>,
+        {
+            #[inline]
+            fn from(value: $ty) -> Self {
+                Self::new((value * const { 1.0 / Self::DELTA } as $ty).round().as_())
+            }
+        }
+
+        impl<T: AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for $ty {
+            #[inline]
+            fn from(value: Q<T, A, F>) -> Self {
+                value.inner.as_() * Q::<T, A, F>::DELTA as Self
+            }
+        }
+    };
 }
+impl_from_float!(f32);
+impl_from_float!(f64);
 
 macro_rules! forward_unop {
     ($tr:ident::$m:ident) => {
@@ -661,7 +641,7 @@ macro_rules! impl_q {
         impl<const F: i8> From<Q<$t, $a, F>> for $t {
             #[inline]
             fn from(value: Q<$t, $a, F>) -> Self {
-                value.inner.shs(F)
+                value.inner.shs(-F)
             }
         }
 
@@ -674,16 +654,12 @@ macro_rules! impl_q {
         }
 
         /// T*Q -> T
-        impl<const F: i8> Mul<Q<$t, $a, F>> for $t
-        where
-            Q<$t, $a, F>: Mul<$t, Output=Q<$a, $t, F>>,
-            Q<$a, $t, F>: Into<$t>
-        {
+        impl<const F: i8> Mul<Q<$t, $a, F>> for $t {
             type Output = $t;
 
             #[inline]
             fn mul(self, rhs: Q<$t, $a, F>) -> Self::Output {
-                (rhs*self).into()
+                (rhs * self).into()
             }
         }
 

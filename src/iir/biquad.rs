@@ -307,11 +307,11 @@ macro_rules! impl_from_float {
             fn from(ba: [[$ty; 3]; 2]) -> Self {
                 let a0 = 1.0 / ba[1][0];
                 [
-                    (ba[0][0] * a0).into(),
-                    (ba[0][1] * a0).into(),
-                    (ba[0][2] * a0).into(),
-                    (-ba[1][1] * a0).into(),
-                    (-ba[1][2] * a0).into(),
+                    ba[0][0] * a0,
+                    ba[0][1] * a0,
+                    ba[0][2] * a0,
+                    -ba[1][1] * a0,
+                    -ba[1][2] * a0,
                 ]
                 .into()
             }
