@@ -49,17 +49,16 @@ pub struct PLL {
     y: i64,
 }
 
-impl SplitProcess<Option<i32>, (), PLL> for i32 {
+impl SplitProcess<Option<i32>, i32, PLL> for i32 {
     /// Update the PLL with a new phase sample. This needs to be called (sampled) periodically.
     /// The signal's phase/frequency is reconstructed relative to the sampling period.
     ///
     /// Args:
     /// * `x`: New input phase sample or None if a sample has been missed.
-    /// * `k`: Feedback gain.
     ///
     /// Returns:
     /// A tuple of instantaneous phase and frequency estimates.
-    fn process(&self, state: &mut PLL, x: Option<i32>) {
+    fn process(&self, state: &mut PLL, x: Option<i32>) -> i32 {
         if let Some(x) = x {
             let dx = x.wrapping_sub(state.x);
             state.x = x;
@@ -78,6 +77,7 @@ impl SplitProcess<Option<i32>, (), PLL> for i32 {
             state.x = state.x.wrapping_add(state.f0);
             state.y0 = state.y0.wrapping_add(state.f0);
         }
+        state.y0
     }
 }
 
@@ -100,8 +100,7 @@ mod tests {
     #[test]
     fn mini() {
         let mut p = Split::new(1 << 24, PLL::default());
-        p.as_mut().process(Some(0x10000));
-        assert_eq!(p.state.phase(), 0x1ff);
+        assert_eq!(p.as_mut().process(Some(0x10000)), 0x1ff);
         assert_eq!(p.state.frequency(), 0x1ff);
     }
 
