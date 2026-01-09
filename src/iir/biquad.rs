@@ -1,5 +1,6 @@
+use crate::Const;
 use core::ops::{Add, Div, Mul};
-use dsp_fixedpoint::{Const, Q};
+use dsp_fixedpoint::Q;
 use dsp_process::{SplitInplace, SplitProcess};
 
 #[cfg(not(feature = "std"))]

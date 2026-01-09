@@ -43,52 +43,6 @@ impl<T: Copy + Shl<usize, Output = T> + Shr<usize, Output = T>> Shift for T {
     }
 }
 
-/// Integer bits
-pub trait Int {
-    /// Number of bits
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::Int;
-    /// assert_eq!(i32::BITS, 32);
-    /// ```
-    const BITS: u32;
-}
-
-/// Constants
-pub trait Const: ConstOne + ConstZero {
-    /// Lowest value
-    ///
-    /// Negative infinity for floating point values.
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::Const;
-    /// assert_eq!(<i8 as Const>::MIN, -128);
-    /// assert_eq!(<f32 as Const>::MIN, f32::NEG_INFINITY);
-    /// ```
-    const MIN: Self;
-
-    /// Highest value
-    ///
-    /// Positive infinity for floating point values.
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::Const;
-    /// assert_eq!(<i8 as Const>::MAX, 127);
-    /// ```
-    const MAX: Self;
-}
-
-macro_rules! impl_const_float {
-    ($ty:ident) => {
-        impl Const for $ty {
-            const MIN: Self = <$ty>::NEG_INFINITY;
-            const MAX: Self = <$ty>::INFINITY;
-        }
-    };
-}
-impl_const_float!(f32);
-impl_const_float!(f64);
-
 /// Conversion trait between base and accumulator type
 pub trait Accu<A> {
     /// Cast up to accumulator type
@@ -216,39 +170,6 @@ impl<T, A, const F: i8> Q<T, A, F> {
             inner,
         }
     }
-}
-
-impl<T: Int, A, const F: i8> Int for Q<T, A, F> {
-    /// Number of bits of the base type
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::{Int, Q32};
-    /// assert_eq!(Q32::<7>::BITS, 32);
-    /// ```
-    const BITS: u32 = T::BITS;
-}
-
-impl<T: Const + Shift + Copy, A, const F: i8> Const for Q<T, A, F>
-where
-    Self: ConstOne,
-{
-    /// Lowest value
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::{Const, Q8};
-    /// # use num_traits::AsPrimitive;
-    /// assert_eq!(Q8::<4>::MIN, (-16f32).as_());
-    /// ```
-    const MIN: Self = Self::new(T::MIN);
-
-    /// Highest value
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::{Const, Q8};
-    /// # use num_traits::AsPrimitive;
-    /// assert_eq!(Q8::<4>::MAX, (16.0f32 - 1.0 / 16.0).as_());
-    /// ```
-    const MAX: Self = Self::new(T::MAX);
 }
 
 impl<T: Shift, A, const F: i8> Q<T, A, F> {
@@ -629,16 +550,12 @@ impl<T: iter::Product, A, const F: i8> iter::Product for Q<T, A, F> {
 /// ```
 macro_rules! impl_fmt {
     ($tr:path) => {
-        impl<T: Int, A, const F: i8> $tr for Q<T, A, F>
+        impl<T, A, const F: i8> $tr for Q<T, A, F>
         where
-            Self: Copy + AsPrimitive<f32> + AsPrimitive<f64>,
+            Self: Copy + AsPrimitive<f64>,
         {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                if const { T::BITS <= f32::MANTISSA_DIGITS } {
-                    <f32 as $tr>::fmt(&(*self).as_(), f)
-                } else {
-                    <f64 as $tr>::fmt(&(*self).as_(), f)
-                }
+                <f64 as $tr>::fmt(&(*self).as_(), f)
             }
         }
     };
@@ -681,14 +598,6 @@ macro_rules! impl_q {
     };
     // Common
     ($alias:ident<$t:ty, $a:ty>, $inner:ty, $as:expr, $wrap:expr) => {
-        impl Int for $t {
-            const BITS: u32 = <$inner>::BITS;
-        }
-        impl Const for $t {
-            const MIN: Self = $wrap(<$inner>::MIN);
-            const MAX: Self = $wrap(<$inner>::MAX);
-        }
-
         impl Accu<$a> for $t {
             #[inline(always)]
             fn up(self) -> $a {
@@ -701,7 +610,7 @@ macro_rules! impl_q {
         }
 
         #[doc = concat!("Fixed point [`", stringify!($t), "`]")]
-        pub type $alias<const F: i8 = {<$t as Int>::BITS as _}> = Q<$t, $a, F>;
+        pub type $alias<const F: i8> = Q<$t, $a, F>;
 
         impl<const F: i8> ConstOne for Q<$t, $a, F> {
             const ONE: Self = Self::new($wrap(if F >= 0 {1 << F as usize} else {0}));
