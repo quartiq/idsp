@@ -178,7 +178,7 @@ where
     pub fn build(&self, period: T, b_scale: T, y_scale: T) -> BiquadClamp<C, Y> {
         match self {
             Self::Ba(ba) => {
-                let mut bba = ba.ba.clone();
+                let mut bba = ba.ba;
                 bba[0] = bba[0].map(|b| b * b_scale);
                 let mut b: BiquadClamp<C, Y> = bba.into();
                 b.u = (ba.u * y_scale).as_();
