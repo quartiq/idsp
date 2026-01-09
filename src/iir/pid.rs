@@ -1,8 +1,7 @@
-use core::ops::{Add, Div, Mul, Neg, Sub};
+use core::ops::{Add, AddAssign, Div, Mul, SubAssign};
 
-use dsp_fixedpoint::Const;
 use miniconf::Tree;
-use num_traits::{Float, FloatConst};
+use num_traits::Float;
 use serde::{Deserialize, Serialize};
 
 use crate::iir::{Biquad, BiquadClamp};
@@ -158,14 +157,8 @@ impl<T: Float> PidBuilder<T> {
 
 impl<C, T> From<PidBuilder<T>> for [C; 5]
 where
-    C: Const
-        + Copy
-        + Sub<Output = C>
-        + Add<Output = C>
-        + Mul<Output = C>
-        + Neg<Output = C>
-        + From<T>,
-    T: Float + FloatConst,
+    C: Copy + SubAssign + AddAssign + From<T>,
+    T: Float,
 {
     /// Compute coefficients and return `Biquad`.
     ///
@@ -216,24 +209,29 @@ where
         let a0i = T::one() / (gl[0][1] + gl[1][1] + gl[2][1]);
 
         // Derivative/integration kernels
-        let kernels = [
-            [C::ONE, C::ZERO, C::ZERO],
-            [C::ONE, -C::ONE, C::ZERO],
-            [C::ONE, -C::ONE - C::ONE, C::ONE],
-        ];
+        let kernels = [[1, 0, 0], [1, -1, 0], [1, -2, 1]];
 
         // Coefficients
-        let mut ba = [[C::ZERO; 2]; 3];
-        for (gli, ki) in gl.iter().zip(kernels.iter()) {
+        let mut ba = [[C::from(T::zero()); 2]; 3];
+        for (gli, ki) in gl.into_iter().zip(kernels) {
             // Quantize the gains and not the coefficients
-            let (g, l) = (C::from(gli[0] * a0i), C::from(gli[1] * a0i));
-            for (baj, &kij) in ba.iter_mut().zip(ki) {
-                baj[0] = baj[0] + kij * g;
-                baj[1] = baj[1] + kij * l;
+            let gli = gli.map(|c| C::from(c * a0i));
+            for (baj, kij) in ba.iter_mut().zip(ki) {
+                if kij > 0 {
+                    for _ in 0..kij {
+                        baj[0] += gli[0];
+                        baj[1] -= gli[1];
+                    }
+                } else {
+                    for _ in 0..-kij {
+                        baj[0] -= gli[0];
+                        baj[1] += gli[1];
+                    }
+                }
             }
         }
 
-        [ba[0][0], ba[1][0], ba[2][0], -ba[1][1], -ba[2][1]]
+        [ba[0][0], ba[1][0], ba[2][0], ba[1][1], ba[2][1]]
     }
 }
 
@@ -347,7 +345,7 @@ impl<T, C, Y> From<Pid<T>> for BiquadClamp<C, Y>
 where
     PidBuilder<T>: Into<BiquadClamp<C, Y>>,
     Y: Copy + From<T> + Mul<C, Output = Y> + Div<C, Output = Y>,
-    C: core::iter::Sum + Copy,
+    C: Add<Output = C> + Copy,
     T: Float,
 {
     /// Return the `Biquad`

@@ -109,7 +109,7 @@ macro_rules! impl_const_float {
 impl_const_float!(f32);
 impl_const_float!(f64);
 
-/// Helper trait for Clamp
+/// Helper trait to unify intrinsic clamp and Ord clamp
 pub trait Clamp {
     /// Clamp
     ///
@@ -130,18 +130,23 @@ impl_clamp_float!(f32);
 impl_clamp_float!(f64);
 
 macro_rules! impl_clamp_ord {
-    ($($ty:ident),*) => {$(
+    ($($ty:ty),+) => {$(
         impl Clamp for $ty {
             #[inline]
             fn clamp(self, min: Self, max: Self) -> Self {
                 Ord::clamp(self, min, max)
             }
         }
-    )*};
+    )+};
 }
 impl_clamp_ord!(
     i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
 );
+impl<T: Clamp> Clamp for Wrapping<T> {
+    fn clamp(self, min: Self, max: Self) -> Self {
+        Wrapping(self.0.clamp(min.0, max.0))
+    }
+}
 
 /// Conversion trait between base and accumulator type
 pub trait Accu<A> {

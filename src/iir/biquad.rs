@@ -1,7 +1,4 @@
-use core::{
-    iter::Sum,
-    ops::{Add, Div, Mul},
-};
+use core::ops::{Add, Div, Mul};
 use dsp_fixedpoint::{Clamp, Const, Q};
 use dsp_process::{SplitInplace, SplitProcess};
 
@@ -203,7 +200,7 @@ impl<C: Const + Copy> Biquad<C> {
     };
 }
 
-impl<C: Copy + Sum> Biquad<C> {
+impl<C: Copy + Add<Output = C>> Biquad<C> {
     /// DC forward gain fro input to summing junction
     ///
     /// ```
@@ -211,11 +208,13 @@ impl<C: Copy + Sum> Biquad<C> {
     /// assert_eq!(Biquad::proportional(3.0).forward_gain(), 3.0);
     /// ```
     pub fn forward_gain(&self) -> C {
-        self.ba[..3].iter().copied().sum()
+        self.ba[0] + self.ba[1] + self.ba[2]
     }
 }
 
-impl<C: Copy + Sum, T: Copy + Div<C, Output = T> + Mul<C, Output = T>> BiquadClamp<C, T> {
+impl<C: Copy + Add<Output = C>, T: Copy + Div<C, Output = T> + Mul<C, Output = T>>
+    BiquadClamp<C, T>
+{
     /// Summing junction offset referred to input
     ///
     /// ```
