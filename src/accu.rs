@@ -1,6 +1,16 @@
-use num_traits::ops::wrapping::WrappingAdd;
+use core::ops::AddAssign;
 
-/// Wrapping Accumulator
+/// Accumulator
+///
+/// Use [`core::num::Wrapping`].
+///
+/// ```
+/// use core::num::Wrapping;
+/// use idsp::Accu;
+/// let mut a = Accu::new(Wrapping(0i8), Wrapping(127));
+/// assert_eq!(a.next(), Some(Wrapping(127)));
+/// assert_eq!(a.next(), Some(Wrapping(-2)));
+/// ```
 #[derive(Copy, Clone, Default, PartialEq, PartialOrd, Debug)]
 pub struct Accu<T> {
     /// Current accumulator state
@@ -16,11 +26,13 @@ impl<T> Accu<T> {
     }
 }
 
-impl<T: WrappingAdd + Copy> Iterator for Accu<T> {
+impl<T: Copy> Iterator for Accu<T>
+where
+    T: AddAssign,
+{
     type Item = T;
     fn next(&mut self) -> Option<T> {
-        let s = self.state;
-        self.state = s.wrapping_add(&self.step);
-        Some(s)
+        self.state += self.step;
+        Some(self.state)
     }
 }
