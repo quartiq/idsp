@@ -2,7 +2,7 @@ use crate::{Inplace, Process};
 
 //////////// ELEMENTARY PROCESSORS ////////////
 
-/// Sum outputs of filters
+/// Summation
 ///
 /// Fan in.
 #[derive(Debug, Copy, Clone, Default)]
@@ -19,7 +19,7 @@ impl<X0: Copy + core::ops::Add<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y
 }
 impl<X: Copy> Inplace<X> for &Add where Self: Process<X> {}
 
-/// Product of outputs of filters
+/// Product
 ///
 /// Fan in.
 #[derive(Debug, Copy, Clone, Default)]
@@ -36,7 +36,7 @@ impl<X0: Copy + core::ops::Mul<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y
 }
 impl<X: Copy> Inplace<X> for &Mul where Self: Process<X> {}
 
-/// Difference of outputs of two filters
+/// Difference
 ///
 /// Fan in.
 #[derive(Debug, Copy, Clone, Default)]
@@ -53,7 +53,7 @@ impl<X0: Copy + core::ops::Sub<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y
 }
 impl<X: Copy> Inplace<X> for &Sub where Self: Process<X> {}
 
-/// Sum and difference of outputs of two filters
+/// Sum and difference
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Butterfly;
 impl<X: Copy + core::ops::Add<Output = Y> + core::ops::Sub<Output = Y>, Y> Process<[X; 2], [Y; 2]>
@@ -79,6 +79,7 @@ impl<T: Copy> Process<T> for &Identity {
     }
 }
 
+/// NOP
 impl<T: Copy> Inplace<T> for &Identity {
     fn inplace(&mut self, _xy: &mut [T]) {}
 }
@@ -97,6 +98,7 @@ impl<X: Copy, const N: usize> Process<X, [X; N]> for &Identity {
     }
 }
 
+/// Flatten
 impl<X: Copy> Process<[X; 1], X> for &Identity {
     fn process(&mut self, x: [X; 1]) -> X {
         x[0]
@@ -237,7 +239,7 @@ impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<[X; N]> {
 
 /// Nyquist zero with gain 2
 ///
-/// Bad for large differential delays
+/// This is inefficient for large differential delays
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Nyquist<X>(
     /// Previous input

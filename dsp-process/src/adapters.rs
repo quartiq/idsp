@@ -17,7 +17,7 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Interpolator<C> where Self: SplitProc
 /// Adapts a decimator to input chunk mode
 ///
 /// Synchronizes to the inner tick by discarding samples after tick.
-/// Panics if tick does not match N
+/// Panics if tick does not match `N`.
 #[derive(Clone, Debug, Default)]
 pub struct Decimator<P>(pub P);
 impl<X: Copy, Y, C: SplitProcess<X, Option<Y>, S>, S, const N: usize> SplitProcess<[X; N], Y, S>
@@ -32,7 +32,7 @@ impl<X: Copy, Y, C: SplitProcess<X, Option<Y>, S>, S, const N: usize> SplitProce
 }
 impl<X: Copy, C, S> SplitInplace<X, S> for Decimator<C> where Self: SplitProcess<X, X, S> {}
 
-/// Map
+/// Map `Option` and `Result`
 #[derive(Clone, Debug, Default)]
 pub struct Map<P>(pub P);
 impl<X: Copy, Y, C: SplitProcess<X, Y, S>, S> SplitProcess<Option<X>, Option<Y>, S> for Map<C> {
@@ -54,7 +54,7 @@ impl<X: Copy, C: SplitInplace<X, S>, S> SplitInplace<X, S> for Map<C> where
 
 /// Chunked processing
 ///
-/// Adapts a X->Y processor into a [X; N] -> [Y; N] processor
+/// Adapt` a `X->Y` processor into a `[X; N] -> [Y; N]` processor
 /// by flattening input and output.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Chunk<P>(pub P);
@@ -75,7 +75,10 @@ impl<C: SplitInplace<X, S>, S, X: Copy, const N: usize> SplitInplace<[X; N], S> 
     }
 }
 
-/// Adapts a [X; R] -> Y processor to [X; N=R*M]->[Y; M]
+/// Chunked input
+///
+/// Adapt a `[X; R] -> Y` processor to `[X; N=R*M]->[Y; M]` for any `M`
+/// by flattening and re-chunking input.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct ChunkIn<P, const R: usize>(pub P);
 impl<C: SplitProcess<[X; R], Y, S>, S, X: Copy, Y, const N: usize, const R: usize, const M: usize>
@@ -110,7 +113,10 @@ where
     }
 }
 
-/// Adapts a X -> [Y; R] processor to [X; N]->[Y; M = R*N]
+/// Chunked output
+///
+/// Adapt a `X -> [Y; R]` processor to `[X; N]->[Y; M = R*N]` for any `N`
+/// by flattening and re-chunking output.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct ChunkOut<P, const R: usize>(pub P);
 impl<C, S, X: Copy, Y: Default + Copy, const N: usize, const R: usize, const M: usize>
@@ -153,7 +159,10 @@ where
     }
 }
 
-/// Adapts a [X; Q] -> [Y; R] processor to [X; N = Q*i]->[Y; M = R*i]
+/// Chunked input and output
+///
+/// Adapt a `[X; Q] -> [Y; R]` processor to `[X; N = Q*I]->[Y; M = R*I]` for any `I`
+/// by flattening and re-chunking input and output.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct ChunkInOut<P, const Q: usize, const R: usize>(pub P);
 impl<

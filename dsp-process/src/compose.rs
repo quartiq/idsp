@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 
 /// Chain of two different large filters
 ///
-/// X->Y
+/// `X->Y->Y`
 impl<X: Copy, Y: Copy, C0, C1, S0, S1> SplitProcess<X, Y, (S0, S1)> for (C0, C1)
 where
     C0: SplitProcess<X, Y, S0>,
@@ -33,10 +33,12 @@ where
     }
 }
 
-/// A chain of multiple large filters of the same type
+/// Chain of multiple large filters of the same type
 ///
-/// slice can be empty
-/// X->X->X...
+///
+/// `X->X->X...`
+///
+/// * Clice can be empty
 impl<X: Copy, C, S> SplitProcess<X, X, [S]> for [C]
 where
     C: SplitInplace<X, S>,
@@ -75,7 +77,7 @@ where
 
 /// A chain of multiple large filters of the same type
 ///
-/// X->Y->Y...
+/// `X->Y->Y...`
 impl<X: Copy, Y: Copy, C, S, const N: usize> SplitProcess<X, Y, [S; N]> for [C; N]
 where
     C: SplitProcess<X, Y, S> + SplitInplace<Y, S>,
@@ -119,12 +121,13 @@ where
 /// place the data loop as the outer-most loop (processor-minor, data-major).
 /// This is optimal for processors with small or no state and configuration.
 ///
-/// Chain of large processors are implemented through tuples and slices/arrays.
+/// Chain of large processors are implemented through native
+/// tuples and slices/arrays or [`Major`].
 /// Those optimize well if the sizes obey configuration ~ state > data.
 /// If they do not, use `Minor`.
 ///
 /// Note that the major implementations only override the behavior
-/// for `block()` and `inplace()`. `process()` is unaffected.
+/// for `block()` and `inplace()`. `process()` is unaffected and the same for all.
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct Minor<C: ?Sized, U> {
@@ -141,18 +144,6 @@ impl<C, U> Minor<C, U> {
             inner,
             _intermediate: PhantomData,
         }
-    }
-}
-
-impl<C, U, const N: usize> Minor<[C; N], U> {
-    /// Borrowed Self
-    pub fn as_ref(&self) -> Minor<&[C], U> {
-        Minor::new(self.inner.as_ref())
-    }
-
-    /// Mutably borrowed Self
-    pub fn as_mut(&mut self) -> Minor<&mut [C], U> {
-        Minor::new(self.inner.as_mut())
     }
 }
 
@@ -258,7 +249,7 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Parallel<C> where Self: SplitProcess<
 
 /// Data block transposition wrapper
 ///
-/// Like [`Parallel`] but reinterpreting data as transpes `[[X; N]] <-> [[X]; N]`
+/// Like [`Parallel`] but reinterpreting data as transpose `[[X; N]] <-> [[X]; N]`
 /// such that `block()` and `inplace()` are lowered.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Transpose<C>(pub C);
