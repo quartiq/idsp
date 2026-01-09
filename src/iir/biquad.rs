@@ -250,39 +250,6 @@ pub struct DirectForm1<T> {
     pub xy: [T; 4],
 }
 
-/// SOS state with wide Y
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct DirectForm1Wide {
-    /// X state
-    ///
-    /// `[x1, x2]`
-    pub x: [i32; 2],
-    /// Y state
-    ///
-    /// `[y1, y2]`
-    pub y: [i64; 2],
-}
-
-/// SOS state with first order error feedback
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct DirectForm1Dither {
-    /// X,Y state
-    ///
-    /// `[x1, x2, y1, y2]`
-    pub xy: [i32; 4],
-    /// Error feedback
-    pub e: u32,
-}
-
-/// Direct form 2 transposed SOS state
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct DirectForm2Transposed<T> {
-    /// internal state
-    ///
-    /// `[u1, u2]`
-    pub u: [T; 2],
-}
-
 /// ```
 /// # use dsp_process::SplitProcess;
 /// # use idsp::iir::*;
@@ -309,6 +276,36 @@ impl<T: 'static + Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + AsPri
 /// ```
 /// use dsp_process::SplitProcess;
 /// use idsp::iir::*;
+/// let biquad = BiquadClamp::<f32, f32>::from(Biquad::IDENTITY);
+/// let mut state = DirectForm2Transposed::default();
+/// let x = 3.0f32;
+/// let y = biquad.process(&mut state, x);
+/// assert_eq!(x, y);
+/// ```
+impl<T: Copy + Add<Output = T> + PartialOrd, C> SplitProcess<T, T, DirectForm1<T>>
+    for BiquadClamp<C, T>
+where
+    Biquad<C>: SplitProcess<T, T, DirectForm1<T>>,
+{
+    fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
+        let y0 = clamp(self.coeff.process(state, x0) + self.u, self.min, self.max);
+        state.xy[2] = y0; // overwrite
+        y0
+    }
+}
+
+/// Direct form 2 transposed SOS state
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct DirectForm2Transposed<T> {
+    /// internal state
+    ///
+    /// `[u1, u2]`
+    pub u: [T; 2],
+}
+
+/// ```
+/// use dsp_process::SplitProcess;
+/// use idsp::iir::*;
 /// let biquad = Biquad::<f32>::IDENTITY;
 /// let mut state = DirectForm2Transposed::default();
 /// let x = 3.0f32;
@@ -328,27 +325,6 @@ impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2
     }
 }
 
-/// ```
-/// use dsp_process::SplitProcess;
-/// use idsp::iir::*;
-/// let biquad = BiquadClamp::<f32, f32>::from(Biquad::IDENTITY);
-/// let mut state = DirectForm2Transposed::default();
-/// let x = 3.0f32;
-/// let y = biquad.process(&mut state, x);
-/// assert_eq!(x, y);
-/// ```
-impl<T: Copy + Add<Output = T> + PartialOrd, C> SplitProcess<T, T, DirectForm1<T>>
-    for BiquadClamp<C, T>
-where
-    Biquad<C>: SplitProcess<T, T, DirectForm1<T>>,
-{
-    fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
-        let y0 = clamp(self.coeff.process(state, x0) + self.u, self.min, self.max);
-        state.xy[2] = y0; // overwrite
-        y0
-    }
-}
-
 impl<T: Copy + Add<Output = T> + Mul<Output = T> + PartialOrd>
     SplitProcess<T, T, DirectForm2Transposed<T>> for BiquadClamp<T, T>
 {
@@ -360,6 +336,19 @@ impl<T: Copy + Add<Output = T> + Mul<Output = T> + PartialOrd>
         u[1] = ba[2] * x0 + ba[4] * y0;
         y0
     }
+}
+
+/// SOS state with wide Y
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct DirectForm1Wide {
+    /// X state
+    ///
+    /// `[x1, x2]`
+    pub x: [i32; 2],
+    /// Y state
+    ///
+    /// `[y1, y2]`
+    pub y: [i64; 2],
 }
 
 impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for Biquad<Q<i32, i64, F>> {
@@ -395,6 +384,17 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for BiquadClamp<Q<i32,
         *y = [((y0 as i64) << 32) | acc as u32 as i64, y[0]];
         y0
     }
+}
+
+/// SOS state with first order error feedback
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct DirectForm1Dither {
+    /// X,Y state
+    ///
+    /// `[x1, x2, y1, y2]`
+    pub xy: [i32; 4],
+    /// Error feedback
+    pub e: u32,
 }
 
 /// ```
