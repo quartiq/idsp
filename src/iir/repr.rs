@@ -157,9 +157,12 @@ where
 
 impl<T, C, Y> BiquadRepr<T, C, Y>
 where
-    BiquadClamp<C, Y>: Default + Clone + From<Pid<T>> + From<[[T; 3]; 2]>,
-    T: 'static + Float + FloatConst + Default + Into<Y>,
+    BiquadClamp<C, Y>: Default + Clone,
+    Y: 'static + Copy,
+    T: 'static + Float + FloatConst + Default + AsPrimitive<Y>,
     f32: AsPrimitive<T>,
+    Pid<T>: Into<BiquadClamp<C, Y>>,
+    [[T; 3]; 2]: Into<BiquadClamp<C, Y>>,
 {
     /// Build a biquad
     ///
@@ -177,10 +180,10 @@ where
             Self::Ba(ba) => {
                 let mut bba = ba.ba.clone();
                 bba[0] = bba[0].map(|b| b * b_scale);
-                let mut b = BiquadClamp::from(bba);
-                b.u = (ba.u * y_scale).into();
-                b.min = (ba.min * y_scale).into();
-                b.max = (ba.max * y_scale).into();
+                let mut b: BiquadClamp<C, Y> = bba.into();
+                b.u = (ba.u * y_scale).as_();
+                b.min = (ba.min * y_scale).as_();
+                b.max = (ba.max * y_scale).as_();
                 b
             }
             Self::Raw(raw) => raw.clone(),
@@ -209,10 +212,10 @@ where
                     Typ::Peaking => f.peaking(),
                 };
                 ba[0] = ba[0].map(|b| b * b_scale);
-                let mut b = BiquadClamp::from(ba);
-                b.u = (filter.offset * y_scale).into();
-                b.min = (filter.min * y_scale).into();
-                b.max = (filter.max * y_scale).into();
+                let mut b: BiquadClamp<C, Y> = ba.into();
+                b.u = (filter.offset * y_scale).as_();
+                b.min = (filter.min * y_scale).as_();
+                b.max = (filter.max * y_scale).as_();
                 b
             }
         }
