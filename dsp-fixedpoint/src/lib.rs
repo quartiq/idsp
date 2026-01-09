@@ -1,10 +1,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
-use num_traits::AsPrimitive;
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
 use num_traits::float::FloatCore;
+use num_traits::{AsPrimitive, ConstOne, ConstZero, One, Zero};
 
 use core::{
     fmt, iter,
@@ -55,25 +55,7 @@ pub trait Int {
 }
 
 /// Constants
-pub trait Const {
-    /// The additive neutral element
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::Const;
-    /// assert_eq!(<i8 as Const>::ZERO, 0);
-    /// assert_eq!(<f32 as Const>::ZERO, 0.0);
-    /// ```
-    const ZERO: Self;
-
-    /// The multiplicative neutral element
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::Const;
-    /// assert_eq!(<i8 as Const>::ONE, 1);
-    /// assert_eq!(<f32 as Const>::ONE, 1.0);
-    /// ```
-    const ONE: Self;
-
+pub trait Const: ConstOne + ConstZero {
     /// Lowest value
     ///
     /// Negative infinity for floating point values.
@@ -99,54 +81,13 @@ pub trait Const {
 macro_rules! impl_const_float {
     ($ty:ident) => {
         impl Const for $ty {
-            const ZERO: Self = 0.0;
             const MIN: Self = <$ty>::NEG_INFINITY;
             const MAX: Self = <$ty>::INFINITY;
-            const ONE: Self = 1.0;
         }
     };
 }
 impl_const_float!(f32);
 impl_const_float!(f64);
-
-/// Helper trait to unify intrinsic clamp and Ord clamp
-pub trait Clamp {
-    /// Clamp
-    ///
-    /// See also [`Ord::clamp`] and [`f32::clamp`]/[`f64::clamp`]
-    fn clamp(self, min: Self, max: Self) -> Self;
-}
-macro_rules! impl_clamp_float {
-    ($ty:ident) => {
-        impl Clamp for $ty {
-            #[inline]
-            fn clamp(self, min: Self, max: Self) -> Self {
-                Self::clamp(self, min, max)
-            }
-        }
-    };
-}
-impl_clamp_float!(f32);
-impl_clamp_float!(f64);
-
-macro_rules! impl_clamp_ord {
-    ($($ty:ty),+) => {$(
-        impl Clamp for $ty {
-            #[inline]
-            fn clamp(self, min: Self, max: Self) -> Self {
-                Ord::clamp(self, min, max)
-            }
-        }
-    )+};
-}
-impl_clamp_ord!(
-    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
-);
-impl<T: Clamp> Clamp for Wrapping<T> {
-    fn clamp(self, min: Self, max: Self) -> Self {
-        Wrapping(self.0.clamp(min.0, max.0))
-    }
-}
 
 /// Conversion trait between base and accumulator type
 pub trait Accu<A> {
@@ -196,13 +137,11 @@ pub trait Accu<A> {
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// assert_eq!(Q8::<4>::from(3), Q8::new(3 << 4));
-/// assert_eq!(7 * Q8::<4>::from(1.5), 10);
-/// assert_eq!(7 / Q8::<4>::from(1.5), 4);
+/// assert_eq!(Q8::<4>::from_int(3), Q8::new(3 << 4));
+/// assert_eq!(7 * Q8::<4>::from_f32(1.5), 10);
+/// assert_eq!(7 / Q8::<4>::from_f32(1.5), 4);
 /// ```
-#[derive(
-    Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct Q<T, A, const F: i8> {
@@ -210,6 +149,44 @@ pub struct Q<T, A, const F: i8> {
     _accu: PhantomData<A>,
     /// The inner value representation
     pub inner: T,
+}
+
+impl<T: Clone, A, const F: i8> Clone for Q<T, A, F> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            _accu: PhantomData,
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T: Copy, A, const F: i8> Copy for Q<T, A, F> {}
+
+impl<T: One + Shift, A, const F: i8> One for Q<T, A, F>
+where
+    Self: Mul<Output = Self>,
+{
+    fn one() -> Self {
+        Self::new(T::one().shs(F))
+    }
+}
+
+impl<T: Zero, A, const F: i8> Zero for Q<T, A, F>
+where
+    Self: Add<Output = Self>,
+{
+    fn zero() -> Self {
+        Self::new(T::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.inner.is_zero()
+    }
+}
+
+impl<T: ConstZero, A, const F: i8> ConstZero for Q<T, A, F> {
+    const ZERO: Self = Self::new(T::ZERO);
 }
 
 impl<T, A, const F: i8> Q<T, A, F> {
@@ -251,20 +228,16 @@ impl<T: Int, A, const F: i8> Int for Q<T, A, F> {
     const BITS: u32 = T::BITS;
 }
 
-/// Helper trait to get const shl
-trait One {
-    const ONE: Self;
-}
-
 impl<T: Const + Shift + Copy, A, const F: i8> Const for Q<T, A, F>
 where
-    Self: One,
+    Self: ConstOne,
 {
     /// Lowest value
     ///
     /// ```
     /// # use dsp_fixedpoint::{Const, Q8};
-    /// assert_eq!(Q8::<4>::MIN, (-16.0).into());
+    /// # use num_traits::AsPrimitive;
+    /// assert_eq!(Q8::<4>::MIN, (-16f32).as_());
     /// ```
     const MIN: Self = Self::new(T::MIN);
 
@@ -272,22 +245,13 @@ where
     ///
     /// ```
     /// # use dsp_fixedpoint::{Const, Q8};
-    /// assert_eq!(Q8::<4>::MAX, (16.0 - 1.0 / 16.0).into());
+    /// # use num_traits::AsPrimitive;
+    /// assert_eq!(Q8::<4>::MAX, (16.0f32 - 1.0 / 16.0).as_());
     /// ```
     const MAX: Self = Self::new(T::MAX);
-
-    const ZERO: Self = Self::new(T::ZERO);
-
-    /// Unit
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::{Const, Q8};
-    /// assert_eq!(Q8::<3>::ONE, Q8::new(1 << 3));
-    /// ```
-    const ONE: Self = One::ONE;
 }
 
-impl<T: Int, A, const F: i8> Q<T, A, F> {
+impl<T: Shift, A, const F: i8> Q<T, A, F> {
     /// Convert to a different number of fractional bits (truncating)
     ///
     /// Use this liberally for Add/Sub/Rem with Q's of different F.
@@ -297,10 +261,7 @@ impl<T: Int, A, const F: i8> Q<T, A, F> {
     /// assert_eq!(Q8::<4>::new(32).scale::<0>(), Q8::new(2));
     /// ```
     #[inline]
-    pub fn scale<const F1: i8>(self) -> Q<T, A, F1>
-    where
-        T: Shift,
-    {
+    pub fn scale<const F1: i8>(self) -> Q<T, A, F1> {
         Q::new(self.inner.shs(F1 - F))
     }
 
@@ -311,11 +272,22 @@ impl<T: Int, A, const F: i8> Q<T, A, F> {
     /// assert_eq!(Q8::<4>::new(0x35).trunc(), 0x3);
     /// ```
     #[inline]
-    pub fn trunc(self) -> T
-    where
-        T: Shift,
-    {
+    pub fn trunc(self) -> T {
         self.inner.shs(-F)
+    }
+
+    /// Scale from integer base type
+    #[inline]
+    pub fn from_int(value: T) -> Self {
+        Self::new(value.shs(F))
+    }
+}
+
+impl<A: Shift, T: Accu<A>, const F: i8> Q<A, T, F> {
+    /// Scale from integer accu type
+    #[inline]
+    pub fn quantize(self) -> T {
+        T::down(self.trunc())
     }
 }
 
@@ -335,33 +307,93 @@ impl<T, A, const F: i8> From<Q<T, A, F>> for (T, i8) {
 
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// assert_eq!(8 * Q8::<4>::from(0.25f32), 2);
-/// assert_eq!(8 * Q8::<4>::from(0.25f64), 2);
-/// assert_eq!(f32::from(Q8::<4>::new(4)), 0.25);
-/// assert_eq!(f64::from(Q8::<4>::new(4)), 0.25);
+/// # use num_traits::AsPrimitive;
+/// assert_eq!(8 * Q8::<4>::from_f32(0.25), 2);
+/// assert_eq!(8 * Q8::<4>::from_f64(0.25), 2);
+/// assert_eq!(Q8::<4>::new(4).as_f32(), 0.25);
+/// assert_eq!(Q8::<4>::new(4).as_f64(), 0.25);
 /// ```
-macro_rules! impl_from_float {
+macro_rules! impl_as_float {
     ($ty:ident) => {
-        impl<T: 'static + Copy, A, const F: i8> From<$ty> for Q<T, A, F>
+        impl<T: 'static + Copy, A: 'static, const F: i8> AsPrimitive<Q<T, A, F>> for $ty
         where
             $ty: AsPrimitive<T>,
         {
             #[inline]
-            fn from(value: $ty) -> Self {
-                Self::new((value * const { 1.0 / Self::DELTA } as $ty).round().as_())
+            fn as_(self) -> Q<T, A, F> {
+                Q::new(
+                    (self * const { 1.0 / Q::<T, A, F>::DELTA } as $ty)
+                        .round()
+                        .as_(),
+                )
             }
         }
 
-        impl<T: AsPrimitive<Self>, A, const F: i8> From<Q<T, A, F>> for $ty {
+        impl<T: AsPrimitive<$ty>, A: 'static, const F: i8> AsPrimitive<$ty> for Q<T, A, F> {
             #[inline]
-            fn from(value: Q<T, A, F>) -> Self {
-                value.inner.as_() * Q::<T, A, F>::DELTA as Self
+            fn as_(self) -> $ty {
+                self.inner.as_() * Self::DELTA as $ty
             }
         }
     };
 }
-impl_from_float!(f32);
-impl_from_float!(f64);
+impl_as_float!(f32);
+impl_as_float!(f64);
+
+impl<T, A, const F: i8> Q<T, A, F>
+where
+    f32: AsPrimitive<Q<T, A, F>>,
+    Self: Copy + 'static,
+{
+    /// Quantize a f32
+    #[inline]
+    pub fn from_f32(value: f32) -> Self {
+        value.as_()
+    }
+}
+
+impl<T, A, const F: i8> Q<T, A, F>
+where
+    f64: AsPrimitive<Q<T, A, F>>,
+    Self: Copy + 'static,
+{
+    /// Quantize a f64
+    #[inline]
+    pub fn from_f64(value: f64) -> Self {
+        value.as_()
+    }
+}
+
+impl<T, A, const F: i8> Q<T, A, F>
+where
+    Self: 'static + Copy + AsPrimitive<f32>,
+{
+    /// Convert lossy to f32
+    #[inline]
+    pub fn as_f32(self) -> f32 {
+        self.as_()
+    }
+}
+
+impl<T, A, const F: i8> Q<T, A, F>
+where
+    Self: 'static + Copy + AsPrimitive<f64>,
+{
+    /// Convert lossy to f64
+    #[inline]
+    pub fn as_f64(self) -> f64 {
+        self.as_()
+    }
+}
+
+impl<T, A, const F: i8> AsPrimitive<Self> for Q<T, A, F>
+where
+    Self: Copy + 'static,
+{
+    fn as_(self) -> Self {
+        self
+    }
+}
 
 macro_rules! forward_unop {
     ($tr:ident::$m:ident) => {
@@ -406,9 +438,15 @@ forward_sh_assign_op!(ShlAssign::shl_assign);
 
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// assert_eq!(Q8::<3>::from(3.5) + Q8::from(5.2), Q8::from(8.7));
-/// assert_eq!(Q8::<3>::from(4.0) - Q8::from(3.2), Q8::from(0.8));
-/// assert_eq!(Q8::<3>::from(3.5) % Q8::from(1), Q8::from(0.5));
+/// assert_eq!(
+///     Q8::<3>::from_f32(3.5) + Q8::from_f32(5.2),
+///     Q8::from_f32(8.7)
+/// );
+/// assert_eq!(
+///     Q8::<3>::from_f32(4.0) - Q8::from_f32(3.2),
+///     Q8::from_f32(0.8)
+/// );
+/// assert_eq!(Q8::<3>::from_f32(3.5) % Q8::from_int(1), Q8::from_f32(0.5));
 /// ```
 macro_rules! forward_binop {
     ($tr:ident::$m:ident) => {
@@ -493,9 +531,9 @@ forward_assign_op!(BitXorAssign::bitxor_assign);
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// let mut q = Q8::<4>::from(0.25);
-/// q *= Q8::<3>::from(3);
-/// assert_eq!(q, Q8::from(0.75));
+/// let mut q = Q8::<4>::from_f32(0.25);
+/// q *= Q8::<3>::from_int(3);
+/// assert_eq!(q, Q8::from_f32(0.75));
 /// ```
 impl<T: Copy + Accu<A>, A: Shift + Mul<A, Output = A>, const F: i8, const F1: i8>
     MulAssign<Q<T, A, F1>> for Q<T, A, F>
@@ -510,9 +548,9 @@ impl<T: Copy + Accu<A>, A: Shift + Mul<A, Output = A>, const F: i8, const F1: i8
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// let mut q = Q8::<4>::from(0.75);
-/// q /= Q8::<3>::from(3);
-/// assert_eq!(q, Q8::from(0.25));
+/// let mut q = Q8::<4>::from_f32(0.75);
+/// q /= Q8::<3>::from_int(3);
+/// assert_eq!(q, Q8::from_f32(0.25));
 /// ```
 impl<
     T: Copy + Shift + Accu<A> + Div<T, Output = T>,
@@ -535,7 +573,10 @@ impl<
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// assert_eq!(Q8::<4>::from(0.75) * Q8::from(3), Q8::from(2.25));
+/// assert_eq!(
+///     Q8::<4>::from_f32(0.75) * Q8::from_int(3),
+///     Q8::from_f32(2.25)
+/// );
 /// ```
 impl<T, A, const F: i8> Mul for Q<T, A, F>
 where
@@ -553,7 +594,7 @@ where
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// assert_eq!(Q8::<4>::from(3) / Q8::from(2), Q8::from(1.5));
+/// assert_eq!(Q8::<4>::from_int(3) / Q8::from_int(2), Q8::from_f32(1.5));
 /// ```
 impl<T, A, const F: i8> Div for Q<T, A, F>
 where
@@ -590,13 +631,13 @@ macro_rules! impl_fmt {
     ($tr:path) => {
         impl<T: Int, A, const F: i8> $tr for Q<T, A, F>
         where
-            Self: Copy + Into<f32> + Into<f64>,
+            Self: Copy + AsPrimitive<f32> + AsPrimitive<f64>,
         {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 if const { T::BITS <= f32::MANTISSA_DIGITS } {
-                    <f32 as $tr>::fmt(&(*self).into(), f)
+                    <f32 as $tr>::fmt(&(*self).as_(), f)
                 } else {
-                    <f64 as $tr>::fmt(&(*self).into(), f)
+                    <f64 as $tr>::fmt(&(*self).as_(), f)
                 }
             }
         }
@@ -646,8 +687,6 @@ macro_rules! impl_q {
         impl Const for $t {
             const MIN: Self = $wrap(<$inner>::MIN);
             const MAX: Self = $wrap(<$inner>::MAX);
-            const ZERO: Self = $wrap(0);
-            const ONE: Self = $wrap(1);
         }
 
         impl Accu<$a> for $t {
@@ -664,31 +703,15 @@ macro_rules! impl_q {
         #[doc = concat!("Fixed point [`", stringify!($t), "`]")]
         pub type $alias<const F: i8 = {<$t as Int>::BITS as _}> = Q<$t, $a, F>;
 
-        impl<const F: i8> One for Q<$t, $a, F> {
+        impl<const F: i8> ConstOne for Q<$t, $a, F> {
             const ONE: Self = Self::new($wrap(if F >= 0 {1 << F as usize} else {0}));
         }
 
-        /// Scale from integer base type
-        impl<const F: i8> From<$t> for Q<$t, $a, F> {
+        impl<const F: i8> AsPrimitive<$t> for Q<$a, $t, F> {
+            /// Scale from integer accu type
             #[inline]
-            fn from(value: $t) -> Self {
-                Self::new(value.shs(F))
-            }
-        }
-
-        /// Scale from integer base type
-        impl<const F: i8> From<Q<$t, $a, F>> for $t {
-            #[inline]
-            fn from(value: Q<$t, $a, F>) -> Self {
-                value.inner.shs(-F)
-            }
-        }
-
-        /// Scale from integer accu type
-        impl<const F: i8> From<Q<$a, $t, F>> for $t {
-            #[inline]
-            fn from(value: Q<$a, $t, F>) -> Self {
-                <$t>::down(value.inner.shs(-F))
+            fn as_(self) -> $t {
+                self.quantize()
             }
         }
 
@@ -698,7 +721,7 @@ macro_rules! impl_q {
 
             #[inline]
             fn mul(self, rhs: Q<$t, $a, F>) -> Self::Output {
-                (rhs * self).into()
+                (rhs * self).quantize()
             }
         }
 
@@ -746,14 +769,20 @@ mod test {
 
     #[test]
     fn simple() {
-        assert_eq!(Q32::<5>::from(4) * Q32::<5>::from(3), (3 * 4).into());
-        assert_eq!(Q32::<5>::from(12) / Q32::<5>::from(6), 2.into());
+        assert_eq!(
+            Q32::<5>::from_int(4) * Q32::<5>::from_int(3),
+            Q32::from_int(3 * 4)
+        );
+        assert_eq!(
+            Q32::<5>::from_int(12) / Q32::<5>::from_int(6),
+            Q32::from_int(2)
+        );
         assert_eq!(7 * Q32::<4>::new(0x33), 7 * 3 + ((3 * 7) >> 4));
     }
 
     #[test]
     fn display() {
         assert_eq!(format!("{}", Q32::<9>::new(0x12345)), "145.634765625");
-        assert_eq!(format!("{}", Q32::<9>::from(99)), "99");
+        assert_eq!(format!("{}", Q32::<9>::from_int(99)), "99");
     }
 }
