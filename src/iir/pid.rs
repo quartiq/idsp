@@ -1,7 +1,7 @@
 use core::ops::{Add, AddAssign, Div, Mul, SubAssign};
 
 use miniconf::Tree;
-use num_traits::Float;
+use num_traits::{AsPrimitive, Float};
 use serde::{Deserialize, Serialize};
 
 use crate::iir::{Biquad, BiquadClamp};
@@ -157,8 +157,8 @@ impl<T: Float> PidBuilder<T> {
 
 impl<C, T> From<PidBuilder<T>> for [C; 5]
 where
-    C: Copy + SubAssign + AddAssign + From<T>,
-    T: Float,
+    C: 'static + Copy + SubAssign + AddAssign,
+    T: Float + AsPrimitive<C>,
 {
     /// Compute coefficients and return `Biquad`.
     ///
@@ -212,10 +212,10 @@ where
         let kernels = [[1, 0, 0], [1, -1, 0], [1, -2, 1]];
 
         // Coefficients
-        let mut ba = [[C::from(T::zero()); 2]; 3];
+        let mut ba = [[T::zero().as_(); 2]; 3];
         for (gli, ki) in gl.into_iter().zip(kernels) {
             // Quantize the gains and not the coefficients
-            let gli = gli.map(|c| C::from(c * a0i));
+            let gli = gli.map(|c| (c * a0i).as_());
             for (baj, kij) in ba.iter_mut().zip(ki) {
                 if kij > 0 {
                     for _ in 0..kij {
@@ -344,17 +344,17 @@ impl<T: Float + Default> Default for Pid<T> {
 impl<T, C, Y> From<Pid<T>> for BiquadClamp<C, Y>
 where
     PidBuilder<T>: Into<BiquadClamp<C, Y>>,
-    Y: Copy + From<T> + Mul<C, Output = Y> + Div<C, Output = Y>,
+    Y: 'static + Copy + Mul<C, Output = Y> + Div<C, Output = Y>,
     C: Add<Output = C> + Copy,
-    T: Float,
+    T: AsPrimitive<Y> + Float,
 {
     /// Return the `Biquad`
     ///
     /// Builder intermediate type `I`, coefficient type C
-    fn from(value: Pid<T>) -> BiquadClamp<C, Y> {
+    fn from(value: Pid<T>) -> Self {
         let p = value.gains.value[Action::P as usize];
         // FIXME: apply b_scale only to ba[..3]!
-        let mut biquad: BiquadClamp<C, Y> = PidBuilder {
+        let mut biquad: Self = PidBuilder {
             gain: value.gains.value.map(|g| value.b_scale * g.copysign(p)),
             limit: value.limits.value.map(|l| {
                 // infinite gain limit is meaningful but json can only do null/nan
@@ -365,9 +365,9 @@ where
             order: value.order,
         }
         .into();
-        biquad.set_input_offset((-value.setpoint * value.y_scale).into());
-        biquad.min = (value.min * value.y_scale).into();
-        biquad.max = (value.max * value.y_scale).into();
+        biquad.set_input_offset((-value.setpoint * value.y_scale).as_());
+        biquad.min = (value.min * value.y_scale).as_();
+        biquad.max = (value.max * value.y_scale).as_();
         biquad
     }
 }

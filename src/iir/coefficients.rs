@@ -468,7 +468,7 @@ mod test {
         }
 
         // Quantize and back
-        let bai: [f64; _] = Biquad::<Q32<30>>::from(*ba).ba.map(|c| c.into());
+        let bai: [f64; _] = Biquad::<Q32<30>>::from(*ba).ba.map(|c| c.as_());
         let bai = [[bai[0], bai[1], bai[2]], [1.0, -bai[3], -bai[4]]];
         println!("{bai:?}");
 

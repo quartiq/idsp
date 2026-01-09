@@ -1,10 +1,11 @@
 use core::ops::{Add, Div, Mul};
-use dsp_fixedpoint::{Clamp, Const, Q};
+use dsp_fixedpoint::{Const, Q};
 use dsp_process::{SplitInplace, SplitProcess};
 
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
 use num_traits::float::FloatCore as _;
+use num_traits::{AsPrimitive, clamp};
 
 /// Biquad IIR (second order section)
 ///
@@ -293,14 +294,13 @@ pub struct DirectForm2Transposed<T> {
 /// assert_eq!(y0, x0);
 /// assert_eq!(state.xy, [x0, 0.0, y0, 2.0]);
 /// ```
-impl<T: Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + Into<T>>
+impl<T: 'static + Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + AsPrimitive<T>>
     SplitProcess<T, T, DirectForm1<T>> for Biquad<C>
 {
     fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
         let xy = &mut state.xy;
         let ba = &self.ba;
-        let y0 =
-            (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).into();
+        let y0 = (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).as_();
         *xy = [x0, xy[0], y0, xy[2]];
         y0
     }
@@ -337,24 +337,25 @@ impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2
 /// let y = biquad.process(&mut state, x);
 /// assert_eq!(x, y);
 /// ```
-impl<T: Copy + Add<Output = T> + Clamp, C> SplitProcess<T, T, DirectForm1<T>> for BiquadClamp<C, T>
+impl<T: Copy + Add<Output = T> + PartialOrd, C> SplitProcess<T, T, DirectForm1<T>>
+    for BiquadClamp<C, T>
 where
     Biquad<C>: SplitProcess<T, T, DirectForm1<T>>,
 {
     fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
-        let y0 = (self.coeff.process(state, x0) + self.u).clamp(self.min, self.max);
+        let y0 = clamp(self.coeff.process(state, x0) + self.u, self.min, self.max);
         state.xy[2] = y0; // overwrite
         y0
     }
 }
 
-impl<T: Copy + Add<Output = T> + Mul<Output = T> + Clamp>
+impl<T: Copy + Add<Output = T> + Mul<Output = T> + PartialOrd>
     SplitProcess<T, T, DirectForm2Transposed<T>> for BiquadClamp<T, T>
 {
     fn process(&self, state: &mut DirectForm2Transposed<T>, x0: T) -> T {
         let u = &mut state.u;
         let ba = &self.coeff.ba;
-        let y0 = (u[0] + ba[0] * x0 + self.u).clamp(self.min, self.max);
+        let y0 = clamp(u[0] + ba[0] * x0 + self.u, self.min, self.max);
         u[0] = u[1] + ba[1] * x0 + ba[3] * y0;
         u[1] = ba[2] * x0 + ba[4] * y0;
         y0
@@ -443,11 +444,12 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for BiquadClamp<Q<i3
 impl<C, T: Copy, S> SplitInplace<T, S> for Biquad<C> where Self: SplitProcess<T, T, S> {}
 impl<C, T: Copy, S> SplitInplace<T, S> for BiquadClamp<C, T> where Self: SplitProcess<T, T, S> {}
 
+/// `[[b0, b1, b2], [a0, a1, a2]]` coefficients with the literature sign of a1/a2
 macro_rules! impl_from_float {
     ($ty:ident) => {
-        impl<C: From<$ty>> From<[[$ty; 3]; 2]> for Biquad<C>
+        impl<C> From<[[$ty; 3]; 2]> for Biquad<C>
         where
-            Biquad<C>: From<[$ty; 5]>,
+            [$ty; 5]: Into<Biquad<C>>,
         {
             fn from(ba: [[$ty; 3]; 2]) -> Self {
                 let a0 = 1.0 / ba[1][0];
@@ -466,23 +468,28 @@ macro_rules! impl_from_float {
 impl_from_float!(f32);
 impl_from_float!(f64);
 
+/// Normalized and sign-flipped coefficients
+/// `[b0, b1, b2, a1, a2]`
+impl<C: Copy + 'static, T> From<[T; 5]> for Biquad<C>
+where
+    T: AsPrimitive<C>,
+{
+    fn from(ba: [T; 5]) -> Self {
+        Self {
+            ba: ba.map(AsPrimitive::as_),
+        }
+    }
+}
+
 impl<C, T, F> From<F> for BiquadClamp<C, T>
 where
-    Biquad<C>: From<F>,
+    F: Into<Biquad<C>>,
     Self: Default,
 {
     fn from(coeff: F) -> Self {
         Self {
             coeff: coeff.into(),
             ..Default::default()
-        }
-    }
-}
-
-impl<C: From<T>, T> From<[T; 5]> for Biquad<C> {
-    fn from(ba: [T; 5]) -> Self {
-        Self {
-            ba: ba.map(Into::into),
         }
     }
 }

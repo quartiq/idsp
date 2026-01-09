@@ -57,7 +57,7 @@ impl Tpa {
             Self::C | Self::C1 => g,
             Self::D => -1.0 - g,
         };
-        (-0.5..=0.0).contains(&a).then_some(a.into())
+        (-0.5..=0.0).contains(&a).then_some(Q32::from_f64(a))
     }
 
     #[inline]
