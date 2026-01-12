@@ -1,4 +1,8 @@
 use super::{atan2, cossin};
+use core::num::Wrapping;
+use core::ops::{Add, Mul, Sub};
+use dsp_fixedpoint::{P32, Q32, W32};
+use num_traits::AsPrimitive;
 
 /// A complex number in cartesian coordinates
 #[derive(
@@ -92,21 +96,21 @@ macro_rules! fwd_unop {
 fwd_unop!(Not::not);
 fwd_unop!(Neg::neg);
 
-impl<T: Copy + core::ops::Mul<Output = T> + core::ops::Add<Output = T> + core::ops::Sub<Output = T>>
-    core::ops::Mul for Complex<T>
+impl<T: 'static + Copy + Mul<Output = A>, A: Add<Output = A> + Sub<Output = A> + AsPrimitive<T>> Mul
+    for Complex<T>
 {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
         Self([
-            self.0[0] * rhs.0[0] - self.0[1] * rhs.0[1],
-            self.0[0] * rhs.0[1] + self.0[1] * rhs.0[0],
+            (self.0[0] * rhs.0[0] - self.0[1] * rhs.0[1]).as_(),
+            (self.0[0] * rhs.0[1] + self.0[1] * rhs.0[0]).as_(),
         ])
     }
 }
 
 impl<T> core::iter::Sum for Complex<T>
 where
-    Self: Default + core::ops::Add<Output = Self>,
+    Self: Default + Add<Output = Self>,
 {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Default::default(), |c, i| c + i)
@@ -115,57 +119,55 @@ where
 
 impl<T> core::iter::Product for Complex<T>
 where
-    Self: Default + core::ops::Mul<Output = Self>,
+    Self: Default + Mul<Output = Self>,
 {
     fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Default::default(), |c, i| c * i)
     }
 }
 
-/// Complex extension trait offering DSP (fast, good accuracy) functionality.
-pub trait ComplexExt<T, U> {
-    /// Unit magnitude from angle
-    fn from_angle(angle: T) -> Self;
-    /// Square of magnitude
-    fn norm_sqr(&self) -> U;
-    /// Log2 approximation
-    fn log2(&self) -> T;
-    /// Angle
-    fn arg(&self) -> T;
-}
-
-impl ComplexExt<i32, u32> for Complex<i32> {
+impl Complex<Q32<31>> {
     /// Return a Complex on the unit circle given an angle.
     ///
     /// Example:
     ///
     /// ```
-    /// use idsp::{Complex, ComplexExt};
-    /// Complex::<i32>::from_angle(0);
-    /// Complex::<i32>::from_angle(1 << 30); // pi/2
-    /// Complex::<i32>::from_angle(-1 << 30); // -pi/2
+    /// use core::num::Wrapping as W;
+    /// use dsp_fixedpoint::W32;
+    /// use idsp::Complex;
+    /// Complex::<_>::from_angle(W32::new(W(0)));
+    /// Complex::<_>::from_angle(W32::new(W(1 << 30))); // pi/2
+    /// Complex::<_>::from_angle(W32::new(W(-1 << 30))); // -pi/2
     /// ```
-    fn from_angle(angle: i32) -> Self {
-        let (c, s) = cossin(angle);
-        Self::new(c, s)
+    pub fn from_angle(angle: W32<32>) -> Self {
+        let (c, s) = cossin(angle.inner.0);
+        Self::new(Q32::new(c), Q32::new(s))
     }
+}
 
+impl Complex<i32> {
     /// Return the absolute square (the squared magnitude).
-    ///
-    /// Note: Normalization is `1 << 32`, i.e. U0.32.
     ///
     /// Note(panic): This will panic for `Complex(i32::MIN, i32::MIN)`
     ///
     /// Example:
     ///
     /// ```
-    /// use idsp::{Complex, ComplexExt};
-    /// assert_eq!(Complex::new(i32::MIN, 0).norm_sqr(), 1 << 31);
-    /// assert_eq!(Complex::new(i32::MAX, i32::MAX).norm_sqr(), u32::MAX - 3);
+    /// use dsp_fixedpoint::{P32, Q32};
+    /// use idsp::Complex;
+    /// assert_eq!(Complex::new(i32::MIN, 0).norm_sqr(), P32::new(1 << 31));
+    /// assert_eq!(
+    ///     Complex::new(i32::MAX, i32::MAX).norm_sqr(),
+    ///     P32::new(u32::MAX - 3)
+    /// );
+    /// assert_eq!(
+    ///     Complex::new(i32::MIN, i32::MAX).norm_sqr(),
+    ///     P32::new(u32::MAX - 1)
+    /// );
     /// ```
-    fn norm_sqr(&self) -> u32 {
+    pub fn norm_sqr(&self) -> P32<31> {
         let [x, y] = self.0.map(|x| x as i64 * x as i64);
-        ((x + y) >> 31) as _
+        P32::new(((x + y) >> 31) as _)
     }
 
     /// trunc(log2(power)) re full scale (approximation)
@@ -175,7 +177,7 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// Example:
     ///
     /// ```
-    /// use idsp::{Complex, ComplexExt};
+    /// use idsp::Complex;
     /// assert_eq!(Complex::new(i32::MIN, i32::MIN).log2(), 0);
     /// assert_eq!(Complex::new(i32::MAX, i32::MAX).log2(), -1);
     /// assert_eq!(Complex::new(i32::MIN, 0).log2(), -1);
@@ -184,7 +186,7 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// assert_eq!(Complex::new(1, 0).log2(), -63);
     /// assert_eq!(Complex::new(0, 0).log2(), -64);
     /// ```
-    fn log2(&self) -> i32 {
+    pub fn log2(&self) -> i32 {
         let [x, y] = self.0.map(|x| x as i64 * x as i64);
         -(x.wrapping_add(y).leading_zeros() as i32)
     }
@@ -196,47 +198,13 @@ impl ComplexExt<i32, u32> for Complex<i32> {
     /// Example:
     ///
     /// ```
-    /// use idsp::{Complex, ComplexExt};
-    /// assert_eq!(Complex::new(0, 0).arg(), 0);
+    /// use core::num::Wrapping as W;
+    /// use dsp_fixedpoint::W32;
+    /// use idsp::Complex;
+    /// assert_eq!(Complex::new(0, 0).arg(), W32::new(W(0)));
+    /// assert_eq!(Complex::new(0, 1).arg(), W32::new(W((1 << 30) - 1)));
     /// ```
-    fn arg(&self) -> i32 {
-        atan2(self.im(), self.re())
-    }
-}
-
-/// Full scale fixed point multiplication.
-pub trait MulScaled<T> {
-    /// Scaled multiplication for fixed point
-    fn mul_scaled(self, other: T) -> Self;
-}
-
-impl MulScaled<Complex<i32>> for Complex<i32> {
-    fn mul_scaled(self, other: Self) -> Self {
-        let a = self.re() as i64;
-        let b = self.im() as i64;
-        let c = other.re() as i64;
-        let d = other.im() as i64;
-        Complex::new(
-            ((a * c - b * d) >> 31) as i32,
-            ((b * c + a * d) >> 31) as i32,
-        )
-    }
-}
-
-impl MulScaled<i32> for Complex<i32> {
-    fn mul_scaled(self, other: i32) -> Self {
-        Complex::new(
-            ((other as i64 * self.re() as i64) >> 31) as i32,
-            ((other as i64 * self.im() as i64) >> 31) as i32,
-        )
-    }
-}
-
-impl MulScaled<i16> for Complex<i32> {
-    fn mul_scaled(self, other: i16) -> Self {
-        Complex::new(
-            (other as i32 * (self.re() >> 16) + (1 << 14)) >> 15,
-            (other as i32 * (self.im() >> 16) + (1 << 14)) >> 15,
-        )
+    pub fn arg(&self) -> W32<32> {
+        W32::new(Wrapping(atan2(self.im(), self.re())))
     }
 }

@@ -54,7 +54,7 @@ use num_traits::{AsPrimitive, clamp};
 /// The summing junction of the [`BiquadClamp`] filter also receives an offset `u`
 /// and applies clamping such that `min <= y <= max`.
 ///
-/// See [`crate::iir::Filter`] and [`crate::iir::pid::Builder`] for ways to generate coefficients.
+/// See [`crate::iir::coefficients::Filter`] and [`crate::iir::pid::Builder`] for ways to generate coefficients.
 ///
 /// # Fixed point
 ///

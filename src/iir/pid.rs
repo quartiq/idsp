@@ -128,7 +128,7 @@ impl<T: Float> Builder<T> {
 
     /// Gain limit for a given action
     ///
-    /// Gain limit units are `output/input`. See also [`pid::Builder::gain()`].
+    /// Gain limit units are `output/input`. See also [`Builder::gain()`].
     /// Multiple gains and limits may interact and lead to peaking.
     ///
     /// Note that limit signs and gain signs should match and that the

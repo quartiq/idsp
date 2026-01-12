@@ -81,9 +81,9 @@ Hardware was `thumbv7em-none-eabihf`, `cortex-m7`, code in ITCM, data in DTCM, c
 
 ## State variable and normal form filter
 
-[`svf`] is a simple IIR state variable filter simultaneously providing highpass, lowpass,
+[`iir::svf`] is a simple IIR state variable filter simultaneously providing highpass, lowpass,
 bandpass, and notch filtering of a signal.
-[`iir::Normal`] is a Normal Form IIR filter for narrowband applications.
+[`iir::normal`] is a Normal Form IIR filter for narrowband applications.
 
 ## `Lowpass`, `Lockin`
 
