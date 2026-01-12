@@ -1,3 +1,5 @@
+use core::num::Wrapping;
+use dsp_fixedpoint::{Q, W32};
 use dsp_process::SplitProcess;
 
 /// Type-II, sampled phase, discrete time PLL
@@ -38,18 +40,18 @@ use dsp_process::SplitProcess;
 #[derive(Copy, Debug, Clone, Default)]
 pub struct PLL {
     // last input phase
-    x: i32,
+    x: W32<32>,
     // last output phase
-    y0: i32,
+    y0: W32<32>,
     // last output frequency
-    f0: i32,
+    f0: W32<32>,
     // filtered frequency
-    f: i64,
+    f: Q<Wrapping<i64>, Wrapping<i32>, 32>,
     // filtered output phase
-    y: i64,
+    y: Q<Wrapping<i64>, Wrapping<i32>, 32>,
 }
 
-impl SplitProcess<Option<i32>, i32, PLL> for i32 {
+impl SplitProcess<Option<W32<32>>, W32<32>, PLL> for W32<32> {
     /// Update the PLL with a new phase sample. This needs to be called (sampled) periodically.
     /// The signal's phase/frequency is reconstructed relative to the sampling period.
     ///
@@ -58,24 +60,24 @@ impl SplitProcess<Option<i32>, i32, PLL> for i32 {
     ///
     /// Returns:
     /// A tuple of instantaneous phase and frequency estimates.
-    fn process(&self, state: &mut PLL, x: Option<i32>) -> i32 {
+    fn process(&self, state: &mut PLL, x: Option<W32<32>>) -> W32<32> {
         if let Some(x) = x {
-            let dx = x.wrapping_sub(state.x);
+            let dx = (x - state.x).inner;
             state.x = x;
-            let df = dx.wrapping_sub((state.f >> 32) as i32) as i64 * *self as i64;
-            state.f = state.f.wrapping_add(df);
-            state.y = state.y.wrapping_add(state.f);
-            state.f = state.f.wrapping_add(df);
-            let dy = x.wrapping_sub((state.y >> 32) as i32) as i64 * *self as i64;
-            state.y = state.y.wrapping_add(dy);
-            let y = (state.y >> 32) as i32;
-            state.y = state.y.wrapping_add(dy);
-            state.f0 = y.wrapping_sub(state.y0);
+            let df = *self * (dx - state.f.quantize());
+            state.f += df;
+            state.y += state.f;
+            state.f += df;
+            let dy = *self * (x.inner - state.y.quantize());
+            state.y += dy;
+            let y = W32::new(state.y.quantize());
+            state.y += dy;
+            state.f0 = y - state.y0;
             state.y0 = y;
         } else {
-            state.y = state.y.wrapping_add(state.f);
-            state.x = state.x.wrapping_add(state.f0);
-            state.y0 = state.y0.wrapping_add(state.f0);
+            state.y += state.f;
+            state.x += state.f0;
+            state.y0 += state.f0;
         }
         state.y0
     }
@@ -83,12 +85,12 @@ impl SplitProcess<Option<i32>, i32, PLL> for i32 {
 
 impl PLL {
     /// Return the current phase estimate
-    pub fn phase(&self) -> i32 {
+    pub fn phase(&self) -> W32<32> {
         self.y0
     }
 
     /// Return the current frequency estimate
-    pub fn frequency(&self) -> i32 {
+    pub fn frequency(&self) -> W32<32> {
         self.f0
     }
 }
@@ -96,29 +98,33 @@ impl PLL {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::num::Wrapping as W;
     use dsp_process::{Process, Split};
     #[test]
     fn mini() {
-        let mut p = Split::new(1 << 24, PLL::default());
-        assert_eq!(p.as_mut().process(Some(0x10000)), 0x1ff);
-        assert_eq!(p.state.frequency(), 0x1ff);
+        let mut p = Split::new(W32::new(W(1 << 24)), PLL::default());
+        assert_eq!(
+            p.as_mut().process(Some(W32::new(W(0x10000)))).inner.0,
+            0x1ff
+        );
+        assert_eq!(p.state.frequency().inner.0, 0x1ff);
     }
 
     #[test]
     fn converge() {
         let mut p = PLL::default();
-        let k = 1 << 24;
-        let f0 = 0x71f63049_i32;
+        let k = W32::new(W(1 << 24));
+        let f0 = W32::new(W(0x71f63049));
         let n = 1 << 14;
-        let mut x = 0i32;
+        let mut x = W32::new(W(0i32));
         for i in 0..n {
-            x = x.wrapping_add(f0);
+            x += f0;
             Split::new(&k, &mut p).process(Some(x));
             if i > n / 4 {
-                assert_eq!(p.frequency().wrapping_sub(f0).abs() <= 1, true);
+                assert_eq!((p.frequency() - f0).inner.0.abs() <= 1, true);
             }
             if i > n / 2 {
-                assert_eq!(p.phase().wrapping_sub(x).abs() <= 1, true);
+                assert_eq!((p.phase() - x).inner.0.abs() <= 1, true);
             }
         }
     }
