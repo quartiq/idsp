@@ -1,7 +1,5 @@
 use core::ops::{Add, AddAssign, Mul, Sub};
 
-use dsp_fixedpoint::Q;
-
 /// Accumulator
 ///
 /// Use [`core::num::Wrapping`].
@@ -36,16 +34,6 @@ where
     fn next(&mut self) -> Option<T> {
         self.state += self.step;
         Some(self.state)
-    }
-}
-
-impl<T: Copy, A, const F: i8> Accu<Q<T, A, F>>
-where
-    Q<T, A, F>: Mul<T, Output = Q<T, A, F>>,
-{
-    /// Multiply by integer
-    pub fn scale(self, rhs: T) -> Self {
-        Self::new(self.state * rhs, self.step * rhs)
     }
 }
 

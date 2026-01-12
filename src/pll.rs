@@ -1,4 +1,4 @@
-use core::num::Wrapping;
+use core::num::Wrapping as W;
 use dsp_fixedpoint::{Q, W32};
 use dsp_process::SplitProcess;
 
@@ -42,18 +42,18 @@ use crate::Accu;
 #[derive(Copy, Debug, Clone, Default)]
 pub struct PLL {
     // last input phase
-    x: W32<32>,
+    x: W<i32>,
     // last output phase
-    y0: W32<32>,
+    y0: W<i32>,
     // last output frequency
-    f0: W32<32>,
+    f0: W<i32>,
     // filtered frequency
-    f: Q<Wrapping<i64>, Wrapping<i32>, 32>,
+    f: Q<W<i64>, W<i32>, 32>,
     // filtered output phase
-    y: Q<Wrapping<i64>, Wrapping<i32>, 32>,
+    y: Q<W<i64>, W<i32>, 32>,
 }
 
-impl SplitProcess<Option<W32<32>>, Accu<W32<32>>, PLL> for W32<32> {
+impl SplitProcess<Option<W<i32>>, Accu<W<i32>>, PLL> for W32<32> {
     /// Update the PLL with a new phase sample. This needs to be called (sampled) periodically.
     /// The signal's phase/frequency is reconstructed relative to the sampling period.
     ///
@@ -62,17 +62,17 @@ impl SplitProcess<Option<W32<32>>, Accu<W32<32>>, PLL> for W32<32> {
     ///
     /// Returns:
     /// A tuple of instantaneous phase and frequency estimates.
-    fn process(&self, state: &mut PLL, x: Option<W32<32>>) -> Accu<W32<32>> {
+    fn process(&self, state: &mut PLL, x: Option<W<i32>>) -> Accu<W<i32>> {
         if let Some(x) = x {
-            let dx = (x - state.x).inner;
+            let dx = x - state.x;
             state.x = x;
             let df = *self * (dx - state.f.quantize());
             state.f += df;
             state.y += state.f;
             state.f += df;
-            let dy = *self * (x.inner - state.y.quantize());
+            let dy = *self * (x - state.y.quantize());
             state.y += dy;
-            let y = W32::new(state.y.quantize());
+            let y = state.y.quantize();
             state.y += dy;
             state.f0 = y - state.y0;
             state.y0 = y;
@@ -87,12 +87,12 @@ impl SplitProcess<Option<W32<32>>, Accu<W32<32>>, PLL> for W32<32> {
 
 impl PLL {
     /// Return the current phase estimate
-    pub fn phase(&self) -> W32<32> {
+    pub fn phase(&self) -> W<i32> {
         self.y0
     }
 
     /// Return the current frequency estimate
-    pub fn frequency(&self) -> W32<32> {
+    pub fn frequency(&self) -> W<i32> {
         self.f0
     }
 }
@@ -105,26 +105,26 @@ mod tests {
     #[test]
     fn mini() {
         let mut p = Split::new(W32::new(W(1 << 24)), PLL::default());
-        let a = p.as_mut().process(Some(W32::new(W(0x10000))));
-        assert_eq!(a.state.inner.0, 0x1ff);
-        assert_eq!(a.step.inner.0, 0x1ff);
+        let a = p.as_mut().process(Some(W(0x10000)));
+        assert_eq!(a.state.0, 0x1ff);
+        assert_eq!(a.step.0, 0x1ff);
     }
 
     #[test]
     fn converge() {
         let mut p = PLL::default();
         let k = W32::new(W(1 << 24));
-        let f0 = W32::new(W(0x71f63049));
+        let f0 = W(0x71f63049);
         let n = 1 << 14;
-        let mut x = W32::new(W(0i32));
+        let mut x = W(0i32);
         for i in 0..n {
             x += f0;
             let a = Split::new(&k, &mut p).process(Some(x));
             if i > n / 4 {
-                assert_eq!((a.step - f0).inner.0.abs() <= 1, true);
+                assert_eq!((a.step - f0).0.abs() <= 1, true);
             }
             if i > n / 2 {
-                assert_eq!((a.state - x).inner.0.abs() <= 1, true);
+                assert_eq!((a.state - x).0.abs() <= 1, true);
             }
         }
     }
