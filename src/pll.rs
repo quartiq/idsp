@@ -2,6 +2,8 @@ use core::num::Wrapping;
 use dsp_fixedpoint::{Q, W32};
 use dsp_process::SplitProcess;
 
+use crate::Accu;
+
 /// Type-II, sampled phase, discrete time PLL
 ///
 /// This PLL tracks the frequency and phase of an input signal with respect to the sampling clock.
@@ -51,7 +53,7 @@ pub struct PLL {
     y: Q<Wrapping<i64>, Wrapping<i32>, 32>,
 }
 
-impl SplitProcess<Option<W32<32>>, W32<32>, PLL> for W32<32> {
+impl SplitProcess<Option<W32<32>>, Accu<W32<32>>, PLL> for W32<32> {
     /// Update the PLL with a new phase sample. This needs to be called (sampled) periodically.
     /// The signal's phase/frequency is reconstructed relative to the sampling period.
     ///
@@ -60,7 +62,7 @@ impl SplitProcess<Option<W32<32>>, W32<32>, PLL> for W32<32> {
     ///
     /// Returns:
     /// A tuple of instantaneous phase and frequency estimates.
-    fn process(&self, state: &mut PLL, x: Option<W32<32>>) -> W32<32> {
+    fn process(&self, state: &mut PLL, x: Option<W32<32>>) -> Accu<W32<32>> {
         if let Some(x) = x {
             let dx = (x - state.x).inner;
             state.x = x;
@@ -79,7 +81,7 @@ impl SplitProcess<Option<W32<32>>, W32<32>, PLL> for W32<32> {
             state.x += state.f0;
             state.y0 += state.f0;
         }
-        state.y0
+        Accu::new(state.y0, state.f0)
     }
 }
 
@@ -103,11 +105,9 @@ mod tests {
     #[test]
     fn mini() {
         let mut p = Split::new(W32::new(W(1 << 24)), PLL::default());
-        assert_eq!(
-            p.as_mut().process(Some(W32::new(W(0x10000)))).inner.0,
-            0x1ff
-        );
-        assert_eq!(p.state.frequency().inner.0, 0x1ff);
+        let a = p.as_mut().process(Some(W32::new(W(0x10000))));
+        assert_eq!(a.state.inner.0, 0x1ff);
+        assert_eq!(a.step.inner.0, 0x1ff);
     }
 
     #[test]
@@ -119,12 +119,12 @@ mod tests {
         let mut x = W32::new(W(0i32));
         for i in 0..n {
             x += f0;
-            Split::new(&k, &mut p).process(Some(x));
+            let a = Split::new(&k, &mut p).process(Some(x));
             if i > n / 4 {
-                assert_eq!((p.frequency() - f0).inner.0.abs() <= 1, true);
+                assert_eq!((a.step - f0).inner.0.abs() <= 1, true);
             }
             if i > n / 2 {
-                assert_eq!((p.phase() - x).inner.0.abs() <= 1, true);
+                assert_eq!((a.state - x).inner.0.abs() <= 1, true);
             }
         }
     }
