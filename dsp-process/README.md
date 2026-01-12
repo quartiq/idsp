@@ -2,7 +2,7 @@
 
 ## Traits
 
-The major traits are `Process`/`SplitProcess`/`Inplace`/`SplitInplace`.
+The major traits are [`Process`]/[`SplitProcess`]/[`Inplace`]/[`SplitInplace`].
 
 ## Composition
 

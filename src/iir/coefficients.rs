@@ -1,3 +1,4 @@
+//! Standard biquad filter coefficients
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
@@ -203,7 +204,7 @@ where
     /// use dsp_fixedpoint::Q32;
     /// use dsp_process::SplitInplace;
     /// use idsp::iir::*;
-    /// let iir: Biquad<Q32<30>> = Filter::default()
+    /// let iir: Biquad<Q32<30>> = coefficients::Filter::default()
     ///     .critical_frequency(0.1)
     ///     .gain(1000.0)
     ///     .lowpass()
@@ -229,7 +230,7 @@ where
     /// use dsp_fixedpoint::Q32;
     /// use dsp_process::SplitInplace;
     /// use idsp::iir::*;
-    /// let iir: Biquad<Q32<30>> = Filter::default()
+    /// let iir: Biquad<Q32<30>> = coefficients::Filter::default()
     ///     .critical_frequency(0.1)
     ///     .gain(1000.0)
     ///     .highpass()
@@ -251,7 +252,7 @@ where
     ///
     /// ```
     /// use idsp::iir::*;
-    /// let ba = Filter::default()
+    /// let ba = coefficients::Filter::default()
     ///     .frequency(1000.0, 48e3)
     ///     .q(5.0)
     ///     .gain_db(3.0)
@@ -318,7 +319,7 @@ where
     ///
     /// ```
     /// use idsp::iir::*;
-    /// let ba = Filter::default()
+    /// let ba = coefficients::Filter::default()
     ///     .frequency(1000.0, 48e3)
     ///     .shelf_slope(2.0)
     ///     .shelf_db(20.0)

@@ -23,7 +23,6 @@ mod dsm;
 pub use dsm::*;
 pub mod hbf;
 pub mod iir;
-pub mod svf;
 mod sweptsine;
 pub use sweptsine::*;
 mod cic;

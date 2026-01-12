@@ -1,14 +1,11 @@
 //! IIR filters, coefficients and applications
 
-mod coefficients;
-pub use coefficients::*;
-mod pid;
-pub use pid::*;
-mod repr;
-pub use repr::*;
 mod biquad;
 pub use biquad::*;
-mod normal;
-pub use normal::*;
-mod wdf;
-pub use wdf::*;
+
+pub mod coefficients;
+pub mod normal;
+pub mod pid;
+pub mod repr;
+pub mod svf;
+pub mod wdf;

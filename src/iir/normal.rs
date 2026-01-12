@@ -1,3 +1,5 @@
+//! Normal form second order section
+
 use core::ops::{Add, Mul, Neg};
 use dsp_process::{SplitInplace, SplitProcess};
 

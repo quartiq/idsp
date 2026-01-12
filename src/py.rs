@@ -112,7 +112,7 @@ mod _idsp {
     /// Gazsi 1985, Example 5
     #[pyfunction]
     fn wdf<'py>(mut xy: PyReadwriteArray1<'py, i32>) -> PyResult<()> {
-        use crate::iir::Wdf;
+        use crate::iir::wdf::Wdf;
 
         // With constant coefficients and fixed block size 4, already with O2, this
         // is fully unrolled and inlined on e.g. thubv7em-none-eabi and about 36 insns per sample,

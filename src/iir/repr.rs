@@ -1,9 +1,11 @@
+//! Dynamic representation IIR filter builder
+
 use core::any::Any;
 use miniconf::Tree;
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::iir::{BiquadClamp, Pid, Shape};
+use crate::iir::{BiquadClamp, coefficients::Shape, pid::Pid};
 
 /// Floating point BA coefficients before quantization
 #[derive(Debug, Clone, Tree)]
@@ -106,7 +108,7 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
 /// struct Foo {
 ///     #[tree(typ="&str", with=str_leaf, defer=self.repr)]
 ///     typ: (),
-///     repr: idsp::iir::BiquadRepr<f32>,
+///     repr: idsp::iir::repr::BiquadRepr<f32>,
 /// }
 /// ```
 #[derive(
@@ -195,7 +197,7 @@ where
                 pid.into()
             }
             Self::Filter(filter) => {
-                let mut f = crate::iir::Filter::default();
+                let mut f = crate::iir::coefficients::Filter::default();
                 f.gain_db(filter.gain);
                 f.critical_frequency(filter.frequency * period);
                 f.shelf_db(filter.shelf);

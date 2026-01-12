@@ -5,10 +5,10 @@ mod process;
 pub use process::*;
 mod basic;
 pub use basic::*;
-mod split;
-pub use split::*;
 mod adapters;
 pub use adapters::*;
+mod split;
+pub use split::*;
 mod compose;
 pub use compose::*;
 
@@ -18,7 +18,7 @@ pub use compose::*;
 /// or polyphase interpolator.
 /// Candidates for the branches are allpasses like Wdf or Ldi, polyphase banks for resampling or Hilbert filters.
 ///
-/// Potentially required scaling with 0.5 gain is to be performed ahead of the filter or within each branch.
+/// Potentially required scaling with 0.5 gain is to be performed ahead of the filter, within each branch, or (with headroom) afterwards.
 ///
 /// This uses the default configuration-minor/sample-major implementation
 /// and may lead to suboptimal cashing and register thrashing for large branches.
