@@ -1,5 +1,6 @@
 use super::Complex;
-use dsp_fixedpoint::{Q32, W32};
+use core::num::Wrapping;
+use dsp_fixedpoint::Q32;
 use dsp_process::SplitProcess;
 
 /// Lockin filter
@@ -25,11 +26,11 @@ impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<(i32, Complex<Q32<31>>), Comp
 }
 
 /// Sample and phase
-impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<(i32, W32<32>), Complex<i32>, [S; 2]>
+impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<(i32, Wrapping<i32>), Complex<i32>, [S; 2]>
     for Lockin<C>
 {
     /// Update the lockin with a sample taken at a given phase.
-    fn process(&self, state: &mut [S; 2], x: (i32, W32<32>)) -> Complex<i32> {
+    fn process(&self, state: &mut [S; 2], x: (i32, Wrapping<i32>)) -> Complex<i32> {
         // Get the LO signal for demodulation and mix the sample;
         self.process(state, (x.0, Complex::from_angle(x.1)))
     }

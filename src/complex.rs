@@ -1,7 +1,7 @@
 use super::{atan2, cossin};
 use core::num::Wrapping;
 use core::ops::{Add, Mul, Sub};
-use dsp_fixedpoint::{P32, Q32, W32};
+use dsp_fixedpoint::{P32, Q32};
 use num_traits::AsPrimitive;
 
 /// A complex number in cartesian coordinates
@@ -133,14 +133,13 @@ impl Complex<Q32<31>> {
     ///
     /// ```
     /// use core::num::Wrapping as W;
-    /// use dsp_fixedpoint::W32;
     /// use idsp::Complex;
-    /// Complex::<_>::from_angle(W32::new(W(0)));
-    /// Complex::<_>::from_angle(W32::new(W(1 << 30))); // pi/2
-    /// Complex::<_>::from_angle(W32::new(W(-1 << 30))); // -pi/2
+    /// Complex::<_>::from_angle(W(0));
+    /// Complex::<_>::from_angle(W(1 << 30)); // pi/2
+    /// Complex::<_>::from_angle(W(-1 << 30)); // -pi/2
     /// ```
-    pub fn from_angle(angle: W32<32>) -> Self {
-        let (c, s) = cossin(angle.inner.0);
+    pub fn from_angle(angle: Wrapping<i32>) -> Self {
+        let (c, s) = cossin(angle.0);
         Self::new(Q32::new(c), Q32::new(s))
     }
 }
@@ -199,12 +198,11 @@ impl Complex<i32> {
     ///
     /// ```
     /// use core::num::Wrapping as W;
-    /// use dsp_fixedpoint::W32;
     /// use idsp::Complex;
-    /// assert_eq!(Complex::new(0, 0).arg(), W32::new(W(0)));
-    /// assert_eq!(Complex::new(0, 1).arg(), W32::new(W((1 << 30) - 1)));
+    /// assert_eq!(Complex::new(0, 0).arg(), W(0));
+    /// assert_eq!(Complex::new(0, 1).arg(), W((1 << 30) - 1));
     /// ```
-    pub fn arg(&self) -> W32<32> {
-        W32::new(Wrapping(atan2(self.im(), self.re())))
+    pub fn arg(&self) -> Wrapping<i32> {
+        Wrapping(atan2(self.im(), self.re()))
     }
 }
