@@ -1,4 +1,4 @@
-use core::ops::AddAssign;
+use core::ops::{Add, AddAssign, Mul, Sub};
 
 /// Accumulator
 ///
@@ -34,5 +34,29 @@ where
     fn next(&mut self) -> Option<T> {
         self.state += self.step;
         Some(self.state)
+    }
+}
+
+impl<T: Copy + Mul<Output = T>> Mul<T> for Accu<T> {
+    type Output = Self;
+
+    fn mul(self, rhs: T) -> Self::Output {
+        Self::new(self.state * rhs, self.step * rhs)
+    }
+}
+
+impl<T: Copy + Add<Output = T>> Add for Accu<T> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.state + rhs.state, self.step + rhs.step)
+    }
+}
+
+impl<T: Copy + Sub<Output = T>> Sub for Accu<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(self.state - rhs.state, self.step - rhs.step)
     }
 }
