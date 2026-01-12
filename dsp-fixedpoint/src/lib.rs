@@ -95,7 +95,7 @@ pub trait Accu<A> {
 /// assert_eq!(7 * Q8::<4>::from_f32(1.5), 10);
 /// assert_eq!(7 / Q8::<4>::from_f32(1.5), 4);
 /// ```
-#[derive(Default, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Eq, Ord, serde::Serialize, serde::Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct Q<T, A, const F: i8> {
@@ -116,6 +116,20 @@ impl<T: Clone, A, const F: i8> Clone for Q<T, A, F> {
 }
 
 impl<T: Copy, A, const F: i8> Copy for Q<T, A, F> {}
+
+impl<T: PartialEq, A, const F: i8> PartialEq for Q<T, A, F> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.eq(&other.inner)
+    }
+}
+
+impl<T: PartialOrd, A, const F: i8> PartialOrd for Q<T, A, F> {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.inner.partial_cmp(&other.inner)
+    }
+}
 
 impl<T: One + Shift, A, const F: i8> One for Q<T, A, F>
 where

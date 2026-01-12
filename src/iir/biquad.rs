@@ -1,4 +1,4 @@
-use crate::Const;
+use crate::Clamp;
 use core::ops::{Add, Div, Mul};
 use dsp_fixedpoint::Q;
 use dsp_process::{SplitInplace, SplitProcess};
@@ -145,7 +145,7 @@ pub struct BiquadClamp<C, T = C> {
     pub max: T,
 }
 
-impl<C, T: Const> Default for BiquadClamp<C, T>
+impl<C, T: Clamp> Default for BiquadClamp<C, T>
 where
     Biquad<C>: Default,
 {
@@ -159,7 +159,7 @@ where
     }
 }
 
-impl<C: Const + Copy> Biquad<C> {
+impl<C: Clamp + Copy> Biquad<C> {
     /// A unity gain filter
     ///
     /// ```

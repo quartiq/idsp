@@ -1,16 +1,16 @@
 use dsp_fixedpoint::{Q, Shift};
-use num_traits::{ConstOne, ConstZero};
+use num_traits::{ConstOne, ConstZero, clamp};
 
 /// Constants
-pub trait Const: ConstOne + ConstZero {
+pub trait Clamp: ConstOne + ConstZero + PartialOrd {
     /// Lowest value
     ///
     /// Negative infinity for floating point values.
     ///
     /// ```
-    /// # use idsp::Const;
-    /// assert_eq!(<i8 as Const>::MIN, -128);
-    /// assert_eq!(<f32 as Const>::MIN, f32::NEG_INFINITY);
+    /// # use idsp::Clamp;
+    /// assert_eq!(<i8 as Clamp>::MIN, -128);
+    /// assert_eq!(<f32 as Clamp>::MIN, f32::NEG_INFINITY);
     /// ```
     const MIN: Self;
 
@@ -19,15 +19,20 @@ pub trait Const: ConstOne + ConstZero {
     /// Positive infinity for floating point values.
     ///
     /// ```
-    /// # use idsp::Const;
-    /// assert_eq!(<i8 as Const>::MAX, 127);
+    /// # use idsp::Clamp;
+    /// assert_eq!(<i8 as Clamp>::MAX, 127);
     /// ```
     const MAX: Self;
+
+    /// Clamp
+    fn clamp(self, min: Self, max: Self) -> Self {
+        clamp(self, min, max)
+    }
 }
 
 macro_rules! impl_const_float {
     ($ty:ident) => {
-        impl Const for $ty {
+        impl Clamp for $ty {
             const MIN: Self = <$ty>::NEG_INFINITY;
             const MAX: Self = <$ty>::INFINITY;
         }
@@ -36,7 +41,7 @@ macro_rules! impl_const_float {
 impl_const_float!(f32);
 impl_const_float!(f64);
 
-impl<T: Const + Shift + Copy, A, const F: i8> Const for Q<T, A, F>
+impl<T: Clamp + Shift + Copy + PartialOrd, A, const F: i8> Clamp for Q<T, A, F>
 where
     Self: ConstOne,
 {
@@ -44,7 +49,7 @@ where
     ///
     /// ```
     /// # use dsp_fixedpoint::Q8;
-    /// # use idsp::Const;
+    /// # use idsp::Clamp;
     /// # use num_traits::AsPrimitive;
     /// assert_eq!(Q8::<4>::MIN, (-16f32).as_());
     /// ```
@@ -54,7 +59,7 @@ where
     ///
     /// ```
     /// # use dsp_fixedpoint::Q8;
-    /// # use idsp::Const;
+    /// # use idsp::Clamp;
     /// # use num_traits::AsPrimitive;
     /// assert_eq!(Q8::<4>::MAX, (16.0f32 - 1.0 / 16.0).as_());
     /// ```
@@ -63,7 +68,7 @@ where
 
 macro_rules! impl_foreign {
     ($($ty:ident),*) => {$(
-        impl Const for $ty {
+        impl Clamp for $ty {
             const MIN: Self = <$ty>::MIN;
             const MAX: Self = <$ty>::MAX;
         }

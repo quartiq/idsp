@@ -161,14 +161,14 @@ impl core::ops::AddAssign for Wrap {
 /// Clamps output to the value range on wraps and only un-clamps on
 /// (one corresponding) un-wrap.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct Clamp<Q> {
+pub struct ClampWrap<Q> {
     /// Last input value
     pub x0: Q,
     /// Clamp indicator
     pub clamp: Wrap,
 }
 
-impl<Q> Process<Q> for Clamp<Q>
+impl<Q> Process<Q> for ClampWrap<Q>
 where
     Q: 'static + Zero + PartialOrd + WrappingSub + Copy + Bounded,
 {
@@ -191,7 +191,7 @@ where
     }
 }
 
-impl<Q: Copy> Inplace<Q> for Clamp<Q> where Self: Process<Q> {}
+impl<Q: Copy> Inplace<Q> for ClampWrap<Q> where Self: Process<Q> {}
 
 #[cfg(test)]
 mod tests {
