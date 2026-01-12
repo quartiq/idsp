@@ -1,5 +1,7 @@
 use core::ops::{Add, AddAssign, Mul, Sub};
 
+use dsp_fixedpoint::Q;
+
 /// Accumulator
 ///
 /// Use [`core::num::Wrapping`].
@@ -37,10 +39,24 @@ where
     }
 }
 
-impl<T: Copy + Mul<Output = T>> Mul<T> for Accu<T> {
+impl<T: Copy, A, const F: i8> Mul<T> for Accu<Q<T, A, F>>
+where
+    Q<T, A, F>: Mul<T, Output = Q<T, A, F>>,
+{
     type Output = Self;
 
     fn mul(self, rhs: T) -> Self::Output {
+        Self::new(self.state * rhs, self.step * rhs)
+    }
+}
+
+impl<T: Copy, A, const F: i8> Mul<Q<T, A, F>> for Accu<Q<T, A, F>>
+where
+    Q<T, A, F>: Mul<Output = Q<T, A, F>>,
+{
+    type Output = Self;
+
+    fn mul(self, rhs: Q<T, A, F>) -> Self::Output {
         Self::new(self.state * rhs, self.step * rhs)
     }
 }
