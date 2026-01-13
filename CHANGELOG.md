@@ -9,17 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* All filters: ported to `dsp-process`.
+* All filters (`CIC`, `Cordic`, `Lockin`, `Unwrap`, `Lowpass`, `DSM`, `Svf` etc) port to `dsp-process`
+* `iir`: `Biquad` family or reworked biquad/sos implementations
+* `hbf`: Support all linear-phase FIR filters, redesign HBF cascades
+* `PLL`, `RPLL`, `Accu`: use `core::num::Wrapping`
 
 ### Added
 
 * `dsp-process`: new design and extracted as independent crate
 * `dsp-fixedpoint`: new design and extracted as independent crate
-* `iir`: `Sos` family or reworked biquad/sos implementations
 * `iir`: `Normal` form implementation
-* `Clamp`: signle wrap phase monotonizer
 * `iir`: `Wdf` Wave digital filter, two port adapter and tooling
+* `ClampWrap`: single wrap phase monotonizer
 * `idsp`: Python package for testing and evaluation
+* Custom `Complex` type enforcing the `R²` structure and meshing with `dsp-fixedpoint`
+* `iir`: Biquad with any combination of Simple/Clamp action on DF1, DF2T, DF1 Dither, DF1 Wide state
+* `iir`: Biquad `a1` and `a2` flip sign
+
+### Removed
+
+* `MulScaled`
 
 ## [0.19.0](https://github.com/quartiq/idsp/compare/v0.18.0..v0.19.0) - 2025-10-22
 
