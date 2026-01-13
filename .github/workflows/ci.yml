@@ -12,68 +12,35 @@ jobs:
   style:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: cargo fmt --check
-        uses: actions-rs/cargo@v1
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          command: fmt
-          args: --all -- --check
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --verbose
+          components: clippy, rustfmt
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-features
 
   compile:
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.toolchain == 'nightly' }}
     strategy:
       matrix:
         toolchain: [stable, beta, nightly]
-        features: ['']
+        features: ["std"]
+    continue-on-error: ${{ matrix.toolchain == 'nightly' }}
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-      - uses: Swatinem/rust-cache@v1
-      - name: cargo build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --features "${{ matrix.features }}"
-      - name: cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-      - name: cargo bench
-        uses: actions-rs/cargo@v1
-        with:
-          command: bench
+      - run: cargo check --features "${{ matrix.features }}"
+      - run: cargo test --features "${{ matrix.features }}"
+      - run: cargo bench --features "${{ matrix.features }}"
+      - run: cargo build --release --features "${{ matrix.features }}"
 
   doc:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@v1
-      - uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: |
-            cargo-deadlinks
-      - name: cargo doc
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --no-deps
-      - name: cargo deadlinks
-        uses: actions-rs/cargo@v1
-        with:
-          command: deadlinks
-          args: --ignore-fragments --check-intra-doc-links
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo doc --no-deps
+      - run: cargo install cargo-deadlinks
+      - run: cargo deadlinks --ignore-fragments --check-intra-doc-links
