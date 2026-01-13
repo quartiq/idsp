@@ -20,13 +20,12 @@ fn atani(x: u32) -> u32 {
         0x43b34c81,
         -0x3bc823dd,
     ];
-    let x = x as i64;
-    let x2 = ((x * x) >> 32) as i32 as i64;
+    let x2 = ((x as i64 * x as i64) >> 32) as i32;
     let r = A
         .iter()
         .rev()
-        .fold(0, |r, a| ((r as i64 * x2) >> 32) as i32 + a);
-    ((r as i64 * x) >> 28) as _
+        .fold(0, |r, a| ((r as i64 * x2 as i64) >> 32) as i32 + a);
+    ((r as i64 * x as i64) >> 28) as _
 }
 
 /// 2-argument arctangent function.

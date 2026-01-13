@@ -31,7 +31,7 @@ pub fn allclose<T: Float>(a: &[T], b: &[T], rtol: T, atol: T) -> bool {
 
 /// Return whether both real and imaginary component are close
 pub fn complex_isclose<T: Float>(a: Complex<T>, b: Complex<T>, rtol: T, atol: T) -> bool {
-    isclose(a.re, b.re, rtol, atol) && isclose(a.im, b.im, rtol, atol)
+    isclose(a.re(), b.re(), rtol, atol) && isclose(a.im(), b.im(), rtol, atol)
 }
 
 /// Return whether all complex values are close

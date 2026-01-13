@@ -1,0 +1,17 @@
+[package]
+name = "dsp-fixedpoint"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+std = []
+
+[dependencies]
+num-traits.workspace = true
+serde = { version = "1.0.228", default-features = false, features = ["derive"] }
+
+[lints]
+workspace = true

@@ -1,3 +1,4 @@
+//! Standard biquad filter coefficients
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
@@ -23,16 +24,16 @@ impl<T: Float + FloatConst> Default for Shape<T> {
 /// <https://www.w3.org/TR/audio-eq-cookbook/>
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Filter<T> {
-    /// Angular critical frequency (in units of sampling angular frequency)
-    /// Corner frequency, or 3dB cutoff frequency,
-    frequency: T,
+    /// Angular critical frequency (in units of sampling frequency),
+    /// Corner frequency, or 3dB cutoff frequency. `frequency=π` is Nyquist.
+    pub frequency: T,
     /// Passband gain
-    gain: T,
+    pub gain: T,
     /// Shelf gain (only for peaking, lowshelf, highshelf)
     /// Relative to passband gain
-    shelf: T,
+    pub shelf: T,
     /// Transition/corner shape
-    shape: Shape<T>,
+    pub shape: Shape<T>,
 }
 
 impl<T: Float + FloatConst> Default for Filter<T> {
@@ -122,7 +123,7 @@ where
     /// Set inverse Q parameter of the filter
     ///
     /// The inverse "steepness"/"narrowness" of the filter transition.
-    /// Defaults `sqrt(2)` which is as steep as possible without overshoot.
+    /// Defaults `sqrt(2)` which is as steep as possible without ripple.
     ///
     /// # Arguments
     /// * `qi`: Inverse Q parameter.
@@ -133,7 +134,7 @@ where
     /// Set Q parameter of the filter
     ///
     /// The "steepness"/"narrowness" of the filter transition.
-    /// Defaults `1/sqrt(2)` which is as steep as possible without overshoot.
+    /// Defaults `1/sqrt(2)` which is as steep as possible without ripple.
     ///
     /// This affects the same parameter as `bandwidth()` and `shelf_slope()`.
     /// Use only one of them.
@@ -200,16 +201,17 @@ where
     /// Builds second order biquad low pass filter coefficients.
     ///
     /// ```
+    /// use dsp_fixedpoint::Q32;
+    /// use dsp_process::SplitInplace;
     /// use idsp::iir::*;
-    /// let ba = Filter::default()
+    /// let iir: Biquad<Q32<30>> = coefficients::Filter::default()
     ///     .critical_frequency(0.1)
     ///     .gain(1000.0)
-    ///     .lowpass();
-    /// let iir = Biquad::<i32>::from(&ba);
-    /// let mut xy = [0; 4];
-    /// let x = vec![3, -4, 5, 7, -3, 2];
-    /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
-    /// assert_eq!(y, [5, 3, 9, 25, 42, 49]);
+    ///     .lowpass()
+    ///     .into();
+    /// let mut xy = vec![3, -4, 5, 7, -3, 2];
+    /// iir.inplace(&mut DirectForm1::default(), &mut xy);
+    /// assert_eq!(xy, [5, 3, 9, 25, 42, 49]);
     /// ```
     pub fn lowpass(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
@@ -225,16 +227,17 @@ where
     /// Builds second order biquad high pass filter coefficients.
     ///
     /// ```
+    /// use dsp_fixedpoint::Q32;
+    /// use dsp_process::SplitInplace;
     /// use idsp::iir::*;
-    /// let ba = Filter::default()
+    /// let iir: Biquad<Q32<30>> = coefficients::Filter::default()
     ///     .critical_frequency(0.1)
     ///     .gain(1000.0)
-    ///     .highpass();
-    /// let iir = Biquad::<i32>::from(&ba);
-    /// let mut xy = [0; 4];
-    /// let x = vec![3, -4, 5, 7, -3, 2];
-    /// let y: Vec<_> = x.iter().map(|x0| iir.update(&mut xy, *x0)).collect();
-    /// assert_eq!(y, [5, -9, 11, 12, -1, 17]);
+    ///     .highpass()
+    ///     .into();
+    /// let mut xy = vec![3, -4, 5, 7, -3, 2];
+    /// iir.inplace(&mut DirectForm1::default(), &mut xy);
+    /// assert_eq!(xy, [5, -9, 11, 12, -1, 17]);
     /// ```
     pub fn highpass(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
@@ -249,7 +252,7 @@ where
     ///
     /// ```
     /// use idsp::iir::*;
-    /// let ba = Filter::default()
+    /// let ba = coefficients::Filter::default()
     ///     .frequency(1000.0, 48e3)
     ///     .q(5.0)
     ///     .gain_db(3.0)
@@ -279,7 +282,7 @@ where
 
     /// An allpass filter
     ///
-    /// Has constant `gain` at all frequency but a variable phase shift.
+    /// Has constant `gain` at all frequencies but a variable phase shift.
     pub fn allpass(&self) -> [[T; 3]; 2] {
         let (fcos, alpha) = self.fcos_alpha();
         let f2 = (-2.0).as_() * fcos;
@@ -316,7 +319,7 @@ where
     ///
     /// ```
     /// use idsp::iir::*;
-    /// let ba = Filter::default()
+    /// let ba = coefficients::Filter::default()
     ///     .frequency(1000.0, 48e3)
     ///     .shelf_slope(2.0)
     ///     .shelf_db(20.0)
@@ -395,27 +398,27 @@ where
 mod test {
     use super::*;
 
-    use core::f64;
+    use dsp_fixedpoint::Q32;
+    use dsp_process::SplitProcess;
     use num_complex::Complex64;
 
-    use crate::iir::*;
+    use crate::iir::{Biquad, DirectForm1Dither};
 
     #[test]
     #[ignore]
     fn lowpass_noise_shaping() {
-        let ba = Biquad::<i32>::from(
-            &Filter::default()
-                .critical_frequency(1e-5f64)
-                .gain(1e3)
-                .lowpass(),
-        );
+        let ba: Biquad<Q32<29>> = Filter::default()
+            .critical_frequency(1e-5f64)
+            .gain(1e3)
+            .lowpass()
+            .into();
         println!("{:?}", ba);
-        let mut xy = [0; 5];
+        let mut xy = DirectForm1Dither::default();
         for _ in 0..(1 << 24) {
-            ba.update(&mut xy, 1);
+            ba.process(&mut xy, 1);
         }
         for _ in 0..10 {
-            ba.update(&mut xy, 1);
+            ba.process(&mut xy, 1);
             println!("{xy:?}");
         }
     }
@@ -430,7 +433,7 @@ mod test {
     }
 
     fn freqz(b: &[f64], a: &[f64], f: f64) -> Complex64 {
-        let z = Complex64::new(0.0, -f64::consts::TAU * f).exp();
+        let z = Complex64::new(0.0, -core::f64::consts::TAU * f).exp();
         polyval(b, z) / polyval(a, z)
     }
 
@@ -466,7 +469,8 @@ mod test {
         }
 
         // Quantize and back
-        let bai = (&Biquad::<i32>::from(ba)).into();
+        let bai: [f64; _] = Biquad::<Q32<30>>::from(*ba).ba.map(|c| c.as_());
+        let bai = [[bai[0], bai[1], bai[2]], [1.0, -bai[3], -bai[4]]];
         println!("{bai:?}");
 
         for (f, g) in fg {

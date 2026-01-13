@@ -1,19 +1,18 @@
+//! Dynamic representation IIR filter builder
+
 use core::any::Any;
 use miniconf::Tree;
 use num_traits::{AsPrimitive, Float, FloatConst};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::{
-    Coefficient,
-    iir::{Biquad, Pid, Shape},
-};
+use crate::iir::{BiquadClamp, coefficients::Shape, pid::Pid};
 
 /// Floating point BA coefficients before quantization
 #[derive(Debug, Clone, Tree)]
 #[tree(meta(doc, typename))]
 pub struct Ba<T> {
     /// Coefficient array: [[b0, b1, b2], [a0, a1, a2]]
-    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: Deserialize<'de>", any="T: Any"))]
+    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: DeserializeOwned", any="T: Any"))]
     pub ba: [[T; 3]; 2],
     /// Summing junction offset
     pub u: T,
@@ -64,24 +63,24 @@ pub enum Typ {
 pub struct FilterRepr<T> {
     /// Filter style
     #[tree(with=miniconf::leaf)]
-    typ: Typ,
+    pub typ: Typ,
     /// Angular critical frequency (in units of sampling frequency)
     /// Corner frequency, or 3dB cutoff frequency,
-    frequency: T,
+    pub frequency: T,
     /// Passband gain
-    gain: T,
+    pub gain: T,
     /// Shelf gain (only for peaking, lowshelf, highshelf)
     /// Relative to passband gain
-    shelf: T,
+    pub shelf: T,
     /// Q/Bandwidth/Slope
-    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: Deserialize<'de>", any="T: Any"))]
-    shape: Shape<T>,
+    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: DeserializeOwned", any="T: Any"))]
+    pub shape: Shape<T>,
     /// Summing junction offset
-    offset: T,
+    pub offset: T,
     /// Lower output limit
-    min: T,
+    pub min: T,
     /// Upper output limit
-    max: T,
+    pub max: T,
 }
 
 impl<T: Float + FloatConst> Default for FilterRepr<T> {
@@ -109,32 +108,36 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
 /// struct Foo {
 ///     #[tree(typ="&str", with=str_leaf, defer=self.repr)]
 ///     typ: (),
-///     repr: idsp::iir::BiquadRepr<f32, f32>,
+///     repr: idsp::iir::repr::BiquadRepr<f32>,
 /// }
 /// ```
 #[derive(
     Debug,
     Clone,
     Tree,
-    strum::EnumString,
     strum::AsRefStr,
-    strum::FromRepr,
+    strum::EnumString,
     strum::EnumDiscriminants,
     strum::IntoStaticStr,
 )]
 #[strum_discriminants(derive(serde::Serialize, serde::Deserialize), allow(missing_docs))]
-#[tree(meta(doc = "Representation of Biquad", typename))]
-pub enum BiquadRepr<T, C>
+#[tree(meta(doc = "Representation of a biquad", typename))]
+pub enum BiquadRepr<T, C = T, Y = T>
 where
-    C: Coefficient,
-    T: Float + FloatConst,
+    Ba<T>: Default,
+    Pid<T>: Default,
+    BiquadClamp<C, Y>: Default,
+    FilterRepr<T>: Default,
 {
     /// Normalized SI unit coefficients
     Ba(Ba<T>),
     /// Raw, unscaled, possibly fixed point machine unit coefficients
     Raw(
-        #[tree(with=miniconf::leaf, bounds(serialize="C: Serialize", deserialize="C: Deserialize<'de>", any="C: Any"))]
-         Biquad<C>,
+        #[tree(with=miniconf::leaf, bounds(
+            serialize="C: Serialize, Y: Serialize",
+            deserialize="C: DeserializeOwned, Y: DeserializeOwned",
+            any="C: Any, Y: Any"))]
+        BiquadClamp<C, Y>,
     ),
     /// A PID
     Pid(Pid<T>),
@@ -142,20 +145,26 @@ where
     Filter(FilterRepr<T>),
 }
 
-impl<T, C> Default for BiquadRepr<T, C>
+impl<T, C, Y> Default for BiquadRepr<T, C, Y>
 where
-    C: Coefficient,
-    T: Float + FloatConst,
+    Ba<T>: Default,
+    Pid<T>: Default,
+    BiquadClamp<C, Y>: Default,
+    FilterRepr<T>: Default,
 {
     fn default() -> Self {
         Self::Ba(Default::default())
     }
 }
 
-impl<T, C> BiquadRepr<T, C>
+impl<T, C, Y> BiquadRepr<T, C, Y>
 where
-    C: Coefficient + AsPrimitive<C> + AsPrimitive<T>,
-    T: AsPrimitive<C> + Float + FloatConst,
+    BiquadClamp<C, Y>: Default + Clone,
+    Y: 'static + Copy,
+    T: 'static + Float + FloatConst + Default + AsPrimitive<Y>,
+    f32: AsPrimitive<T>,
+    Pid<T>: Into<BiquadClamp<C, Y>>,
+    [[T; 3]; 2]: Into<BiquadClamp<C, Y>>,
 {
     /// Build a biquad
     ///
@@ -168,25 +177,27 @@ where
     /// * `y_scale`: The y output scale from desired units to machine units.
     ///   E.g. a `max` setting will lead to a `y=y_scale*max` upper limit
     ///   of the filter in machine units.
-    pub fn build<I>(&self, period: T, b_scale: T, y_scale: T) -> Biquad<C>
-    where
-        T: AsPrimitive<I>,
-        I: Float + AsPrimitive<C>,
-        C: AsPrimitive<I>,
-        f32: AsPrimitive<T>,
-    {
+    pub fn build(&self, period: T, b_scale: T, y_scale: T) -> BiquadClamp<C, Y> {
         match self {
             Self::Ba(ba) => {
-                let mut b = Biquad::from(&[ba.ba[0].map(|b| b * b_scale), ba.ba[1]]);
-                b.set_u((ba.u * y_scale).as_());
-                b.set_min((ba.min * y_scale).as_());
-                b.set_max((ba.max * y_scale).as_());
+                let mut bba = ba.ba;
+                bba[0] = bba[0].map(|b| b * b_scale);
+                let mut b: BiquadClamp<C, Y> = bba.into();
+                b.u = (ba.u * y_scale).as_();
+                b.min = (ba.min * y_scale).as_();
+                b.max = (ba.max * y_scale).as_();
                 b
             }
             Self::Raw(raw) => raw.clone(),
-            Self::Pid(pid) => pid.build::<_, I>(period, b_scale, y_scale),
+            Self::Pid(pid) => {
+                let mut pid = pid.clone();
+                pid.period = period;
+                pid.b_scale = b_scale;
+                pid.y_scale = y_scale;
+                pid.into()
+            }
             Self::Filter(filter) => {
-                let mut f = crate::iir::Filter::default();
+                let mut f = crate::iir::coefficients::Filter::default();
                 f.gain_db(filter.gain);
                 f.critical_frequency(filter.frequency * period);
                 f.shelf_db(filter.shelf);
@@ -203,10 +214,10 @@ where
                     Typ::Peaking => f.peaking(),
                 };
                 ba[0] = ba[0].map(|b| b * b_scale);
-                let mut b = Biquad::from(&ba);
-                b.set_u((filter.offset * y_scale).as_());
-                b.set_min((filter.min * y_scale).as_());
-                b.set_max((filter.max * y_scale).as_());
+                let mut b: BiquadClamp<C, Y> = ba.into();
+                b.u = (filter.offset * y_scale).as_();
+                b.min = (filter.min * y_scale).as_();
+                b.max = (filter.max * y_scale).as_();
                 b
             }
         }

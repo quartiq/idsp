@@ -2,6 +2,8 @@ use core::ops::AddAssign;
 
 use num_traits::{AsPrimitive, Num, Pow, WrappingAdd, WrappingSub};
 
+use dsp_process::Process;
+
 /// Cascaded integrator comb structure
 ///
 /// Order `N` where `N = 3` is cubic.
@@ -138,12 +140,17 @@ where
         self.zoh = x * self.gain();
         unimplemented!();
     }
+}
 
-    /// Optionally ingest a new low-rate sample and
-    /// retrieve the next output.
-    ///
-    /// A new sample must be supplied at the correct time (when [`Cic::tick()`] is true)
-    pub fn interpolate(&mut self, x: Option<T>) -> T {
+/// Optionally ingest a new low-rate sample and
+/// retrieve the next output.
+///
+/// A new sample must be supplied at the correct time (when [`Cic::tick()`] is true)
+impl<T, const N: usize, const M: usize> Process<Option<T>, T> for Cic<T, N, M>
+where
+    T: Num + AddAssign + Copy,
+{
+    fn process(&mut self, x: Option<T>) -> T {
         if let Some(x) = x {
             debug_assert_eq!(self.index, 0);
             self.index = self.rate;
@@ -162,9 +169,14 @@ where
             *i
         })
     }
+}
 
-    /// Ingest a new high-rate sample and optionally retrieve next output.
-    pub fn decimate(&mut self, x: T) -> Option<T> {
+/// Ingest a new high-rate sample and optionally retrieve next output.
+impl<T, const N: usize, const M: usize> Process<T, Option<T>> for Cic<T, N, M>
+where
+    T: WrappingAdd + WrappingSub + Copy,
+{
+    fn process(&mut self, x: T) -> Option<T> {
         let x = self.integrators.iter_mut().fold(x, |x, i| {
             // Overflow is OK if bitwidth is sufficient (input * gain)
             *i = i.wrapping_add(&x);
@@ -203,7 +215,7 @@ mod test {
     fn identity_dec(x: Vec<i64>) {
         let mut dec = Cic::<_, 3>::new(0);
         for x in x {
-            assert_eq!(x, dec.decimate(x).unwrap());
+            assert_eq!(Some(x), dec.process(x));
             assert_eq!(x, dec.get_decimate());
         }
     }
@@ -213,7 +225,7 @@ mod test {
         const N: usize = 3;
         let mut int = Cic::<_, N>::new(0);
         for x in x {
-            assert_eq!(x >> N, int.interpolate(Some(x >> N)));
+            assert_eq!(x >> N, int.process(Some(x >> N)));
             assert_eq!(x >> N, int.get_interpolate());
         }
     }
@@ -228,12 +240,12 @@ mod test {
         assert!(int.gain() <= 1 << shift);
         for x in x {
             while !int.tick() {
-                int.interpolate(None);
+                int.process(None);
             }
             let y_last = int.get_interpolate();
             let y_want = x as i64 * int.gain();
             for i in 0..2 * int.response_length() {
-                let y = int.interpolate(if int.tick() { Some(x as i64) } else { None });
+                let y = int.process(if int.tick() { Some(x as i64) } else { None });
                 assert_eq!(y, int.get_interpolate());
                 if i < int.response_length() {
                     match y_want.cmp(&y_last) {
@@ -258,7 +270,7 @@ mod test {
         // let mut dec = Cic::<i64, 3>::new(rate);
         // dec.settle_decimate(x as _);
         for _ in 0..100 {
-            let y = int.interpolate(if int.tick() { Some(x as _) } else { None });
+            let y = int.process(if int.tick() { Some(x as _) } else { None });
             assert_eq!(y, x as i64 * int.gain());
             assert_eq!(y, int.get_interpolate());
             // assert_eq!(dec.get_decimate(), x as i64 * dec.gain());
@@ -276,13 +288,13 @@ mod test {
         assert!(cic.gain() == (cic.comb_delay() as i64).pow(cic.order() as _));
         for x in x {
             assert!(cic.tick());
-            let y = cic.decimate(x as _).unwrap();
-            println!("{x:11} {y:11}");
+            let y: Option<_> = cic.process(x as _);
+            println!("{x:11} {:11}", y.unwrap());
         }
         for _ in 0..100 {
-            let y = cic.decimate(0 as _).unwrap();
-            assert_eq!(y, cic.get_decimate());
-            println!("{y:11}");
+            let y: Option<_> = cic.process(0 as _);
+            assert_eq!(y, Some(cic.get_decimate()));
+            println!("{:11}", y.unwrap());
             println!("");
         }
     }

@@ -1,14 +1,16 @@
 use core::{
-    cmp::PartialOrd,
+    cmp::{Ordering, PartialOrd},
     ops::{BitAnd, Shr},
 };
 use num_traits::{
-    Signed,
+    Bounded, Signed,
     cast::AsPrimitive,
     identities::Zero,
     ops::wrapping::{WrappingAdd, WrappingSub},
 };
 use serde::{Deserialize, Serialize};
+
+use dsp_process::{Inplace, Process};
 
 /// Subtract `y - x` with signed overflow.
 ///
@@ -20,12 +22,12 @@ use serde::{Deserialize, Serialize};
 /// A tuple containg the (wrapped) difference `y - x` and the signum of the
 /// overflow.
 #[inline(always)]
-pub fn overflowing_sub<T>(y: T, x: T) -> (T, i32)
+pub fn overflowing_sub<T>(y: T, x: T) -> (T, Wrap)
 where
     T: WrappingSub + Zero + PartialOrd,
 {
     let delta = y.wrapping_sub(&x);
-    let wrap = (delta >= T::zero()) as i32 - (y >= x) as i32;
+    let wrap = (delta >= T::zero()).cmp(&(y >= x)).into();
     (delta, wrap)
 }
 
@@ -57,30 +59,13 @@ pub fn saturating_scale(lo: i32, hi: i32, shift: u32) -> i32 {
 #[derive(Copy, Clone, Default, Deserialize, Serialize)]
 pub struct Unwrapper<Q> {
     /// current output
-    y: Q,
+    pub y: Q,
 }
 
 impl<Q> Unwrapper<Q>
 where
     Q: 'static + WrappingAdd + Copy,
 {
-    /// Feed a new sample..
-    ///
-    /// Args:
-    /// * `x`: New sample
-    ///
-    /// Returns:
-    /// The (wrapped) difference `x - x_old`
-    pub fn update<P>(&mut self, x: P) -> P
-    where
-        P: 'static + WrappingSub + Copy + AsPrimitive<Q>,
-        Q: AsPrimitive<P>,
-    {
-        let dx = x.wrapping_sub(&self.y.as_());
-        self.y = self.y.wrapping_add(&dx.as_());
-        dx
-    }
-
     /// The current number of wraps
     pub fn wraps<P, const S: u32>(&self) -> P
     where
@@ -100,12 +85,113 @@ where
     {
         self.y.as_()
     }
+}
 
-    /// Current output including wraps
-    pub fn y(&self) -> Q {
-        self.y
+impl<P, Q> Process<P> for Unwrapper<Q>
+where
+    P: AsPrimitive<Q> + WrappingSub,
+    Q: AsPrimitive<P> + WrappingAdd,
+{
+    /// Feed a new sample..
+    ///
+    /// Args:
+    /// * `x`: New sample
+    ///
+    /// Returns:
+    /// The (wrapped) difference `x - x_old`
+    fn process(&mut self, x: P) -> P {
+        let dx = x.wrapping_sub(&self.y.as_());
+        self.y = self.y.wrapping_add(&dx.as_());
+        dx
     }
 }
+
+impl<P: Copy, Q> Inplace<P> for Unwrapper<Q> where Self: Process<P> {}
+
+/// Wrap classification
+#[repr(i8)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Wrap {
+    /// A wrap occured in the negative direction
+    Negative = -1,
+    /// No wrap, the wrapped difference between successive values
+    /// has the same sign as their comparison
+    #[default]
+    None = 0,
+    /// A wrap occurred in the positive direction
+    Positive = 1,
+}
+
+impl From<Wrap> for Ordering {
+    fn from(value: Wrap) -> Self {
+        match value {
+            Wrap::Negative => Self::Less,
+            Wrap::None => Self::Equal,
+            Wrap::Positive => Self::Greater,
+        }
+    }
+}
+
+impl From<Ordering> for Wrap {
+    fn from(value: Ordering) -> Self {
+        match value {
+            Ordering::Less => Self::Negative,
+            Ordering::Equal => Self::None,
+            Ordering::Greater => Self::Positive,
+        }
+    }
+}
+
+impl core::ops::Add for Wrap {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        (self as i32 + rhs as i32).cmp(&0).into()
+    }
+}
+
+impl core::ops::AddAssign for Wrap {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
+/// Maps wraps to saturation
+///
+/// Clamps output to the value range on wraps and only un-clamps on
+/// (one corresponding) un-wrap.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ClampWrap<Q> {
+    /// Last input value
+    pub x0: Q,
+    /// Clamp indicator
+    pub clamp: Wrap,
+}
+
+impl<Q> Process<Q> for ClampWrap<Q>
+where
+    Q: 'static + Zero + PartialOrd + WrappingSub + Copy + Bounded,
+{
+    /// Update the clamp with a new input
+    ///
+    /// IF (positive wrap and negative clamp,
+    /// OR negative wrap and positive clamp,
+    /// OR no wrap and no clamp): output the input.
+    /// ELSE IF negative wrap: clamp minimum,
+    /// ELSE IF positive wrap: clamp maximum.
+    fn process(&mut self, x: Q) -> Q {
+        let (_dx, wrap) = overflowing_sub(x, self.x0);
+        self.x0 = x;
+        self.clamp += wrap;
+        match self.clamp {
+            Wrap::Negative => Q::min_value(),
+            Wrap::None => x,
+            Wrap::Positive => Q::max_value(),
+        }
+    }
+}
+
+impl<Q: Copy> Inplace<Q> for ClampWrap<Q> where Self: Process<Q> {}
 
 #[cfg(test)]
 mod tests {
@@ -113,32 +199,32 @@ mod tests {
     #[test]
     fn overflowing_sub_correctness() {
         for (x0, x1, v) in [
-            (0i32, 0i32, 0i32),
-            (0, 1, 0),
-            (0, -1, 0),
-            (1, 0, 0),
-            (-1, 0, 0),
-            (0, 0x7fff_ffff, 0),
-            (-1, 0x7fff_ffff, -1),
-            (-2, 0x7fff_ffff, -1),
-            (-1, -0x8000_0000, 0),
-            (0, -0x8000_0000, 0),
-            (1, -0x8000_0000, 1),
-            (-0x6000_0000, 0x6000_0000, -1),
-            (0x6000_0000, -0x6000_0000, 1),
-            (-0x4000_0000, 0x3fff_ffff, 0),
-            (-0x4000_0000, 0x4000_0000, -1),
-            (-0x4000_0000, 0x4000_0001, -1),
-            (0x4000_0000, -0x3fff_ffff, 0),
-            (0x4000_0000, -0x4000_0000, 0),
-            (0x4000_0000, -0x4000_0001, 1),
+            (0i32, 0i32, Wrap::None),
+            (0, 1, Wrap::None),
+            (0, -1, Wrap::None),
+            (1, 0, Wrap::None),
+            (-1, 0, Wrap::None),
+            (0, 0x7fff_ffff, Wrap::None),
+            (-1, 0x7fff_ffff, Wrap::Negative),
+            (-2, 0x7fff_ffff, Wrap::Negative),
+            (-1, -0x8000_0000, Wrap::None),
+            (0, -0x8000_0000, Wrap::None),
+            (1, -0x8000_0000, Wrap::Positive),
+            (-0x6000_0000, 0x6000_0000, Wrap::Negative),
+            (0x6000_0000, -0x6000_0000, Wrap::Positive),
+            (-0x4000_0000, 0x3fff_ffff, Wrap::None),
+            (-0x4000_0000, 0x4000_0000, Wrap::Negative),
+            (-0x4000_0000, 0x4000_0001, Wrap::Negative),
+            (0x4000_0000, -0x3fff_ffff, Wrap::None),
+            (0x4000_0000, -0x4000_0000, Wrap::None),
+            (0x4000_0000, -0x4000_0001, Wrap::Positive),
         ]
         .iter()
         {
             let (dx, w) = overflowing_sub(*x1, *x0);
             assert_eq!(*v, w, " = overflowing_sub({:#x}, {:#x})", *x0, *x1);
             let (dx0, w0) = x1.overflowing_sub(*x0);
-            assert_eq!(w0, w != 0);
+            assert_eq!(w0, w != Wrap::None);
             assert_eq!(dx, dx0);
         }
     }

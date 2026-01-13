@@ -1,4 +1,4 @@
-use crate::Filter;
+use dsp_process::{SplitInplace, SplitProcess};
 
 /// Arbitrary order, high dynamic range, wide coefficient range,
 /// lowpass filter implementation. DC gain is 1.
@@ -9,9 +9,23 @@ use crate::Filter;
 ///
 /// Both filters have been optimized for accuracy, dynamic range, and
 /// speed on Cortex-M7.
-#[derive(Copy, Clone)]
-pub struct Lowpass<const N: usize>(pub(crate) [i64; N]);
-impl<const N: usize> Filter for Lowpass<N> {
+#[derive(Clone, Debug)]
+pub struct Lowpass<const N: usize>(pub [i32; N]);
+
+/// Lowpass filter state
+#[derive(Clone, Debug)]
+pub struct LowpassState<const N: usize>(pub [i64; N]);
+
+impl<const N: usize> Default for LowpassState<N>
+where
+    [i64; N]: Default,
+{
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<const N: usize> SplitProcess<i32, i32, LowpassState<N>> for Lowpass<N> {
     /// The filter configuration `Config` contains the filter gains.
     ///
     /// For the first-order lowpass this is a single element array `[k]` with
@@ -30,39 +44,40 @@ impl<const N: usize> Filter for Lowpass<N> {
     /// `1 <= k <= (1 << 31) - 1`.
     /// The second-order lowpass works and is accurate for
     /// `1 << 16 <= k <= q*(1 << 31)`.
-    type Config = [i32; N];
-    fn update(&mut self, x: i32, k: &Self::Config) -> i32 {
-        let mut d = x.saturating_sub(self.get()) as i64 * k[0] as i64;
+    fn process(&self, state: &mut LowpassState<N>, x: i32) -> i32 {
+        // d = (x0 - p1)*k0
+        // p0 = p1 + 2d
+        // y0 = p1 + d
+        //
+        // d = (x0 - p1)*k0 + q1*k1
+        // q0 = q1 + 2d
+        // p0 = p1 + 2q1 + 2d
+        // y0 = p1 + q1 + d
+        let mut d = x.saturating_sub((state.0[0] >> 32) as i32) as i64 * self.0[0] as i64;
         let y;
         if N == 1 {
-            self.0[0] += d;
-            y = self.get();
-            self.0[0] += d;
+            state.0[0] += d;
+            y = (state.0[0] >> 32) as i32;
+            state.0[0] += d;
         } else if N == 2 {
-            d += (self.0[1] >> 32) * k[1] as i64;
-            self.0[1] += d;
-            self.0[0] += self.0[1];
-            y = self.get();
+            d += (state.0[1] >> 32) * self.0[1] as i64;
+            state.0[1] += d;
+            state.0[0] += state.0[1];
+            y = (state.0[0] >> 32) as i32;
             // This creates the double Nyquist zero,
             // compensates the gain lost in the signed i32 as (i32 as i64)*(i64 >> 32)
             // multiplication while keeping the lowest bit significant, and
             // copes better with wrap-around than Nyquist averaging.
-            self.0[0] += self.0[1];
-            self.0[1] += d;
+            state.0[0] += state.0[1];
+            state.0[1] += d;
         } else {
             unimplemented!()
         }
         y
     }
-
-    fn get(&self) -> i32 {
-        (self.0[0] >> 32) as i32
-    }
-
-    fn set(&mut self, x: i32) {
-        self.0[0] = (x as i64) << 32;
-    }
 }
+
+impl<const N: usize> SplitInplace<i32, LowpassState<N>> for Lowpass<N> {}
 
 impl<const N: usize> Default for Lowpass<N> {
     fn default() -> Self {

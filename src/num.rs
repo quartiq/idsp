@@ -1,155 +1,79 @@
-use num_traits::{AsPrimitive, Float, Num};
+use dsp_fixedpoint::{Q, Shift};
+use num_traits::{ConstOne, ConstZero, clamp};
 
-/// Helper trait unifying fixed point and floating point coefficients/samples
-pub trait Coefficient: 'static + Copy + Num + AsPrimitive<Self::ACCU> {
-    /// Multiplicative identity
-    const ONE: Self;
-    /// Negative multiplicative identity, equal to `-Self::ONE`.
-    const NEG_ONE: Self;
-    /// Additive identity
-    const ZERO: Self;
+/// Constants
+pub trait Clamp: ConstOne + ConstZero + PartialOrd {
     /// Lowest value
-    const MIN: Self;
-    /// Highest value
-    const MAX: Self;
-    /// Accumulator type
-    type ACCU: AsPrimitive<Self> + Num;
-
-    /// Proper scaling and potentially using a wide accumulator.
-    /// Clamp `self` such that `min <= self <= max`.
-    /// Undefined result if `max < min`.
-    fn macc(self, s: Self::ACCU, min: Self, max: Self, e1: Self) -> (Self, Self);
-
-    /// Clamp to between min and max
     ///
-    /// Undefined if `min > max`.
-    fn clip(self, min: Self, max: Self) -> Self;
+    /// Negative infinity for floating point values.
+    ///
+    /// ```
+    /// # use idsp::Clamp;
+    /// assert_eq!(<i8 as Clamp>::MIN, -128);
+    /// assert_eq!(<f32 as Clamp>::MIN, f32::NEG_INFINITY);
+    /// ```
+    const MIN: Self;
 
-    /// Multiplication (scaled)
-    fn mul_scaled(self, other: Self) -> Self;
+    /// Highest value
+    ///
+    /// Positive infinity for floating point values.
+    ///
+    /// ```
+    /// # use idsp::Clamp;
+    /// assert_eq!(<i8 as Clamp>::MAX, 127);
+    /// ```
+    const MAX: Self;
 
-    /// Division (scaled)
-    fn div_scaled(self, other: Self) -> Self;
-
-    /// Scale and quantize a floating point value.
-    fn quantize<C>(value: C) -> Self
-    where
-        Self: AsPrimitive<C>,
-        C: Float + AsPrimitive<Self>;
-    // TODO: range check and Result
+    /// Clamp
+    fn clamp(self, min: Self, max: Self) -> Self {
+        clamp(self, min, max)
+    }
 }
 
-macro_rules! impl_float {
-    ($T:ty) => {
-        impl Coefficient for $T {
-            const ONE: Self = 1.0;
-            const NEG_ONE: Self = -1.0;
-            const ZERO: Self = 0.0;
-            const MIN: Self = <$T>::NEG_INFINITY;
-            const MAX: Self = <$T>::INFINITY;
-            type ACCU = Self;
-
-            #[inline]
-            fn macc(self, s: Self::ACCU, min: Self, max: Self, _e1: Self) -> (Self, Self) {
-                ((self + s).clip(min, max), 0.0)
-            }
-
-            #[inline]
-            fn clip(self, min: Self, max: Self) -> Self {
-                // <$T>::clamp() is slow and checks
-                self.max(min).min(max)
-            }
-
-            #[inline]
-            fn div_scaled(self, other: Self) -> Self {
-                self / other
-            }
-
-            #[inline]
-            fn mul_scaled(self, other: Self) -> Self {
-                self * other
-            }
-
-            #[inline]
-            fn quantize<C: Float + AsPrimitive<Self>>(value: C) -> Self {
-                value.as_()
-            }
+macro_rules! impl_const_float {
+    ($ty:ident) => {
+        impl Clamp for $ty {
+            const MIN: Self = <$ty>::NEG_INFINITY;
+            const MAX: Self = <$ty>::INFINITY;
         }
     };
 }
-impl_float!(f32);
-impl_float!(f64);
+impl_const_float!(f32);
+impl_const_float!(f64);
 
-macro_rules! impl_int {
-    ($T:ty, $U:ty, $A:ty, $Q:literal) => {
-        impl Coefficient for $T {
-            const ONE: Self = 1 << $Q;
-            const NEG_ONE: Self = -1 << $Q;
-            const ZERO: Self = 0;
-            const MIN: Self = <$T>::MIN;
-            const MAX: Self = <$T>::MAX;
-            type ACCU = $A;
-
-            #[inline]
-            fn macc(self, mut s: Self::ACCU, min: Self, max: Self, e1: Self) -> (Self, Self) {
-                const S: usize = core::mem::size_of::<$T>() * 8;
-                // Guard bits
-                const G: usize = S - $Q;
-                // Combine offset (u << $Q) with previous quantization error e1
-                s += (((self >> G) as $A) << S) | (((self << $Q) | e1) as $U as $A);
-                // Ord::clamp() is slow and checks
-                // This clamping truncates the lowest G bits of the value and the limits.
-                debug_assert_eq!(min & ((1 << G) - 1), 0);
-                debug_assert_eq!(max & ((1 << G) - 1), (1 << G) - 1);
-                let y0 = if (s >> S) as $T < (min >> G) {
-                    min
-                } else if (s >> S) as $T > (max >> G) {
-                    max
-                } else {
-                    (s >> $Q) as $T
-                };
-                // Quantization error
-                let e0 = s as $T & ((1 << $Q) - 1);
-                (y0, e0)
-            }
-
-            #[inline]
-            fn clip(self, min: Self, max: Self) -> Self {
-                // Ord::clamp() is slow and checks
-                if self < min {
-                    min
-                } else if self > max {
-                    max
-                } else {
-                    self
-                }
-            }
-
-            #[inline]
-            fn div_scaled(self, other: Self) -> Self {
-                (((self as $A) << $Q) / other as $A) as $T
-            }
-
-            #[inline]
-            fn mul_scaled(self, other: Self) -> Self {
-                (((1 << ($Q - 1)) + self as $A * other as $A) >> $Q) as $T
-            }
-
-            #[inline]
-            fn quantize<C>(value: C) -> Self
-            where
-                Self: AsPrimitive<C>,
-                C: Float + AsPrimitive<Self>,
-            {
-                (value * (1 << $Q).as_()).round().as_()
-            }
+macro_rules! impl_foreign {
+    ($($ty:ident),*) => {$(
+        impl Clamp for $ty {
+            const MIN: Self = <$ty>::MIN;
+            const MAX: Self = <$ty>::MAX;
         }
-    };
+    )*};
 }
-// Q2.X chosen to be able to exactly and inclusively represent -2 as `-1 << X + 1`
-// This is necessary to meet a1 = -2
-// It also create 2 guard bits for clamping in the accumulator which is often enough.
-impl_int!(i8, u8, i16, 6);
-impl_int!(i16, u16, i32, 14);
-impl_int!(i32, u32, i64, 30);
-impl_int!(i64, u64, i128, 62);
+impl_foreign!(
+    i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, isize, usize
+);
+
+impl<T: Clamp + Shift + Copy + PartialOrd, A, const F: i8> Clamp for Q<T, A, F>
+where
+    Self: ConstOne,
+{
+    /// Lowest value
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// # use idsp::Clamp;
+    /// # use num_traits::AsPrimitive;
+    /// assert_eq!(Q8::<4>::MIN, (-16f32).as_());
+    /// ```
+    const MIN: Self = Self::new(T::MIN);
+
+    /// Highest value
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// # use idsp::Clamp;
+    /// # use num_traits::AsPrimitive;
+    /// assert_eq!(Q8::<4>::MAX, (16.0f32 - 1.0 / 16.0).as_());
+    /// ```
+    const MAX: Self = Self::new(T::MAX);
+}

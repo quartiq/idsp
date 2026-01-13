@@ -1,3 +1,4 @@
+//! Static LUT generation
 use std::env;
 use std::f64::consts::PI;
 use std::fs::File;

@@ -2,9 +2,10 @@
 
 mod biquad;
 pub use biquad::*;
-mod coefficients;
-pub use coefficients::*;
-mod pid;
-pub use pid::*;
-mod repr;
-pub use repr::*;
+
+pub mod coefficients;
+pub mod normal;
+pub mod pid;
+pub mod repr;
+pub mod svf;
+pub mod wdf;
