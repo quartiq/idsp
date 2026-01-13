@@ -1,5 +1,6 @@
 [package]
 name = "dsp-fixedpoint"
+description = "Fixed point types for DSP"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
