@@ -8,7 +8,7 @@ use dsp_process::SplitProcess;
 /// the phase and frequency of the update() invocations with respect to (and in units of
 /// 1 << 32 of) that reference.
 /// In other words, `update()` rate relative to reference frequency,
-/// `u32::MAX` corresponding to both being equal.
+/// `u32::MAX + 1` corresponding to both being equal.
 #[derive(Copy, Clone, Default)]
 pub struct RPLL {
     x: W<i32>,  // previous timestamp
@@ -22,23 +22,23 @@ pub struct RPLL {
 pub struct RPLLConfig {
     /// 1 << dt2 is the counter rate to update() rate ratio
     pub dt2: u8,
-    /// Frequency gain
+    /// Frequency lock settling time.
+    ///
+    /// `1 << shift_frequency` is
+    /// frequency lock settling time in counter periods. The settling time must be larger
+    /// than the signal period to lock to.
     pub shift_frequency: u8,
-    /// Phase gain
+    /// Phase lock settling time.
+    ///
+    /// Usually one less than `shift_frequency` (see there).
     pub shift_phase: u8,
 }
 
 impl SplitProcess<Option<W<i32>>, Accu<W<i32>>, RPLL> for RPLLConfig {
     /// Advance the RPLL and optionally supply a new timestamp.
     ///
-    /// Args:
-    /// * input: Optional new timestamp (wrapping around at the i32 boundary).
+    /// * input: Optional new timestamp.
     ///   There can be at most one timestamp per `update()` cycle (1 << dt2 counter cycles).
-    /// * shift_frequency: Frequency lock settling time. 1 << shift_frequency is
-    ///   frequency lock settling time in counter periods. The settling time must be larger
-    ///   than the signal period to lock to.
-    /// * shift_phase: Phase lock settling time. Usually one less than
-    ///   `shift_frequency` (see there).
     ///
     /// Returns:
     /// A tuple containing the current phase (wrapping at the i32 boundary, pi) and
@@ -58,15 +58,15 @@ impl SplitProcess<Option<W<i32>>, Accu<W<i32>>, RPLL> for RPLLConfig {
             // Add half-up rounding bias and apply gain/attenuation
             let p_sig = W(((p_sig_64 + W((1u32 << (self.shift_frequency - 1)) as u64))
                 >> self.shift_frequency as usize)
-                .0 as u32);
+                .0 as _);
             // Reference phase (1 << dt2 full turns) with gain/attenuation applied
             let p_ref = W(1u32 << (32 + self.dt2 - self.shift_frequency));
             // Update frequency lock
             state.ff += p_ref - p_sig;
             // Time in counter cycles between timestamp and "now"
-            let dt = W((-x & W((1 << self.dt2) - 1)).0 as u32);
+            let dt = W((-x & W((1 << self.dt2) - 1)).0 as _);
             // Reference phase estimate "now"
-            let y_ref = W(((state.f >> self.dt2 as usize) * dt).0 as i32);
+            let y_ref = W(((state.f >> self.dt2 as usize) * dt).0 as _);
             // Phase error with gain
             let dy = (y_ref - state.y) >> (self.shift_phase - self.dt2) as usize;
             // Current frequency estimate from frequency lock and phase error
