@@ -79,11 +79,12 @@ Hardware was `thumbv7em-none-eabihf`, `cortex-m7`, code in ITCM, data in DTCM, c
 | `idsp::iir` | `i32`, limits, offset | 23.5 |
 | `idsp::iir` | `i32`, limits, offset, noise shaping | 30.0 |
 
-## State variable and normal form filter
+## State variable, normal form, wave digital filter
 
 [`iir::svf`] is a simple IIR state variable filter simultaneously providing highpass, lowpass,
 bandpass, and notch filtering of a signal.
 [`iir::normal`] is a Normal Form IIR filter for narrowband applications.
+[`iir::wdf`] has wave digital allpass filters that can be combined in a coupled [`dsp_process::Pair`].
 
 ## `Lowpass`, `Lockin`
 

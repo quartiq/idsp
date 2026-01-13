@@ -41,6 +41,18 @@ macro_rules! impl_const_float {
 impl_const_float!(f32);
 impl_const_float!(f64);
 
+macro_rules! impl_foreign {
+    ($($ty:ident),*) => {$(
+        impl Clamp for $ty {
+            const MIN: Self = <$ty>::MIN;
+            const MAX: Self = <$ty>::MAX;
+        }
+    )*};
+}
+impl_foreign!(
+    i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, isize, usize
+);
+
 impl<T: Clamp + Shift + Copy + PartialOrd, A, const F: i8> Clamp for Q<T, A, F>
 where
     Self: ConstOne,
@@ -65,15 +77,3 @@ where
     /// ```
     const MAX: Self = Self::new(T::MAX);
 }
-
-macro_rules! impl_foreign {
-    ($($ty:ident),*) => {$(
-        impl Clamp for $ty {
-            const MIN: Self = <$ty>::MIN;
-            const MAX: Self = <$ty>::MAX;
-        }
-    )*};
-}
-impl_foreign!(
-    i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, isize, usize
-);
