@@ -224,6 +224,11 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     }
 
     /// Scale from integer base type
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// assert_eq!(Q8::<4>::from_int(7).inner, 7 << 4);
+    /// ```
     #[inline]
     pub fn from_int(value: T) -> Self {
         Self::new(value.shs(F))
@@ -232,6 +237,13 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
 
 impl<A: Shift, T: Accu<A>, const F: i8> Q<A, T, F> {
     /// Scale from integer accu type
+    ///
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// let q = Q8::<4>::from_f32(0.25);
+    /// assert_eq!((q * 7).quantize(), (7.0 * 0.25f32).floor() as _);
+    /// ```
     #[inline]
     pub fn quantize(self) -> T {
         T::down(self.trunc())
@@ -239,6 +251,11 @@ impl<A: Shift, T: Accu<A>, const F: i8> Q<A, T, F> {
 }
 
 /// Lossy conversion from a dynamically scaled integer
+///
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// assert_eq!(Q8::<8>::from((1, 3)).inner, 1 << 5);
+/// ```
 impl<T: Accu<A> + Shift, A, const F: i8> From<(T, i8)> for Q<T, A, F> {
     fn from(value: (T, i8)) -> Self {
         Self::new(value.0.shs(F - value.1))
@@ -246,15 +263,22 @@ impl<T: Accu<A> + Shift, A, const F: i8> From<(T, i8)> for Q<T, A, F> {
 }
 
 /// Lossless conversion into a dynamically scaled integer
+///
+/// ```
+/// # use dsp_fixedpoint::Q8;
+/// let q: (i8, i8) = Q8::<8>::new(9).into();
+/// assert_eq!(q, (9, 8));
+/// ```
 impl<T, A, const F: i8> From<Q<T, A, F>> for (T, i8) {
     fn from(value: Q<T, A, F>) -> Self {
         (value.inner, F)
     }
 }
 
+/// Lossy conversion to and from float
+///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// # use num_traits::AsPrimitive;
 /// assert_eq!(8 * Q8::<4>::from_f32(0.25), 2);
 /// assert_eq!(8 * Q8::<4>::from_f64(0.25), 2);
 /// assert_eq!(Q8::<4>::new(4).as_f32(), 0.25);
@@ -269,7 +293,7 @@ macro_rules! impl_as_float {
             #[inline]
             fn as_(self) -> Q<T, A, F> {
                 Q::new(
-                    (self * const { 1.0 / Q::<T, A, F>::DELTA } as $ty)
+                    (self * const { 1.0 / Q::<T, A, F>::DELTA as $ty })
                         .round()
                         .as_(),
                 )
@@ -562,13 +586,6 @@ impl<T: iter::Sum, A, const F: i8> iter::Sum for Q<T, A, F> {
     }
 }
 
-impl<T: iter::Product, A, const F: i8> iter::Product for Q<T, A, F> {
-    #[inline]
-    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
-        Self::new(iter.map(|i| i.inner).product())
-    }
-}
-
 /// ```
 /// # use dsp_fixedpoint::Q8;
 /// let q = Q8::<4>::new(7);
@@ -635,7 +652,7 @@ macro_rules! impl_q {
             }
         }
 
-        #[doc = concat!("Fixed point [`", stringify!($t), "`]")]
+        #[doc = concat!("Fixed point [`", stringify!($t), "`] with [`", stringify!($a), "`] accumulator")]
         pub type $alias<const F: i8> = Q<$t, $a, F>;
 
         impl<const F: i8> ConstOne for Q<$t, $a, F> {
