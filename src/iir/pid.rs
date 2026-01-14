@@ -37,7 +37,7 @@ pub enum Order {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Builder<T> {
-    period: T,
+    t_unit: T,
     order: Order,
     gain: [T; 5],
     limit: [T; 5],
@@ -46,7 +46,7 @@ pub struct Builder<T> {
 impl<T: Float> Default for Builder<T> {
     fn default() -> Self {
         Self {
-            period: T::one(),
+            t_unit: T::one(),
             order: Order::default(),
             gain: [T::zero(); 5],
             limit: [T::infinity(); 5],
@@ -86,7 +86,7 @@ impl<T: Float> Builder<T> {
     /// # Arguments
     /// * `period`: Sample period in some units, e.g. SI seconds
     pub fn period(mut self, period: T) -> Self {
-        self.period = period;
+        self.t_unit = period;
         self
     }
 
@@ -160,6 +160,8 @@ impl<T: Float> Builder<T> {
     }
 }
 
+// TODO: make Pid own a PidBuilder
+
 impl<C, T> From<Builder<T>> for [C; 5]
 where
     C: 'static + Copy + SubAssign + AddAssign,
@@ -187,7 +189,7 @@ where
     /// Will panic in debug mode on fixed point coefficient overflow.
     fn from(value: Builder<T>) -> [C; 5] {
         // Choose relevant gains and limits and scale
-        let mut z = value.period.powi(-(value.order as i32));
+        let mut z = value.t_unit.powi(-(value.order as i32));
         let mut gl = [[T::zero(); 2]; 3];
         for (gl, (i, (gain, limit))) in gl
             .iter_mut()
@@ -207,11 +209,11 @@ where
             } else {
                 gl[0] / *limit
             };
-            z = z * value.period;
+            z = z * value.t_unit;
         }
 
         // Normalization
-        let a0i = T::one() / (gl[0][1] + gl[1][1] + gl[2][1]);
+        let a0i = (gl[0][1] + gl[1][1] + gl[2][1]).recip();
 
         // Derivative/integration kernels
         let kernels = [[1, 0, 0], [1, -1, 0], [1, -2, 1]];
@@ -276,6 +278,29 @@ pub struct Gains<T> {
     d2: (),
 }
 
+/// Units for a biquad
+///
+/// In desired (e.g. SI) units per machine (e.g. full scale) unit
+#[derive(Clone, Debug)]
+pub struct Units<T> {
+    /// Biquad update period
+    pub t: T,
+    /// Input unit
+    pub x: T,
+    /// Output unit
+    pub y: T,
+}
+
+impl<T: Float> Default for Units<T> {
+    fn default() -> Self {
+        Self {
+            t: T::one(),
+            x: T::one(),
+            y: T::one(),
+        }
+    }
+}
+
 /// PID Controller parameters
 #[derive(Clone, Debug, Tree)]
 #[tree(meta(doc, typename))]
@@ -311,37 +336,37 @@ pub struct Pid<T> {
     /// Units: output
     pub max: T,
 
-    /// Sample period in SI units
+    /// Sample period in SI units per machine unit
+    ///
+    /// E.g. sample period: seconds per sample
     #[tree(skip)]
-    pub period: T,
-
-    /// Output scale in SI units
-    #[tree(skip)]
-    pub y_scale: T,
-
-    /// Output/input scale in SI units
-    #[tree(skip)]
-    pub b_scale: T,
+    pub units: Units<T>,
 }
 
-impl<T: Float + Default> Default for Pid<T> {
+impl<T: Float> Default for Pid<T> {
     fn default() -> Self {
         Self {
             order: Order::default(),
             gains: Gains {
                 value: [T::zero(); 5],
-                ..Default::default()
+                i2: (),
+                i: (),
+                p: (),
+                d: (),
+                d2: (),
             },
             limits: Gains {
                 value: [T::infinity(); 5],
-                ..Default::default()
+                i2: (),
+                i: (),
+                p: (),
+                d: (),
+                d2: (),
             },
             setpoint: T::zero(),
             min: T::neg_infinity(),
             max: T::infinity(),
-            period: T::one(),
-            y_scale: T::one(),
-            b_scale: T::one(),
+            units: Default::default(),
         }
     }
 }
@@ -357,22 +382,23 @@ where
     ///
     /// Builder intermediate type `I`, coefficient type C
     fn from(value: Pid<T>) -> Self {
+        let yu = value.units.y.recip();
+        let yx = value.units.x * yu;
         let p = value.gains.value[Action::P as usize];
-        // FIXME: apply b_scale only to ba[..3]!
         let mut biquad: Self = Builder {
-            gain: value.gains.value.map(|g| value.b_scale * g.copysign(p)),
+            gain: value.gains.value.map(|g| yx * g.copysign(p)),
             limit: value.limits.value.map(|l| {
                 // infinite gain limit is meaningful but json can only do null/nan
                 let l = if l.is_nan() { T::infinity() } else { l };
-                value.b_scale * l.copysign(p)
+                yx * l.copysign(p)
             }),
-            period: value.period,
+            t_unit: value.units.t,
             order: value.order,
         }
         .into();
-        biquad.set_input_offset((-value.setpoint * value.y_scale).as_());
-        biquad.min = (value.min * value.y_scale).as_();
-        biquad.max = (value.max * value.y_scale).as_();
+        biquad.set_input_offset((-value.setpoint * value.units.x.recip()).as_());
+        biquad.min = (value.min * yu).as_();
+        biquad.max = (value.max * yu).as_();
         biquad
     }
 }

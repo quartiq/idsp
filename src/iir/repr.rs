@@ -5,7 +5,11 @@ use miniconf::Tree;
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::iir::{BiquadClamp, coefficients::Shape, pid::Pid};
+use crate::iir::{
+    BiquadClamp,
+    coefficients::Shape,
+    pid::{Pid, Units},
+};
 
 /// Floating point BA coefficients before quantization
 #[derive(Debug, Clone, Tree)]
@@ -167,39 +171,29 @@ where
     [[T; 3]; 2]: Into<BiquadClamp<C, Y>>,
 {
     /// Build a biquad
-    ///
-    /// # Args:
-    /// * `period`: The sample period in desired units (e.g. SI seconds)
-    /// * `b_scale`: The feed forward (`b` coefficient) conversion scale from
-    ///   desired units to machine units.
-    ///   An identity (`gain=1`) filter a `x` input in machine units
-    ///   will lead to a `y=b_scale*x` filter output in machine units.
-    /// * `y_scale`: The y output scale from desired units to machine units.
-    ///   E.g. a `max` setting will lead to a `y=y_scale*max` upper limit
-    ///   of the filter in machine units.
-    pub fn build(&self, period: T, b_scale: T, y_scale: T) -> BiquadClamp<C, Y> {
+    pub fn build(&self, units: Units<T>) -> BiquadClamp<C, Y> {
+        let yu = units.y.recip();
+        let yx = units.x * yu;
         match self {
             Self::Ba(ba) => {
                 let mut bba = ba.ba;
-                bba[0] = bba[0].map(|b| b * b_scale);
+                bba[0] = bba[0].map(|b| b * yx);
                 let mut b: BiquadClamp<C, Y> = bba.into();
-                b.u = (ba.u * y_scale).as_();
-                b.min = (ba.min * y_scale).as_();
-                b.max = (ba.max * y_scale).as_();
+                b.u = (ba.u * yu).as_();
+                b.min = (ba.min * yu).as_();
+                b.max = (ba.max * yu).as_();
                 b
             }
             Self::Raw(raw) => raw.clone(),
             Self::Pid(pid) => {
                 let mut pid = pid.clone();
-                pid.period = period;
-                pid.b_scale = b_scale;
-                pid.y_scale = y_scale;
+                pid.units = units;
                 pid.into()
             }
             Self::Filter(filter) => {
                 let mut f = crate::iir::coefficients::Filter::default();
                 f.gain_db(filter.gain);
-                f.critical_frequency(filter.frequency * period);
+                f.critical_frequency(filter.frequency * units.t);
                 f.shelf_db(filter.shelf);
                 f.set_shape(filter.shape);
                 let mut ba = match filter.typ {
@@ -213,11 +207,11 @@ where
                     Typ::Notch => f.notch(),
                     Typ::Peaking => f.peaking(),
                 };
-                ba[0] = ba[0].map(|b| b * b_scale);
+                ba[0] = ba[0].map(|b| b * yx);
                 let mut b: BiquadClamp<C, Y> = ba.into();
-                b.u = (filter.offset * y_scale).as_();
-                b.min = (filter.min * y_scale).as_();
-                b.max = (filter.max * y_scale).as_();
+                b.u = (filter.offset * yu).as_();
+                b.min = (filter.min * yu).as_();
+                b.max = (filter.max * yu).as_();
                 b
             }
         }
