@@ -280,14 +280,20 @@ pub struct Gains<T> {
 
 /// Units for a biquad
 ///
-/// In desired (e.g. SI) units per machine (e.g. full scale) unit
+/// In desired (e.g. SI) units per machine (e.g. full scale or LSB) unit
 #[derive(Clone, Debug)]
 pub struct Units<T> {
-    /// Biquad update period
+    /// Update period
+    ///
+    /// One update interval corresponds to this many physical units (e.g. seconds).
     pub t: T,
     /// Input unit
+    ///
+    /// Unit input in machine units corresponds to this many physical units.
     pub x: T,
     /// Output unit
+    ///
+    /// Unit output in machine units corresponds to this many physical units
     pub y: T,
 }
 
