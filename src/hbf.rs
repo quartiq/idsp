@@ -400,21 +400,25 @@ pub const HBF_DEC_CASCADE: HbfDecCascade = Major::new((
 
 /// Response length, effective number of taps
 pub const fn hbf_dec_response_length(depth: usize) -> usize {
-    assert!(depth < 5);
+    assert!(depth <= 5);
     let mut n = 0;
-    if depth > 0 {
+    if depth > 4 {
+        n /= 2;
+        n += EvenSymmetric::<[f32; HBF_TAPS.4.0.len()]>::LEN;
+    }
+    if depth > 3 {
         n /= 2;
         n += EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN;
     }
-    if depth > 1 {
+    if depth > 2 {
         n /= 2;
         n += EvenSymmetric::<[f32; HBF_TAPS.2.0.len()]>::LEN;
     }
-    if depth > 2 {
+    if depth > 1 {
         n /= 2;
         n += EvenSymmetric::<[f32; HBF_TAPS.1.0.len()]>::LEN;
     }
-    if depth > 3 {
+    if depth > 0 {
         n /= 2;
         n += EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN;
     }
@@ -488,7 +492,7 @@ pub const HBF_INT_CASCADE: HbfIntCascade = Major::new((
 
 /// Response length, effective number of taps
 pub const fn hbf_int_response_length(depth: usize) -> usize {
-    assert!(depth < 5);
+    assert!(depth <= 5);
     let mut n = 0;
     if depth > 0 {
         n += EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN;
@@ -504,6 +508,10 @@ pub const fn hbf_int_response_length(depth: usize) -> usize {
     }
     if depth > 3 {
         n += EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN;
+        n *= 2;
+    }
+    if depth > 4 {
+        n += EvenSymmetric::<[f32; HBF_TAPS.4.0.len()]>::LEN;
         n *= 2;
     }
     n
