@@ -12,6 +12,54 @@ use serde::{Deserialize, Serialize};
 
 use dsp_process::{Inplace, Process};
 
+/// Wrap classification
+#[repr(i8)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Wrap {
+    /// A wrap occured in the negative direction
+    Negative = -1,
+    /// No wrap, the wrapped difference between successive values
+    /// has the same sign as their comparison
+    #[default]
+    None = 0,
+    /// A wrap occurred in the positive direction
+    Positive = 1,
+}
+
+impl From<Wrap> for Ordering {
+    fn from(value: Wrap) -> Self {
+        match value {
+            Wrap::Negative => Self::Less,
+            Wrap::None => Self::Equal,
+            Wrap::Positive => Self::Greater,
+        }
+    }
+}
+
+impl From<Ordering> for Wrap {
+    fn from(value: Ordering) -> Self {
+        match value {
+            Ordering::Less => Self::Negative,
+            Ordering::Equal => Self::None,
+            Ordering::Greater => Self::Positive,
+        }
+    }
+}
+
+impl core::ops::Add for Wrap {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        (self as i32 + rhs as i32).cmp(&0).into()
+    }
+}
+
+impl core::ops::AddAssign for Wrap {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
 /// Subtract `y - x` with signed overflow.
 ///
 /// This is very similar to `i32::overflowing_sub(y, x)` except that the
@@ -107,54 +155,6 @@ where
 }
 
 impl<P: Copy, Q> Inplace<P> for Unwrapper<Q> where Self: Process<P> {}
-
-/// Wrap classification
-#[repr(i8)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Wrap {
-    /// A wrap occured in the negative direction
-    Negative = -1,
-    /// No wrap, the wrapped difference between successive values
-    /// has the same sign as their comparison
-    #[default]
-    None = 0,
-    /// A wrap occurred in the positive direction
-    Positive = 1,
-}
-
-impl From<Wrap> for Ordering {
-    fn from(value: Wrap) -> Self {
-        match value {
-            Wrap::Negative => Self::Less,
-            Wrap::None => Self::Equal,
-            Wrap::Positive => Self::Greater,
-        }
-    }
-}
-
-impl From<Ordering> for Wrap {
-    fn from(value: Ordering) -> Self {
-        match value {
-            Ordering::Less => Self::Negative,
-            Ordering::Equal => Self::None,
-            Ordering::Greater => Self::Positive,
-        }
-    }
-}
-
-impl core::ops::Add for Wrap {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        (self as i32 + rhs as i32).cmp(&0).into()
-    }
-}
-
-impl core::ops::AddAssign for Wrap {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = *self + rhs
-    }
-}
 
 /// Maps wraps to saturation
 ///
