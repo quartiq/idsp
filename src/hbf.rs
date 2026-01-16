@@ -63,7 +63,7 @@ where
             .zip(c.iter())
             .map(|((old, new), tap)| (if SYM { *new + *old } else { *new - *old }) * *tap)
             .sum();
-        if ODD { xc + x[M] } else { xc }
+        if ODD && SYM { xc + x[M] } else { xc }
     })
 }
 
