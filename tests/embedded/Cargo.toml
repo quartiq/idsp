@@ -1,0 +1,46 @@
+[package]
+name = "idsp-embedded-tests"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+teleprobe-meta = "1"
+
+embassy-time = { version = "0.5.0", features = [
+    "defmt",
+    "defmt-timestamp-uptime",
+] }
+embassy-stm32 = { version = "0.5.0", features = [
+    "defmt",
+    "unstable-pac",
+    "memory-x",
+    "time-driver-any",
+    # "_allow-disable-rtc",
+    "stm32h743zi",
+] }
+defmt = "1.0.1"
+defmt-rtt = "1.0.0"
+cortex-m = { version = "0.7.6", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7.0"
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+
+idsp = { version = "0.20", path = "../.." }
+dsp-process = { version = "0.1", path = "../../dsp-process" }
+dsp-fixedpoint = { version = "0.1", path = "../../dsp-fixedpoint" }
+biquad = "0.5.0"
+num-traits = { version = "0.2.19", default-features = false }
+
+[profile.dev]
+debug = 'full'
+opt-level = 's'
+
+[profile.release]
+debug = 'full'
+codegen-units = 1
+incremental = false
+lto = true
+opt-level = 2
