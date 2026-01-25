@@ -1,7 +1,5 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
-# runner = "teleprobe client run"
-runner = "teleprobe local run --chip STM32H743ZITx --probe 0483:3754:0031003F3433510837363934 --elf"
-
+runner = "probe-rs run --chip STM32H743ZITx"
 rustflags = ["-C", "target-cpu=cortex-m7"]
 
 [build]

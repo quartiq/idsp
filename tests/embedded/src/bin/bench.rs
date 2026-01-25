@@ -8,7 +8,7 @@ use core::{
 use cortex_m::{asm, peripheral::DWT};
 use defmt::*;
 use num_traits::Float;
-use {defmt_rtt as _, embassy_stm32 as _, panic_probe as _};
+use {defmt_rtt as _, panic_probe as _};
 
 use dsp_fixedpoint::Q32;
 use dsp_process::{Inplace, Process, Split};
@@ -144,7 +144,6 @@ fn main() -> ! {
     info!("Setup");
     let mut c = unwrap!(cortex_m::Peripherals::take());
 
-    // Roughly halves cycles
     // c.SCB.enable_icache();
     // c.SCB.enable_dcache(&mut c.CPUID);
 
@@ -152,9 +151,10 @@ fn main() -> ! {
     c.DWT.enable_cycle_counter();
 
     info!("Starting");
+
     info!(
-        "Units are cycles per sample. SLICE={=usize}, CHUNK={=usize}",
-        SLICE, CHUNK
+        "Units: cycles per sample, chunk size: {=usize}, slice size: {=usize}",
+        CHUNK, SLICE
     );
 
     info!("Name                  [single, chunk, chunk inplace, slice, slice inplace]");
@@ -238,12 +238,12 @@ fn main() -> ! {
                 (),
                 Parallel((
                     [
-                        defmt::unwrap!(Wdf::<_, 0xad>::quantize(&[-0.9, 0.9])),
-                        defmt::unwrap!(Wdf::<_, 0xad>::quantize(&[-0.6, 0.7])),
+                        unwrap!(Wdf::<_, 0xad>::quantize(&[-0.9, 0.9])),
+                        unwrap!(Wdf::<_, 0xad>::quantize(&[-0.6, 0.7])),
                     ],
                     (
-                        defmt::unwrap!(Wdf::<_, 0xad>::quantize(&[-0.7, 0.6])),
-                        defmt::unwrap!(Wdf::<_, 0xa>::quantize(&[0.8])),
+                        unwrap!(Wdf::<_, 0xad>::quantize(&[-0.7, 0.6])),
+                        unwrap!(Wdf::<_, 0xa>::quantize(&[0.8])),
                     ),
                 )),
             ),
