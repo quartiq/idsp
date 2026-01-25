@@ -518,16 +518,16 @@ mod test {
     #[test]
     fn test() {
         let mut h = Split::new(EvenSymmetric([0.5]), HbfDec::<[_; 5]>::default());
-        h.as_mut().block(&[], &mut []);
+        h.block(&[], &mut []);
 
         let x = [1.0; 8];
         let mut y = [0.0; 4];
-        h.as_mut().block(x.as_chunks().0, &mut y);
+        h.block(x.as_chunks().0, &mut y);
         assert_eq!(y, [1.5, 2.0, 2.0, 2.0]);
 
         let mut h = Split::new(&HBF_TAPS.3, HbfDec::<[_; 11]>::default());
         let x: Vec<_> = (0..8).map(|i| i as f32).collect();
-        h.as_mut().block(x.as_chunks().0, &mut y);
+        h.block(x.as_chunks().0, &mut y);
         println!("{:?}", y);
     }
 

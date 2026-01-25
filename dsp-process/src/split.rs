@@ -15,19 +15,19 @@ pub struct Split<C, S> {
     pub state: S,
 }
 
-impl<X: Copy, Y, S: ?Sized, C: SplitProcess<X, Y, S> + ?Sized> Process<X, Y> for Split<&C, &mut S> {
+impl<X: Copy, Y, S, C: SplitProcess<X, Y, S>> Process<X, Y> for Split<C, S> {
     fn process(&mut self, x: X) -> Y {
-        self.config.process(self.state, x)
+        self.config.process(&mut self.state, x)
     }
 
     fn block(&mut self, x: &[X], y: &mut [Y]) {
-        self.config.block(self.state, x, y)
+        self.config.block(&mut self.state, x, y)
     }
 }
 
-impl<X: Copy, S: ?Sized, C: SplitInplace<X, S> + ?Sized> Inplace<X> for Split<&C, &mut S> {
+impl<X: Copy, S, C: SplitInplace<X, S>> Inplace<X> for Split<C, S> {
     fn inplace(&mut self, xy: &mut [X]) {
-        self.config.inplace(self.state, xy);
+        self.config.inplace(&mut self.state, xy);
     }
 }
 

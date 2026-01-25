@@ -43,11 +43,11 @@ mod test {
     #[test]
     fn stateless() {
         assert_eq!(Unsplit(&Neg).process(&mut (), 9), -9);
-        assert_eq!(Split::stateless(&Neg).as_mut().process(9), -9);
+        assert_eq!(Split::stateless(&Neg).process(9), -9);
 
         let mut p = (Split::stateless(&Offset(7)) * Split::stateless(&Offset(1))).minor();
-        p.as_mut().assert_process::<i8, _>();
-        assert_eq!(p.as_mut().process(9), 7 + 1 + 9);
+        p.assert_process::<i8, _>();
+        assert_eq!(p.process(9), 7 + 1 + 9);
     }
 
     #[test]
@@ -56,7 +56,7 @@ mod test {
         let mut dly = Buffer::<[_; 2]>::default();
         dly.inplace(&mut xy);
         assert_eq!(xy, [0, 0, 3]);
-        let y: i32 = Split::stateful(dly).as_mut().process(4);
+        let y: i32 = Split::stateful(dly).process(4);
         assert_eq!(y, 0);
     }
 
@@ -73,10 +73,10 @@ mod test {
             )),
             Default::default(),
         );
-        let y: i32 = f.as_mut().process(5);
+        let y: i32 = f.process(5);
         assert_eq!(y, (5 + 3) + ((5 * 4) >> 1));
 
-        let y: [i32; 5] = f.channels().as_mut().process([5; _]);
+        let y: [i32; 5] = f.channels().process([5; _]);
         assert_eq!(y, [(5 + 3) + ((5 * 4) >> 1); 5]);
     }
 }

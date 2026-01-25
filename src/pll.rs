@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn mini() {
         let mut p = Split::new(W32::new(W(1 << 24)), PLL::default());
-        let a = p.as_mut().process(Some(W(0x10000)));
+        let a = p.process(Some(W(0x10000)));
         assert_eq!(a.state.0, 0x1ff);
         assert_eq!(a.step.0, 0x1ff);
     }
@@ -119,7 +119,7 @@ mod tests {
         let mut x = W(0i32);
         for i in 0..n {
             x += f0;
-            let a = Split::new(&k, &mut p).process(Some(x));
+            let a = k.process(&mut p, Some(x));
             if i > n / 4 {
                 assert_eq!((a.step - f0).0.abs() <= 1, true);
             }
