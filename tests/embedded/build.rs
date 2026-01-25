@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rustc-link-arg-bins=-Tlink_ram.x");
     println!("cargo:rustc-link-arg-bins=-Tdevice.x");
     println!("cargo:rustc-link-arg-bins=-Tdefmt.x");
-    println!("cargo:rustc-link-arg-bins=-Tteleprobe.x");
+    //println!("cargo:rustc-link-arg-bins=-Tteleprobe.x");
 
     Ok(())
 }

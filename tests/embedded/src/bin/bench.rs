@@ -101,31 +101,27 @@ fn load_itcm() {
     cortex_m::asm::isb();
 }
 
-//#[inline(never)]
-//#[unsafe(link_section = ".itcm.timeit")]
 fn time<F: FnMut()>(mut func: F) -> u32 {
-    // cortex_m::interrupt::free(|_cs| {
-    // cache warming
-    func();
-    func();
-    func();
-    let c = DWT::cycle_count();
-    atomic::compiler_fence(Ordering::SeqCst);
-    func();
-    atomic::compiler_fence(Ordering::SeqCst);
-    DWT::cycle_count().wrapping_sub(c)
-    // })
+    cortex_m::interrupt::free(|_cs| {
+        // cache warming
+        func();
+        func();
+        let c = DWT::cycle_count();
+        atomic::compiler_fence(Ordering::SeqCst);
+        func();
+        atomic::compiler_fence(Ordering::SeqCst);
+        DWT::cycle_count().wrapping_sub(c)
+    })
 }
 
 #[inline(never)]
-#[unsafe(link_section = ".itcm.timeit")]
+// #[unsafe(link_section = ".itcm.timeit")]
 fn noinline<F: FnOnce()>(func: F) {
     func()
 }
 
-// place the no-inline here to aid cache warming
-// #[inline(never)]
-// #[unsafe(link_section = ".itcm.timeit")]
+//#[inline(never)]
+//#[unsafe(link_section = ".itcm.timeit")]
 fn timeit<F: FnMut()>(mut func: F) -> u32 {
     let c1 = time(|| {
         noinline(&mut func);
@@ -134,13 +130,6 @@ fn timeit<F: FnMut()>(mut func: F) -> u32 {
         noinline(&mut func);
         noinline(&mut func);
     });
-    let c3 = time(|| {
-        noinline(&mut func);
-        noinline(&mut func);
-        noinline(&mut func);
-    });
-    let err = (c2 + c2) as f32 / (c1 + c3) as f32 - 1.0;
-    defmt::assert!(err.abs() < 1e-2, "cycle error: {=f32}", err);
     c2 - c1
 }
 
@@ -152,31 +141,31 @@ struct Cycles {
 
 #[derive(Default, Debug, Clone, defmt::Format)]
 struct CyclesResults {
-    slice: Cycles,
-    chunked: Cycles,
+    single: u32,
     chunk: Cycles,
+    large: Cycles,
 }
 
 impl CyclesResults {
     fn show(&self, name: &str) {
         const PAD: &str = "                     ";
+        let adj = name.len().min(PAD.len());
         info!(
             "{=str}{=str} {=[?]}",
-            name[..name.len().min(PAD.len())],
-            PAD[..(PAD.len() - name.len().min(PAD.len()))],
+            name[..adj],
+            PAD[adj..],
             [
-                self.slice.block as f32 / BLOCK as f32,
-                self.slice.inplace as f32 / BLOCK as f32,
-                self.chunked.block as f32 / BLOCK as f32,
-                self.chunked.inplace as f32 / BLOCK as f32,
+                self.single as f32,
                 self.chunk.block as f32 / CHUNK as f32,
                 self.chunk.inplace as f32 / CHUNK as f32,
+                self.large.block as f32 / SLICE as f32,
+                self.large.inplace as f32 / SLICE as f32,
             ]
         );
     }
 }
 
-const BLOCK: usize = 1 << 10;
+const SLICE: usize = 1 << 10;
 const CHUNK: usize = 4;
 
 fn bench_process<C, S, X>(proc: &mut Split<C, S>) -> CyclesResults
@@ -185,37 +174,40 @@ where
     X: Copy + Default,
 {
     let proc = black_box(proc);
-    let mut xy = [black_box([X::default(); BLOCK]); 2];
-    let [x, y] = xy.each_mut();
-    let slice = Cycles {
+    let x = black_box(X::default());
+    let single = timeit(|| {
+        black_box(proc.as_mut().process(x));
+    });
+    let mut xy = [black_box([x; SLICE]); 2];
+    let [x, y] = xy.each_mut().map(|x| x.as_mut_slice());
+    let large = Cycles {
         block: timeit(|| proc.as_mut().block(x, y)),
         inplace: timeit(|| proc.as_mut().inplace(y)),
     };
     let ((x, []), (y, [])) = (x.as_chunks::<CHUNK>(), y.as_chunks_mut::<CHUNK>()) else {
         defmt::unreachable!()
     };
-    let chunked = Cycles {
-        block: timeit(|| {
-            for (x, y) in x.iter().zip(y.iter_mut()) {
-                proc.as_mut().block(x, y);
-            }
-        }),
-        inplace: timeit(|| {
-            for y in y.iter_mut() {
-                proc.as_mut().inplace(y);
-            }
-        }),
-    };
+    // let large = Cycles {
+    //     block: timeit(|| {
+    //         for (x, y) in x.iter().zip(y.iter_mut()) {
+    //             proc.as_mut().block(x, y);
+    //         }
+    //     }),
+    //     inplace: timeit(|| {
+    //         for y in y.iter_mut() {
+    //             proc.as_mut().inplace(y);
+    //         }
+    //     }),
+    // };
     let (x0, y0) = (&x[0], &mut y[0]);
     let chunk = Cycles {
         block: timeit(|| proc.as_mut().block(x0, y0)),
         inplace: timeit(|| proc.as_mut().inplace(y0)),
     };
     CyclesResults {
-        slice,
-        chunked,
+        single,
         chunk,
-        ..Default::default()
+        large,
     }
 }
 
@@ -227,67 +219,7 @@ impl<B: biquad::Biquad<X>, X: Copy + Float> dsp_process::Process<X> for BiquadAd
 }
 impl<B, X: Copy> dsp_process::Inplace<X> for BiquadAdapter<B> where Self: dsp_process::Process<X> {}
 
-fn biquad_rs_bench_one<P, X>(proc: &mut P) -> CyclesResults
-where
-    P: biquad::Biquad<X>,
-    X: Float + Default,
-{
-    let proc = black_box(proc);
-    let mut xy = [black_box([X::default(); BLOCK]); 2];
-    let [x, y] = xy.each_mut();
-    let slice = Cycles {
-        block: timeit(|| {
-            for (x, y) in x.iter().zip(y.iter_mut()) {
-                *y = proc.run(*x);
-            }
-        }),
-        inplace: timeit(|| {
-            for y in y.iter_mut() {
-                *y = proc.run(*y);
-            }
-        }),
-    };
-    let ((x, []), (y, [])) = (x.as_chunks::<CHUNK>(), y.as_chunks_mut::<CHUNK>()) else {
-        defmt::unreachable!()
-    };
-    let chunked = Cycles {
-        block: timeit(|| {
-            for (x, y) in x.iter().zip(y.iter_mut()) {
-                for (x, y) in x.iter().zip(y.iter_mut()) {
-                    *y = proc.run(*x);
-                }
-            }
-        }),
-        inplace: timeit(|| {
-            for y in y.iter_mut() {
-                for y in y.iter_mut() {
-                    *y = proc.run(*y);
-                }
-            }
-        }),
-    };
-    let (x0, y0) = (&x[0], &mut y[0]);
-    let chunk = Cycles {
-        block: timeit(|| {
-            for (x, y) in x0.iter().zip(y0.iter_mut()) {
-                *y = proc.run(*x);
-            }
-        }),
-        inplace: timeit(|| {
-            for y in y0.iter_mut() {
-                *y = proc.run(*y);
-            }
-        }),
-    };
-    CyclesResults {
-        slice,
-        chunked,
-        chunk,
-        ..Default::default()
-    }
-}
-
-fn coeff_def<T: Float>() -> biquad::Coefficients<T> {
+fn coefficients_default<T: Float>() -> biquad::Coefficients<T> {
     biquad::Coefficients {
         a1: T::zero(),
         a2: T::zero(),
@@ -305,13 +237,19 @@ fn main() -> ! {
 
     load_itcm();
 
-    c.SCB.enable_icache();
-    c.SCB.enable_dcache(&mut c.CPUID);
+    // c.SCB.enable_icache();
+    // c.SCB.enable_dcache(&mut c.CPUID);
 
     c.DCB.enable_trace();
     c.DWT.enable_cycle_counter();
 
     info!("Starting");
+    info!(
+        "Units are cycles per sample. SLICE={=usize}, CHUNK={=usize}",
+        SLICE, CHUNK
+    );
+
+    info!("Name                  [single, chunk, chunk inplace, slice, slice inplace]");
 
     bench_process(&mut Split::<iir::Biquad<Q32<29>>, iir::DirectForm1<i32>>::default())
         .show("idsp q32");
@@ -343,11 +281,10 @@ fn main() -> ! {
     bench_process(&mut Split::<iir::Biquad<f32>, iir::DirectForm1<f32>>::default())
         .show("idsp f32");
 
-    biquad_rs_bench_one(&mut biquad::DirectForm1::new(coeff_def::<f32>())).show("biquad df1 f32");
     bench_process(&mut Split::stateful(BiquadAdapter(
-        biquad::DirectForm1::new(coeff_def::<f32>()),
+        biquad::DirectForm1::new(coefficients_default::<f32>()),
     )))
-    .show("biquad adapter df1 f32");
+    .show("biquad df1 f32");
 
     bench_process(&mut Split::<
         iir::Biquad<f32>,
@@ -355,12 +292,10 @@ fn main() -> ! {
     >::default())
     .show("idsp df2t f32");
 
-    biquad_rs_bench_one(&mut biquad::DirectForm2Transposed::new(coeff_def::<f32>()))
-        .show("biquad df2t f32");
     bench_process(&mut Split::stateful(BiquadAdapter(
-        biquad::DirectForm2Transposed::new(coeff_def::<f32>()),
+        biquad::DirectForm2Transposed::new(coefficients_default::<f32>()),
     )))
-    .show("biquad adapter df2t f32");
+    .show("biquad df2t f32");
 
     bench_process(&mut Split::<iir::BiquadClamp<f32>, iir::DirectForm1<f32>>::default())
         .show("idsp clamp f32");
@@ -368,11 +303,21 @@ fn main() -> ! {
     bench_process(&mut Split::<iir::Biquad<f64>, iir::DirectForm1<f64>>::default())
         .show("idsp f64");
 
-    biquad_rs_bench_one(&mut biquad::DirectForm1::new(coeff_def::<f64>())).show("biquad df1 f64");
     bench_process(&mut Split::stateful(BiquadAdapter(
-        biquad::DirectForm1::new(coeff_def::<f64>()),
+        biquad::DirectForm1::new(coefficients_default::<f64>()),
     )))
-    .show("biquad adapter df1 f64");
+    .show("biquad df1 f64");
+
+    bench_process(&mut Split::<
+        iir::Biquad<f64>,
+        iir::DirectForm2Transposed<f64>,
+    >::default())
+    .show("idsp df2t f64");
+
+    bench_process(&mut Split::stateful(BiquadAdapter(
+        biquad::DirectForm2Transposed::new(coefficients_default::<f64>()),
+    )))
+    .show("biquad df2t f64");
 
     bench_process(&mut Split::<iir::BiquadClamp<f64>, iir::DirectForm1<f64>>::default())
         .show("idsp clamp f64");
@@ -399,6 +344,7 @@ fn main() -> ! {
         Default::default(),
     ))
     .show("idsp wdf-ca-7");
+
     // bench_process(&mut Split::<iir::Biquad<dsp_fixedpoint::Q16<13>>, iir::DirectForm1<i16>>::default())
     //     .show("idsp q16");
     // bench_process(&mut Split::<iir::Biquad<dsp_fixedpoint::Q64<61>>, iir::DirectForm1<i64>>::default())

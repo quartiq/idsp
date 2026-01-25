@@ -8,7 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
-teleprobe-meta = "1"
+# teleprobe-meta = "1"
 
 embassy-time = { version = "0.5.0", features = [
     "defmt",
@@ -16,7 +16,7 @@ embassy-time = { version = "0.5.0", features = [
 ] }
 embassy-stm32 = { version = "0.5.0", features = [
     "defmt",
-    "unstable-pac",
+    # "unstable-pac",
     "memory-x",
     "time-driver-any",
     # "_allow-disable-rtc",
