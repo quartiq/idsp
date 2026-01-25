@@ -1,7 +1,7 @@
 #[pyo3::pymodule]
 mod _idsp {
     use dsp_fixedpoint::Q32;
-    use dsp_process::{Add, Identity, Inplace, Split, SplitInplace, SplitProcess};
+    use dsp_process::{Add, Identity, Inplace, Split, SplitInplace};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
@@ -142,9 +142,9 @@ mod _idsp {
             ),
         );
 
-        let mut f = (Split::stateless(Identity)
+        let mut f = (Split::stateful(Identity)
             * Split::new(p, Default::default()).parallel()
-            * Split::stateless(Add))
+            * Split::stateful(Add))
         .minor::<[_; _]>();
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
         f.inplace(xy);
