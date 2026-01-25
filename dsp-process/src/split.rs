@@ -43,16 +43,6 @@ impl<C, S> Split<C, S> {
         Self: Process<X, Y>,
     {
     }
-
-    /// Obtain a borrowing Split
-    ///
-    /// Stateful `Process` is implemented on the borrowing Split
-    pub fn as_mut(&mut self) -> Split<&C, &mut S> {
-        Split {
-            config: &self.config,
-            state: &mut self.state,
-        }
-    }
 }
 
 /// Stateless/stateful marker
@@ -63,10 +53,10 @@ impl<C, S> Split<C, S> {
 #[repr(transparent)]
 pub struct Unsplit<P>(pub P);
 
-impl<C> Split<Unsplit<C>, ()> {
+impl<C> Split<C, ()> {
     /// Create a stateless processor
     pub fn stateless(config: C) -> Self {
-        Self::new(Unsplit(config), ())
+        Self::new(config, ())
     }
 }
 
@@ -202,29 +192,6 @@ impl<C, S, const N: usize> Split<[C; N], [S; N]> {
             let (c, s) = it.next().unwrap();
             Split::new(c, s)
         })
-    }
-}
-
-/// Stateless filters
-impl<'a, X: Copy, Y, P> SplitProcess<X, Y> for Unsplit<&'a P>
-where
-    &'a P: Process<X, Y>,
-{
-    fn process(&self, _state: &mut (), x: X) -> Y {
-        (&*self.0).process(x)
-    }
-
-    fn block(&self, _state: &mut (), x: &[X], y: &mut [Y]) {
-        (&*self.0).block(x, y)
-    }
-}
-
-impl<'a, X: Copy, P> SplitInplace<X> for Unsplit<&'a P>
-where
-    &'a P: Inplace<X>,
-{
-    fn inplace(&self, _state: &mut (), xy: &mut [X]) {
-        (&*self.0).inplace(xy)
     }
 }
 

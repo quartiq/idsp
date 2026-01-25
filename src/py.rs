@@ -1,7 +1,7 @@
 #[pyo3::pymodule]
 mod _idsp {
     use dsp_fixedpoint::Q32;
-    use dsp_process::{Add, Identity, Inplace, Split};
+    use dsp_process::{Add, Identity, Inplace, Split, SplitInplace, SplitProcess};
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
@@ -69,7 +69,7 @@ mod _idsp {
             .collect::<Result<Vec<_>, PyErr>>()?;
         let mut state = vec![crate::iir::DirectForm1::default(); sos.len()];
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
-        Split::new(&sos[..], &mut state[..]).inplace(xy);
+        sos.inplace(&mut state, xy);
         Ok(())
     }
 
@@ -103,7 +103,7 @@ mod _idsp {
             .collect::<Result<Vec<_>, PyErr>>()?;
         let mut state = vec![crate::iir::DirectForm1Wide::default(); sos.len()];
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
-        Split::new(&sos[..], &mut state[..]).inplace(xy);
+        sos.inplace(&mut state, xy);
         Ok(())
     }
 
@@ -142,12 +142,12 @@ mod _idsp {
             ),
         );
 
-        let mut f = (Split::stateless(&Identity)
+        let mut f = (Split::stateless(Identity)
             * Split::new(p, Default::default()).parallel()
-            * Split::stateless(&Add))
+            * Split::stateless(Add))
         .minor::<[_; _]>();
         let xy = xy.as_slice_mut().or(Err(PyTypeError::new_err("order")))?;
-        f.as_mut().inplace(xy);
+        f.inplace(xy);
         Ok(())
     }
 }
