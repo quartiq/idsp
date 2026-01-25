@@ -170,19 +170,19 @@ const CHUNK: usize = 4;
 
 fn bench_process<C, S, X>(proc: &mut Split<C, S>) -> CyclesResults
 where
-    for<'a> Split<&'a C, &'a mut S>: Inplace<X>,
+    Split<C, S>: Inplace<X>,
     X: Copy + Default,
 {
     let proc = black_box(proc);
     let x = black_box(X::default());
     let single = timeit(|| {
-        black_box(proc.as_mut().process(x));
+        black_box(proc.process(x));
     });
     let mut xy = [black_box([x; SLICE]); 2];
     let [x, y] = xy.each_mut().map(|x| x.as_mut_slice());
     let large = Cycles {
-        block: timeit(|| proc.as_mut().block(x, y)),
-        inplace: timeit(|| proc.as_mut().inplace(y)),
+        block: timeit(|| proc.block(x, y)),
+        inplace: timeit(|| proc.inplace(y)),
     };
     let ((x, []), (y, [])) = (x.as_chunks::<CHUNK>(), y.as_chunks_mut::<CHUNK>()) else {
         defmt::unreachable!()
@@ -190,19 +190,19 @@ where
     // let large = Cycles {
     //     block: timeit(|| {
     //         for (x, y) in x.iter().zip(y.iter_mut()) {
-    //             proc.as_mut().block(x, y);
+    //             proc.block(x, y);
     //         }
     //     }),
     //     inplace: timeit(|| {
     //         for y in y.iter_mut() {
-    //             proc.as_mut().inplace(y);
+    //             proc.inplace(y);
     //         }
     //     }),
     // };
     let (x0, y0) = (&x[0], &mut y[0]);
     let chunk = Cycles {
-        block: timeit(|| proc.as_mut().block(x0, y0)),
-        inplace: timeit(|| proc.as_mut().inplace(y0)),
+        block: timeit(|| proc.block(x0, y0)),
+        inplace: timeit(|| proc.inplace(y0)),
     };
     CyclesResults {
         single,
