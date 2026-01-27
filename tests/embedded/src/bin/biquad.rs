@@ -7,8 +7,9 @@ use num_traits::Float;
 use {defmt_rtt as _, panic_probe as _};
 
 use dsp_fixedpoint::Q32;
+use dsp_process::{Add, Identity, Pair, Parallel, Unsplit};
 use dsp_process::{Inplace, Process, Split};
-use idsp::iir;
+use idsp::iir::{self, wdf::Wdf};
 
 use idsp_embedded_bench::*;
 
@@ -116,8 +117,6 @@ fn main() -> ! {
     bench_inplace(&mut Split::<iir::BiquadClamp<f64>, iir::DirectForm1<f64>>::default())
         .show("idsp clamp f64");
 
-    use dsp_process::{Add, Identity, Pair, Parallel, Unsplit};
-    use idsp::iir::wdf::Wdf;
     bench_inplace::<_, i32>(&mut Split::new(
         Pair::new((
             (
@@ -138,6 +137,37 @@ fn main() -> ! {
         ((Unsplit(Identity), Default::default()), Unsplit(Add)),
     ))
     .show("idsp wdf-ca-7");
+
+    let p = (
+        (
+            (
+                Wdf::<1, 0x1>::default(),
+                unwrap!(Wdf::<_, 0x1c>::quantize(&[-0.226119, 0.0])),
+            ),
+            [
+                unwrap!(Wdf::<_, 0x1d>::quantize(&[-0.602422, 0.0])),
+                unwrap!(Wdf::quantize(&[-0.83932, 0.0])),
+                unwrap!(Wdf::quantize(&[-0.950847, 0.0])),
+            ],
+        ),
+        (
+            [
+                unwrap!(Wdf::<_, 0x1c>::quantize(&[-0.063978, 0.0])),
+                unwrap!(Wdf::quantize(&[-0.423068, 0.0])),
+            ],
+            [
+                unwrap!(Wdf::<_, 0x1d>::quantize(&[-0.741327, 0.0])),
+                unwrap!(Wdf::quantize(&[-0.905567, 0.0])),
+                unwrap!(Wdf::quantize(&[-0.984721, 0.0])),
+            ],
+        ),
+    );
+
+    let mut f = (Split::stateful(Identity)
+        * Split::new(p, Default::default()).parallel()
+        * Split::stateful(Add))
+    .minor::<[_; _]>();
+    bench_inplace::<_, i32>(&mut f).show("idsp wdf-ca-19");
 
     bench_inplace(&mut Split::<
         iir::Biquad<dsp_fixedpoint::Q16<13>>,
