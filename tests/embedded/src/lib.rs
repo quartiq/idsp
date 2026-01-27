@@ -9,7 +9,7 @@ use cortex_m::peripheral::DWT;
 use defmt::*;
 use {defmt_rtt as _, panic_probe as _};
 
-use dsp_process::{Inplace, Process, SplitInplace, SplitProcess};
+use dsp_process::{Inplace, Process};
 
 fn time<F: FnMut()>(mut func: F) -> u32 {
     cortex_m::interrupt::free(|_cs| {
@@ -108,21 +108,3 @@ pub fn bench_inplace<P: Inplace<X>, X: Copy + Default>(proc: &mut P) -> CyclesRe
     ret.inplace_chunk = timeit(|| proc.inplace(&mut y));
     ret
 }
-
-// TODO: move and use
-
-pub struct FnProcess<F>(pub F);
-impl<F: FnMut(X) -> Y, X: Copy, Y> Process<X, Y> for FnProcess<F> {
-    fn process(&mut self, x: X) -> Y {
-        (self.0)(x)
-    }
-}
-impl<F, X: Copy> Inplace<X> for FnProcess<F> where Self: Process<X> {}
-
-pub struct FnSplitProcess<F>(pub F);
-impl<F: Fn(&mut S, X) -> Y, X: Copy, Y, S> SplitProcess<X, Y, S> for FnSplitProcess<F> {
-    fn process(&self, state: &mut S, x: X) -> Y {
-        (self.0)(state, x)
-    }
-}
-impl<F, X: Copy, S> SplitInplace<X, S> for FnSplitProcess<F> where Self: SplitProcess<X, X, S> {}

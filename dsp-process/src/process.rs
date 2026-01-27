@@ -117,3 +117,25 @@ impl<X: Copy, S: ?Sized, T: SplitInplace<X, S>> SplitInplace<X, S> for &mut T {
         T::inplace(self, state, xy)
     }
 }
+
+/// Wrap a `FnMut` into a `Process`/`Inplace`
+pub struct FnProcess<F>(pub F);
+
+impl<F: FnMut(X) -> Y, X: Copy, Y> Process<X, Y> for FnProcess<F> {
+    fn process(&mut self, x: X) -> Y {
+        (self.0)(x)
+    }
+}
+
+impl<F, X: Copy> Inplace<X> for FnProcess<F> where Self: Process<X> {}
+
+/// Wrap a `Fn` into a `SplitProcess`/`SplitInplace`
+pub struct FnSplitProcess<F>(pub F);
+
+impl<F: Fn(&mut S, X) -> Y, X: Copy, Y, S> SplitProcess<X, Y, S> for FnSplitProcess<F> {
+    fn process(&self, state: &mut S, x: X) -> Y {
+        (self.0)(state, x)
+    }
+}
+
+impl<F, X: Copy, S> SplitInplace<X, S> for FnSplitProcess<F> where Self: SplitProcess<X, X, S> {}
