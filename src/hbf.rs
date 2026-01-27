@@ -39,7 +39,7 @@ use core::{
     slice::{from_mut, from_ref},
 };
 
-use dsp_process::{ChunkIn, ChunkOut, Major, SplitProcess};
+use dsp_process::{ChunkIn, ChunkOut, Major, SplitInplace, SplitProcess};
 
 /// Perform the FIR convolution and yield results iteratively.
 #[inline]
@@ -99,6 +99,24 @@ macro_rules! type_fir {
                 let mut y = T::default();
                 self.block(state, from_ref(&x), from_mut(&mut y));
                 y
+            }
+        }
+
+        impl<
+            C: Copy,
+            T: Copy + Default + Sub<T, Output = T> + Add<Output = T> + Mul<C, Output = T> + Sum,
+            const M: usize,
+            const N: usize,
+        > SplitInplace<T, [T; N]> for $name<[C; M]>
+        {
+            fn inplace(&self, state: &mut [T; N], xy: &mut [T]) {
+                for xy in xy.chunks_mut(N - Self::LEN) {
+                    state[Self::LEN..][..xy.len()].copy_from_slice(xy);
+                    for (y, x) in xy.iter_mut().zip(get::<_, _, _, $odd, $sym>(&self.0, state)) {
+                        *y = x;
+                    }
+                    state.copy_within(xy.len()..xy.len() + Self::LEN, 0);
+                }
             }
         }
     };
