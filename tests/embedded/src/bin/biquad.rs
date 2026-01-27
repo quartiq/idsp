@@ -138,6 +138,9 @@ fn main() -> ! {
     ))
     .show("idsp wdf-ca-7");
 
+    // Filter an i32 array in place with a 19th order half band WDF.
+    //
+    // Gazsi 1985, Example 5
     let p = (
         (
             (
