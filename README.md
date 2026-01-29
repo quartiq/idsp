@@ -43,7 +43,7 @@ Coefficient sharing for multiple channels is implemented through [`dsp_process::
 ### Comparison
 
 This is a rough feature comparison of several available `biquad` crates, with no claim for completeness, accuracy, or even fairness.
-TL;DR: `idsp` is slower but offers more features.
+TL;DR: `idsp` is as fast and offers more features.
 
 | Feature\Crate | [`biquad-rs`](https://crates.io/crates/biquad) | [`fixed-filters`](https://crates.io/crates/fixed-filters) | `idsp::iir` |
 |---|---|---|---|
@@ -68,16 +68,8 @@ TL;DR: `idsp` is slower but offers more features.
 | PI²D² builder limits | ❌ | ❌ | ✅ |
 | Support for fixed point `a1=-2` second order integrator | ❌ | ❌ | ✅ |
 
-Three crates have been compared when processing 4x1M samples (4 channels) with a biquad lowpass.
-Hardware was `thumbv7em-none-eabihf`, `cortex-m7`, code in ITCM, data in DTCM, caches enabled.
-
-| Crate | Type, features | Cycles per sample |
-|---|---|---|
-| [`biquad-rs`](https://crates.io/crates/biquad) | `f32` | 11.4 |
-| `idsp::iir` | `f32`, limits, offset | 15.5 |
-| [`fixed-filters`](https://crates.io/crates/fixed-filters) | `i32`, limits | 20.3 |
-| `idsp::iir` | `i32`, limits, offset | 23.5 |
-| `idsp::iir` | `i32`, limits, offset, noise shaping | 30.0 |
+The benchmarks and results comparing `idsp` and `biquad-rs` are in `tests/embedded`.
+`idsp`'s biquad can process one `i32` sample every 8.5 cycles and one `f32` sample every 12 cycles on a cortex-m7.
 
 ## State variable, normal form, wave digital filter
 
@@ -92,8 +84,8 @@ bandpass, and notch filtering of a signal.
 
 ## FIR filters
 
-[`hbf::HbfDec`], [`hbf::HbfInt`], [`hbf::HbfDec32`], [`hbf::HbfInt32`] etc:
-Fast `f32` symmetric FIR filters, optimized half-band filters, half-band filter decimators and integators and cascades.
+Type 1-4 linear phase FIR filters, [`hbf::HbfDec`], [`hbf::HbfInt`], [`hbf::HbfDec32`], [`hbf::HbfInt32`] etc:
+Fast `f32` symmetric FIR filters, also optimized half-band filters, half-band filter decimators and integators and cascades.
 These are used in [`stabilizer-stream`](https://github.com/quartiq/stabilizer-stream) for online PSD calculation for
 arbitrarily low offset frequencies.
 
