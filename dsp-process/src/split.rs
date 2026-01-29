@@ -15,19 +15,19 @@ pub struct Split<C, S> {
     pub state: S,
 }
 
-impl<X: Copy, Y, S: ?Sized, C: SplitProcess<X, Y, S> + ?Sized> Process<X, Y> for Split<&C, &mut S> {
+impl<X: Copy, Y, S, C: SplitProcess<X, Y, S>> Process<X, Y> for Split<C, S> {
     fn process(&mut self, x: X) -> Y {
-        self.config.process(self.state, x)
+        self.config.process(&mut self.state, x)
     }
 
     fn block(&mut self, x: &[X], y: &mut [Y]) {
-        self.config.block(self.state, x, y)
+        self.config.block(&mut self.state, x, y)
     }
 }
 
-impl<X: Copy, S: ?Sized, C: SplitInplace<X, S> + ?Sized> Inplace<X> for Split<&C, &mut S> {
+impl<X: Copy, S, C: SplitInplace<X, S>> Inplace<X> for Split<C, S> {
     fn inplace(&mut self, xy: &mut [X]) {
-        self.config.inplace(self.state, xy);
+        self.config.inplace(&mut self.state, xy);
     }
 }
 
@@ -43,16 +43,6 @@ impl<C, S> Split<C, S> {
         Self: Process<X, Y>,
     {
     }
-
-    /// Obtain a borrowing Split
-    ///
-    /// Stateful `Process` is implemented on the borrowing Split
-    pub fn as_mut(&mut self) -> Split<&C, &mut S> {
-        Split {
-            config: &self.config,
-            state: &mut self.state,
-        }
-    }
 }
 
 /// Stateless/stateful marker
@@ -63,10 +53,10 @@ impl<C, S> Split<C, S> {
 #[repr(transparent)]
 pub struct Unsplit<P>(pub P);
 
-impl<C> Split<Unsplit<C>, ()> {
+impl<C> Split<C, ()> {
     /// Create a stateless processor
     pub fn stateless(config: C) -> Self {
-        Self::new(Unsplit(config), ())
+        Self::new(config, ())
     }
 }
 
@@ -202,29 +192,6 @@ impl<C, S, const N: usize> Split<[C; N], [S; N]> {
             let (c, s) = it.next().unwrap();
             Split::new(c, s)
         })
-    }
-}
-
-/// Stateless filters
-impl<'a, X: Copy, Y, P> SplitProcess<X, Y> for Unsplit<&'a P>
-where
-    &'a P: Process<X, Y>,
-{
-    fn process(&self, _state: &mut (), x: X) -> Y {
-        (&*self.0).process(x)
-    }
-
-    fn block(&self, _state: &mut (), x: &[X], y: &mut [Y]) {
-        (&*self.0).block(x, y)
-    }
-}
-
-impl<'a, X: Copy, P> SplitInplace<X> for Unsplit<&'a P>
-where
-    &'a P: Inplace<X>,
-{
-    fn inplace(&self, _state: &mut (), xy: &mut [X]) {
-        (&*self.0).inplace(xy)
     }
 }
 
