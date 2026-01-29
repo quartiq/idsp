@@ -89,8 +89,12 @@ bandpass, and notch filtering of a signal.
 
 ## FIR filters
 
-[`hbf::HbfDec`], [`hbf::HbfInt`], [`hbf::HbfDec32`], [`hbf::HbfInt32`] etc:
-Fast `f32` symmetric FIR filters, optimized half-band filters, half-band filter decimators and integators and cascades.
+[`hbf::EvenSymmetric`], [`hbf::OddAntiSymmetric`], [`hbf::EvenAntiSymmetric`], [`hbf::OddSymmetric`]: Type I-IV linear phase FIR filters.
+
+[`hbf::HbfDec`], [`hbf::HbfInt`]:
+Fast symmetric FIR filters, optimized half-band filters, half-band filter decimators and integators and cascades.
+
+[`hbf::HbfDec32`], [`hbf::HbfInt32`] etc: HBF cascades with known-good coefficients for rate changes 2, 4, 8, 16, and 32.
 These are used in [`stabilizer-stream`](https://github.com/quartiq/stabilizer-stream) for online PSD calculation for
 arbitrarily low offset frequencies.
 
