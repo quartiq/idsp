@@ -154,16 +154,15 @@ impl<const N: usize> Default for WdfState<N> {
 
 impl<const N: usize, const M: u32> SplitProcess<i32, i32, WdfState<N>> for Wdf<N, M> {
     #[inline]
-    fn process(&self, state: &mut WdfState<N>, x0: i32) -> i32 {
+    fn process(&self, state: &mut WdfState<N>, x: i32) -> i32 {
         let mut y = 0;
         let (m, x, z) =
             self.a
                 .iter()
                 .zip(state.z.iter_mut())
-                .fold((M, x0, &mut y), |(m, x, y), (a, z0)| {
-                    let z1;
-                    [*y, z1] = Tpa::from((m & 0xf) as u8).adapt([x, *z0], *a);
-                    (m >> 4, z1, z0)
+                .fold((M, x, &mut y), |(m, mut x, y), (a, z)| {
+                    [*y, x] = Tpa::from((m & 0xf) as u8).adapt([x, *z], *a);
+                    (m >> 4, x, z)
                 });
         debug_assert_eq!(m, 0);
         *z = x;
