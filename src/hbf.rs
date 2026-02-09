@@ -76,6 +76,11 @@ macro_rules! type_fir {
         impl<T, const M: usize> $name<[T; M]> {
             /// Response length/number of taps minus one
             pub const LEN: usize = 2 * M - 1 + $odd as usize;
+
+            #[allow(unused)]
+            const fn len(&self) -> usize {
+                Self::LEN
+            }
         }
 
         impl<
@@ -355,26 +360,25 @@ pub const HBF_CASCADE_BLOCK: usize = 1 << 5;
 ///
 /// See [HBF_TAPS] and [HBF_DEC_CASCADE].
 /// Supports rate changes are power of two up to 32.
-pub type HbfDec2 =
-    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>;
+pub type HbfDec2 = HbfDec<[f32; HBF_TAPS.0.len() + HBF_CASCADE_BLOCK]>;
 /// HBF Decimate-by-4 cascade state
 pub type HbfDec4 = (
-    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.1.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 1)]>,
+    HbfDec<[f32; HBF_TAPS.1.len() + (HBF_CASCADE_BLOCK << 1)]>,
     HbfDec2,
 );
 /// HBF Decimate-by-8 cascade state
 pub type HbfDec8 = (
-    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.2.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 2)]>,
+    HbfDec<[f32; HBF_TAPS.2.len() + (HBF_CASCADE_BLOCK << 2)]>,
     HbfDec4,
 );
 /// HBF Decimate-by-16 cascade state
 pub type HbfDec16 = (
-    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 3)]>,
+    HbfDec<[f32; HBF_TAPS.3.len() + (HBF_CASCADE_BLOCK << 3)]>,
     HbfDec8,
 );
 /// HBF Decimate-by-32 cascade state
 pub type HbfDec32 = (
-    HbfDec<[f32; EvenSymmetric::<[f32; HBF_TAPS.4.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 4)]>,
+    HbfDec<[f32; HBF_TAPS.4.len() + (HBF_CASCADE_BLOCK << 4)]>,
     HbfDec16,
 );
 
@@ -422,23 +426,23 @@ pub const fn hbf_dec_response_length(depth: usize) -> usize {
     let mut n = 0;
     if depth > 4 {
         n /= 2;
-        n += EvenSymmetric::<[f32; HBF_TAPS.4.0.len()]>::LEN;
+        n += HBF_TAPS.4.len();
     }
     if depth > 3 {
         n /= 2;
-        n += EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN;
+        n += HBF_TAPS.3.len();
     }
     if depth > 2 {
         n /= 2;
-        n += EvenSymmetric::<[f32; HBF_TAPS.2.0.len()]>::LEN;
+        n += HBF_TAPS.2.len();
     }
     if depth > 1 {
         n /= 2;
-        n += EvenSymmetric::<[f32; HBF_TAPS.1.0.len()]>::LEN;
+        n += HBF_TAPS.1.len();
     }
     if depth > 0 {
         n /= 2;
-        n += EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN;
+        n += HBF_TAPS.0.len();
     }
     n
 }
@@ -447,27 +451,26 @@ pub const fn hbf_dec_response_length(depth: usize) -> usize {
 ///
 /// See [HBF_TAPS] and [HBF_INT_CASCADE].
 /// Supports rate changes are power of two up to 32.
-pub type HbfInt2 =
-    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN + HBF_CASCADE_BLOCK]>;
+pub type HbfInt2 = HbfInt<[f32; HBF_TAPS.0.len() + HBF_CASCADE_BLOCK]>;
 /// HBF interpolate-by-4 cascade state
 pub type HbfInt4 = (
     HbfInt2,
-    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.1.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 1)]>,
+    HbfInt<[f32; HBF_TAPS.1.len() + (HBF_CASCADE_BLOCK << 1)]>,
 );
 /// HBF interpolate-by-8 cascade state
 pub type HbfInt8 = (
     HbfInt4,
-    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.2.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 2)]>,
+    HbfInt<[f32; HBF_TAPS.2.len() + (HBF_CASCADE_BLOCK << 2)]>,
 );
 /// HBF interpolate-by-16 cascade state
 pub type HbfInt16 = (
     HbfInt8,
-    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 3)]>,
+    HbfInt<[f32; HBF_TAPS.3.len() + (HBF_CASCADE_BLOCK << 3)]>,
 );
 /// HBF interpolate-by-32 cascade state
 pub type HbfInt32 = (
     HbfInt16,
-    HbfInt<[f32; EvenSymmetric::<[f32; HBF_TAPS.4.0.len()]>::LEN + (HBF_CASCADE_BLOCK << 4)]>,
+    HbfInt<[f32; HBF_TAPS.4.len() + (HBF_CASCADE_BLOCK << 4)]>,
 );
 
 type HbfIntCascade<const B: usize = HBF_CASCADE_BLOCK> = Major<
@@ -513,23 +516,23 @@ pub const fn hbf_int_response_length(depth: usize) -> usize {
     assert!(depth <= 5);
     let mut n = 0;
     if depth > 0 {
-        n += EvenSymmetric::<[f32; HBF_TAPS.0.0.len()]>::LEN;
+        n += HBF_TAPS.0.len();
         n *= 2;
     }
     if depth > 1 {
-        n += EvenSymmetric::<[f32; HBF_TAPS.1.0.len()]>::LEN;
+        n += HBF_TAPS.1.len();
         n *= 2;
     }
     if depth > 2 {
-        n += EvenSymmetric::<[f32; HBF_TAPS.2.0.len()]>::LEN;
+        n += HBF_TAPS.2.len();
         n *= 2;
     }
     if depth > 3 {
-        n += EvenSymmetric::<[f32; HBF_TAPS.3.0.len()]>::LEN;
+        n += HBF_TAPS.3.len();
         n *= 2;
     }
     if depth > 4 {
-        n += EvenSymmetric::<[f32; HBF_TAPS.4.0.len()]>::LEN;
+        n += HBF_TAPS.4.len();
         n *= 2;
     }
     n
