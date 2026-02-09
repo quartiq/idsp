@@ -1,7 +1,7 @@
 #[pyo3::pymodule]
 mod _idsp {
     use dsp_fixedpoint::Q32;
-    use dsp_process::{Add, Identity, Inplace, Split, SplitInplace};
+    use dsp_process::SplitInplace;
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
     };
