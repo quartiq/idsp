@@ -5,7 +5,7 @@ include!(concat!(env!("OUT_DIR"), "/cossin_table.rs"));
 /// <https://github.com/m-labs/misoc/blob/master/misoc/cores/cossin.py>
 ///
 /// # Arguments
-/// * `phase` - 32-bit phase where `i32::MIN` is -π and `i32::MAX` is π
+/// * `phase` - 32-bit phase where `i32::MIN` is -π and `i32::MAX` is (near) π
 ///
 /// # Returns
 /// The cos and sin values of the provided phase as a `(i32, i32)`
@@ -42,7 +42,7 @@ pub fn cossin(mut phase: i32) -> (i32, i32) {
 
     // 1/2 < cos(0 <= x <= pi/4) <= 1: Shift the cos
     // values and scale the sine values as encoded in the LUT.
-    let mut cos = (lookup & 0xffff) as i32 + (1 << 16);
+    let mut cos = lookup as u16 as i32 + (1 << 16);
     let mut sin = (lookup >> 16) as i32;
 
     let dcos = (sin * dphi) >> COSSIN_DEPTH;

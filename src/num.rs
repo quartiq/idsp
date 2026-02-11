@@ -41,7 +41,7 @@ macro_rules! impl_const_float {
 impl_const_float!(f32);
 impl_const_float!(f64);
 
-macro_rules! impl_foreign {
+macro_rules! impl_const_int {
     ($($ty:ident),*) => {$(
         impl Clamp for $ty {
             const MIN: Self = <$ty>::MIN;
@@ -49,7 +49,7 @@ macro_rules! impl_foreign {
         }
     )*};
 }
-impl_foreign!(
+impl_const_int!(
     i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, isize, usize
 );
 

@@ -21,6 +21,10 @@ One comprehensive user for these algorithms is [Stabilizer](https://github.com/q
 
 [`atan2()`] returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine). The RMS phase error is less than 5e-6 rad, max error is less than 1.2e-5 rad, i.e. 20.5 bit RMS, 19.1 bit max accuracy. The bias is minimal.
 
+### CORDIC
+
+[`sqrt_atan2`] etc: complete family of CORDIC mode reference implementations.
+
 ## PLL, RPLL
 
 [`PLL`], [`RPLL`]: High accuracy, zero-assumption, fully robust, forward and reciprocal PLLs with dynamically adjustable time constant and arbitrary (in the Nyquist sampling sense) capture range, and noise shaping.
@@ -77,6 +81,7 @@ The benchmarks and results comparing `idsp` and `biquad-rs` are in `tests/embedd
 bandpass, and notch filtering of a signal.
 [`iir::normal`] is a Normal Form IIR filter for narrowband applications.
 [`iir::wdf`] has wave digital allpass filters that can be combined in a coupled [`dsp_process::Pair`].
+[`Cic`] generic cascaded integrator comb lowpass reference implementation.
 
 ## `Lowpass`, `Lockin`
 
@@ -84,8 +89,12 @@ bandpass, and notch filtering of a signal.
 
 ## FIR filters
 
-Type 1-4 linear phase FIR filters, [`hbf::HbfDec`], [`hbf::HbfInt`], [`hbf::HbfDec32`], [`hbf::HbfInt32`] etc:
-Fast `f32` symmetric FIR filters, also optimized half-band filters, half-band filter decimators and integators and cascades.
+[`hbf::EvenSymmetric`], [`hbf::OddAntiSymmetric`], [`hbf::EvenAntiSymmetric`], [`hbf::OddSymmetric`]: Type I-IV linear phase FIR filters.
+
+[`hbf::HbfDec`], [`hbf::HbfInt`]:
+Fast symmetric FIR filters, optimized half-band filters, half-band filter decimators and integators and cascades.
+
+[`hbf::HbfDec32`], [`hbf::HbfInt32`] etc: HBF cascades with known-good coefficients for rate changes 2, 4, 8, 16, and 32.
 These are used in [`stabilizer-stream`](https://github.com/quartiq/stabilizer-stream) for online PSD calculation for
 arbitrarily low offset frequencies.
 
