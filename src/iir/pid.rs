@@ -311,7 +311,7 @@ pub struct Pid<T> {
     /// * Units: output/intput * second**order where Action::I2 has order=-2
     /// * Gains outside the range `order..=order + 3` are ignored
     /// * P gain sign determines sign of all gains
-    pub gains: Gains<T>,
+    pub gain: Gains<T>,
     /// Gain imit
     ///
     /// * Sequence: [I², I, P, D, D²]
@@ -319,7 +319,7 @@ pub struct Pid<T> {
     /// * P gain limit is ignored
     /// * Limits outside the range `order..order + 3` are ignored
     /// * P gain sign determines sign of all gain limits
-    pub limits: Gains<T>,
+    pub limit: Gains<T>,
     /// Setpoint
     ///
     /// Units: input
@@ -338,8 +338,8 @@ impl<T: Float + Default> Default for Pid<T> {
     fn default() -> Self {
         Self {
             order: Order::default(),
-            gains: Gains::default(),
-            limits: Gains {
+            gain: Gains::default(),
+            limit: Gains {
                 value: [T::infinity(); 5],
                 ..Default::default()
             },
@@ -365,10 +365,10 @@ where
     fn build(&self, units: &Units<T>) -> BiquadClamp<C, Y> {
         let yu = units.y.recip();
         let yx = units.x * yu;
-        let p = self.gains.value[Action::P as usize];
+        let p = self.gain.value[Action::P as usize];
         let mut biquad: BiquadClamp<C, Y> = Builder {
-            gain: self.gains.value.map(|g| yx * g.copysign(p)),
-            limit: self.limits.value.map(|mut l| {
+            gain: self.gain.value.map(|g| yx * g.copysign(p)),
+            limit: self.limit.value.map(|mut l| {
                 // infinite gain limit is meaningful but json can only do null/nan
                 if l.is_nan() {
                     l = T::infinity()
