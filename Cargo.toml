@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/quartiq/idsp.git"
 
 [workspace.dependencies]
-dsp-process = { version = "0.1.0", path = "dsp-process" }
+dsp-process = { version = "0.2.0", path = "dsp-process" }
 dsp-fixedpoint = { version = "0.1.0", path = "dsp-fixedpoint" }
 num-traits = { version = "0.2.14", features = [
     "libm",
