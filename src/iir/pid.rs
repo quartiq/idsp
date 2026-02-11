@@ -6,7 +6,10 @@ use miniconf::Tree;
 use num_traits::{AsPrimitive, Float};
 use serde::{Deserialize, Serialize};
 
-use crate::iir::{Biquad, BiquadClamp};
+use crate::{
+    Build,
+    iir::{Biquad, BiquadClamp},
+};
 
 /// Feedback term order
 #[derive(Clone, Debug, Copy, Serialize, Deserialize, Default, PartialEq, PartialOrd)]
@@ -25,19 +28,17 @@ pub enum Order {
 /// Builds `Biquad` from action gains, gain limits, input offset and output limits.
 ///
 /// ```
-/// # use idsp::iir::*;
+/// # use idsp::{iir::*, Build};
 /// let b: Biquad<f32> = pid::Builder::default()
-///     .period(1e-3)
 ///     .gain(pid::Action::I, 1e-3)
 ///     .gain(pid::Action::P, 1.0)
 ///     .gain(pid::Action::D, 1e2)
 ///     .limit(pid::Action::I, 1e3)
 ///     .limit(pid::Action::D, 1e1)
-///     .into();
+///     .build(&1e-3);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Builder<T> {
-    t_unit: T,
     order: Order,
     gain: [T; 5],
     limit: [T; 5],
@@ -46,7 +47,6 @@ pub struct Builder<T> {
 impl<T: Float> Default for Builder<T> {
     fn default() -> Self {
         Self {
-            t_unit: T::one(),
             order: Order::default(),
             gain: [T::zero(); 5],
             limit: [T::infinity(); 5],
@@ -81,15 +81,6 @@ impl<T: Float> Builder<T> {
         self
     }
 
-    /// Sample period
-    ///
-    /// # Arguments
-    /// * `period`: Sample period in some units, e.g. SI seconds
-    pub fn period(mut self, period: T) -> Self {
-        self.t_unit = period;
-        self
-    }
-
     /// Gain for a given action
     ///
     /// Gain units are `output/input * time.powi(order)` where
@@ -105,14 +96,11 @@ impl<T: Float> Builder<T> {
     /// Note that limit signs and gain signs should match.
     ///
     /// ```
-    /// # use idsp::iir::*;
+    /// # use idsp::{iir::*, Build};
     /// # use dsp_process::SplitProcess;
     /// let tau = 1e-3;
     /// let ki = 1e-4;
-    /// let i: Biquad<f32> = pid::Builder::default()
-    ///     .period(tau)
-    ///     .gain(pid::Action::I, ki)
-    ///     .into();
+    /// let i: Biquad<f32> = pid::Builder::default().gain(pid::Action::I, ki).build(&tau);
     /// let x0 = 5.0;
     /// let y0 = i.process(&mut DirectForm1::default(), x0);
     /// assert!((y0 / (x0 * tau * ki) - 1.0).abs() < 2.0 * f32::EPSILON);
@@ -135,13 +123,13 @@ impl<T: Float> Builder<T> {
     /// default limits are positive infinity.
     ///
     /// ```
-    /// # use idsp::iir::*;
+    /// # use idsp::{iir::*, Build};
     /// # use dsp_process::SplitProcess;
     /// let ki_limit = 1e3;
     /// let i: Biquad<f32> = pid::Builder::default()
     ///     .gain(pid::Action::I, 8.0)
     ///     .limit(pid::Action::I, ki_limit)
-    ///     .into();
+    ///     .build(&1.0);
     /// let mut xy = DirectForm1::default();
     /// let x0 = 5.0;
     /// for _ in 0..1000 {
@@ -160,13 +148,12 @@ impl<T: Float> Builder<T> {
     }
 }
 
-// TODO: make Pid own a PidBuilder
-
-impl<C, T> From<Builder<T>> for [C; 5]
+impl<T, C> Build<[C; 5]> for Builder<T>
 where
     C: 'static + Copy + SubAssign + AddAssign,
     T: Float + AsPrimitive<C>,
 {
+    type Context = T;
     /// Compute coefficients and return `Biquad`.
     ///
     /// No attempt is made to detect NaNs, non-finite gains, non-positive period,
@@ -177,29 +164,31 @@ where
     /// Gain limits for unused gain actions or for proportional action are ignored.
     ///
     /// ```
-    /// # use idsp::iir::*;
+    /// # use idsp::{iir::*, Build};
     /// let i: Biquad<f32> = pid::Builder::default()
     ///     .gain(pid::Action::P, 3.0)
     ///     .order(pid::Order::P)
-    ///     .into();
+    ///     .build(&1.0);
     /// assert_eq!(i, Biquad::proportional(3.0f32));
     /// ```
     ///
+    /// # Arguments
+    /// * `t_unit`: Sample period in some units, e.g. SI seconds
+    ///
     /// # Panic
     /// Will panic in debug mode on fixed point coefficient overflow.
-    fn from(value: Builder<T>) -> [C; 5] {
+    fn build(&self, period: &T) -> [C; 5] {
         // Choose relevant gains and limits and scale
-        let mut z = value.t_unit.powi(-(value.order as i32));
+        let mut z = period.powi(-(self.order as i32));
         let mut gl = [[T::zero(); 2]; 3];
         for (gl, (i, (gain, limit))) in gl
             .iter_mut()
             .zip(
-                value
-                    .gain
+                self.gain
                     .iter()
-                    .zip(value.limit.iter())
+                    .zip(self.limit.iter())
                     .enumerate()
-                    .skip(value.order as usize),
+                    .skip(self.order as usize),
             )
             .rev()
         {
@@ -209,7 +198,7 @@ where
             } else {
                 gl[0] / *limit
             };
-            z = z * value.t_unit;
+            z = z * *period;
         }
 
         // Normalization
@@ -242,13 +231,15 @@ where
     }
 }
 
-impl<C, T> From<Builder<T>> for Biquad<C>
+impl<C, T> Build<Biquad<C>> for Builder<T>
 where
-    Builder<T>: Into<[C; 5]>,
-    [C; 5]: Into<Biquad<C>>,
+    Self: Build<[C; 5]>,
+    Biquad<C>: From<[C; 5]>,
 {
-    fn from(value: Builder<T>) -> Self {
-        value.into().into()
+    type Context = <Self as Build<[C; 5]>>::Context;
+
+    fn build(&self, ctx: &Self::Context) -> Biquad<C> {
+        self.build(ctx).into()
     }
 }
 
@@ -341,70 +332,56 @@ pub struct Pid<T> {
     ///
     /// Units: output
     pub max: T,
-
-    /// Sample period in SI units per machine unit
-    ///
-    /// E.g. sample period: seconds per sample
-    #[tree(skip)]
-    pub units: Units<T>,
 }
 
-impl<T: Float> Default for Pid<T> {
+impl<T: Float + Default> Default for Pid<T> {
     fn default() -> Self {
         Self {
             order: Order::default(),
-            gains: Gains {
-                value: [T::zero(); 5],
-                i2: (),
-                i: (),
-                p: (),
-                d: (),
-                d2: (),
-            },
+            gains: Gains::default(),
             limits: Gains {
                 value: [T::infinity(); 5],
-                i2: (),
-                i: (),
-                p: (),
-                d: (),
-                d2: (),
+                ..Default::default()
             },
             setpoint: T::zero(),
             min: T::neg_infinity(),
             max: T::infinity(),
-            units: Default::default(),
         }
     }
 }
 
-impl<T, C, Y> From<Pid<T>> for BiquadClamp<C, Y>
+impl<T, Y, C> Build<BiquadClamp<C, Y>> for Pid<T>
 where
-    Builder<T>: Into<BiquadClamp<C, Y>>,
     Y: 'static + Copy + Mul<C, Output = Y> + Div<C, Output = Y>,
     C: Add<Output = C> + Copy,
     T: AsPrimitive<Y> + Float,
+    BiquadClamp<C, Y>: From<[C; 5]>,
+    Builder<T>: Build<[C; 5], Context = T>,
 {
+    type Context = Units<T>;
     /// Return the `Biquad`
     ///
     /// Builder intermediate type `I`, coefficient type C
-    fn from(value: Pid<T>) -> Self {
-        let yu = value.units.y.recip();
-        let yx = value.units.x * yu;
-        let p = value.gains.value[Action::P as usize];
-        let mut biquad: Self = Builder {
-            gain: value.gains.value.map(|g| yx * g.copysign(p)),
-            limit: value.limits.value.map(|l| {
+    fn build(&self, units: &Units<T>) -> BiquadClamp<C, Y> {
+        let yu = units.y.recip();
+        let yx = units.x * yu;
+        let p = self.gains.value[Action::P as usize];
+        let mut biquad: BiquadClamp<C, Y> = Builder {
+            gain: self.gains.value.map(|g| yx * g.copysign(p)),
+            limit: self.limits.value.map(|mut l| {
                 // infinite gain limit is meaningful but json can only do null/nan
-                let l = if l.is_nan() { T::infinity() } else { l };
+                if l.is_nan() {
+                    l = T::infinity()
+                }
                 yx * l.copysign(p)
             }),
-            t_unit: value.units.t,
-            order: value.order,
+            order: self.order,
         }
+        .build(&units.t)
         .into();
-        biquad.set_input_offset((-value.setpoint * value.units.x.recip()).as_());
-        biquad.min = (value.min * yu).as_();
-        biquad.max = (value.max * yu).as_();
+        biquad.set_input_offset((-self.setpoint * units.x.recip()).as_());
+        biquad.min = (self.min * yu).as_();
+        biquad.max = (self.max * yu).as_();
         biquad
     }
 }
@@ -413,18 +390,17 @@ where
 mod test {
     use dsp_process::SplitProcess;
 
-    use crate::iir::*;
+    use crate::iir::{pid::Build, *};
 
     #[test]
     fn pid() {
         let b: Biquad<f32> = pid::Builder::default()
-            .period(1.0)
             .gain(pid::Action::I, 1e-3)
             .gain(pid::Action::P, 1.0)
             .gain(pid::Action::D, 1e2)
             .limit(pid::Action::I, 1e3)
             .limit(pid::Action::D, 1e1)
-            .into();
+            .build(&1.0);
         let want = [
             9.18190826,
             -18.27272561,
@@ -445,13 +421,12 @@ mod test {
     fn pid_i32() {
         use dsp_fixedpoint::Q32;
         let b: Biquad<Q32<29>> = pid::Builder::<f32>::default()
-            .period(1.0)
             .gain(pid::Action::I, 1e-5)
             .gain(pid::Action::P, 1e-2)
             .gain(pid::Action::D, 1e0)
             .limit(pid::Action::I, 1e1)
             .limit(pid::Action::D, 1e-1)
-            .into();
+            .build(&1.0);
         println!("{b:?}");
     }
 
@@ -459,10 +434,7 @@ mod test {
     fn units() {
         let ki = 5e-2;
         let tau = 3e-3;
-        let b: Biquad<f32> = pid::Builder::default()
-            .period(tau)
-            .gain(pid::Action::I, ki)
-            .into();
+        let b: Biquad<f32> = pid::Builder::default().gain(pid::Action::I, ki).build(&tau);
         let mut xy = DirectForm1::default();
         for i in 1..10 {
             let y_have = b.process(&mut xy, 1.0);

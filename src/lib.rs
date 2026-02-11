@@ -31,6 +31,8 @@ mod cordic;
 pub use cordic::*;
 mod num;
 pub use num::*;
+mod build;
+pub use build::*;
 
 #[cfg(feature = "py")]
 mod py;

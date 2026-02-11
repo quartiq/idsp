@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* `Pid`: use `Units` to scale
+* `Pid`: use `Units` to scale and `Build` trait to convert to `BiquadClamp`
 
 ## [0.20.0](https://github.com/quartiq/idsp/compare/v0.19.0..v0.20.0) - 2026-01-13
 

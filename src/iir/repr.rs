@@ -5,10 +5,13 @@ use miniconf::Tree;
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::iir::{
-    BiquadClamp,
-    coefficients::Shape,
-    pid::{Pid, Units},
+use crate::{
+    Build,
+    iir::{
+        BiquadClamp,
+        coefficients::Shape,
+        pid::{Pid, Units},
+    },
 };
 
 /// Floating point BA coefficients before quantization
@@ -167,11 +170,11 @@ where
     Y: 'static + Copy,
     T: 'static + Float + FloatConst + Default + AsPrimitive<Y>,
     f32: AsPrimitive<T>,
-    Pid<T>: Into<BiquadClamp<C, Y>>,
+    Pid<T>: Build<BiquadClamp<C, Y>, Context = Units<T>>,
     [[T; 3]; 2]: Into<BiquadClamp<C, Y>>,
 {
     /// Build a biquad
-    pub fn build(&self, units: Units<T>) -> BiquadClamp<C, Y> {
+    pub fn build(&self, units: &Units<T>) -> BiquadClamp<C, Y> {
         let yu = units.y.recip();
         let yx = units.x * yu;
         match self {
@@ -185,11 +188,7 @@ where
                 b
             }
             Self::Raw(raw) => raw.clone(),
-            Self::Pid(pid) => {
-                let mut pid = pid.clone();
-                pid.units = units;
-                pid.into()
-            }
+            Self::Pid(pid) => pid.build(units),
             Self::Filter(filter) => {
                 let mut f = crate::iir::coefficients::Filter::default();
                 f.gain_db(filter.gain);
