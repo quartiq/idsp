@@ -15,11 +15,11 @@ One comprehensive user for these algorithms is [Stabilizer](https://github.com/q
 
 ### Cosine/Sine
 
-[`cossin()`] uses a small (128 element or 512 byte) LUT, smart octant (un)mapping, linear interpolation and comprehensive analysis of corner cases to achieve a very clean signal (4e-6 RMS error, 9e-6 max error, 108 dB SNR typ), low spurs, and no bias with about 40 cortex-m instruction per call. It computes both cosine and sine (i.e. the complex signal) at once given a phase input.
+[`cossin()`] uses a small (128 element or 512 byte) LUT, smart octant (un)mapping, linear interpolation and comprehensive analysis of corner cases to achieve a very clean signal (4e-6 RMS error, 9e-6 max error, 108 dB SNR typ), low spurs, and no bias with about 40 cortex-m instructions per call (23.5 cycles on Cortex-M7, see `tests/embedded`). It computes both cosine and sine (i.e. the complex signal) at once given a phase input.
 
 ### Two-argument arcus-tangens
 
-[`atan2()`] returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine). The RMS phase error is less than 5e-6 rad, max error is less than 1.2e-5 rad, i.e. 20.5 bit RMS, 19.1 bit max accuracy. The bias is minimal.
+[`atan2()`] returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine). The RMS phase error is less than 5e-6 rad, max error is less than 1.2e-5 rad, i.e. 20.5 bit RMS, 19.1 bit max accuracy. The bias is minimal. It takes about 60 cycles on Cortex-M7 (see `tests/embedded`).
 
 ### CORDIC
 
@@ -73,7 +73,7 @@ TL;DR: `idsp` is as fast and offers more features.
 | Support for fixed point `a1=-2` second order integrator | ❌ | ❌ | ✅ |
 
 The benchmarks and results comparing `idsp` and `biquad-rs` are in `tests/embedded`.
-`idsp`'s biquad can process one `i32` sample every 8.5 cycles and one `f32` sample every 12 cycles on a cortex-m7.
+`idsp`'s biquad can process one `i32` sample every 8.5 cycles and one `f32` sample every 12 cycles on a Cortex-M7.
 
 ## State variable, normal form, wave digital filter
 
