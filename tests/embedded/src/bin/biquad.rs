@@ -183,6 +183,11 @@ fn main() -> ! {
     >::default())
     .show("idsp q64");
 
+    bench_inplace(&mut Split::<idsp::Lowpass<1>, idsp::LowpassState<1>>::default())
+        .show("lowpass1");
+    bench_inplace(&mut Split::<idsp::Lowpass<2>, idsp::LowpassState<2>>::default())
+        .show("lowpass2");
+
     info!("Done");
 
     asm::bkpt();
