@@ -7,7 +7,10 @@ use core::{
 };
 use cortex_m::peripheral::DWT;
 use defmt::*;
+#[cfg(feature = "rtt")]
 use {defmt_rtt as _, panic_probe as _};
+#[cfg(feature = "semihosting")]
+use {defmt_semihosting as _, panic_semihosting as _};
 
 use dsp_process::{Inplace, Process};
 

@@ -2,6 +2,10 @@
 runner = "probe-rs run --chip STM32H743ZITx"
 rustflags = ["-C", "target-cpu=cortex-m7"]
 
+[target.thumbv7m-none-eabi]
+runner = "./qemu.sh"
+rustflags = ["-C", "target-cpu=cortex-m7"]
+
 [build]
 target = "thumbv7em-none-eabihf"
 
