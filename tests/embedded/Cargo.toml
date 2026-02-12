@@ -14,8 +14,8 @@ cortex-m = { version = "0.7.6", features = ["critical-section-single-core"] }
 cortex-m-rt = { version = "0.7.0", default-features = false }
 panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 
-idsp = { version = "0.20", path = "../.." }
-dsp-process = { version = "0.1", path = "../../dsp-process" }
+idsp = { version = "0.21", path = "../.." }
+dsp-process = { version = "0.2", path = "../../dsp-process" }
 dsp-fixedpoint = { version = "0.1", path = "../../dsp-fixedpoint" }
 
 biquad = "0.5.0"
