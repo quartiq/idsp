@@ -44,3 +44,13 @@ jobs:
       - run: cargo doc --no-deps
       - run: cargo install cargo-deadlinks
       - run: cargo deadlinks --ignore-fragments --check-intra-doc-links
+
+  embedded:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          target: thumbv7em-none-eabihf
+      - run: cargo build --release
+        working-directory: miniconf/tests/embedded
