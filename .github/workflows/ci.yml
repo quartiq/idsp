@@ -53,4 +53,4 @@ jobs:
         with:
           target: thumbv7em-none-eabihf
       - run: cargo build --release
-        working-directory: miniconf/tests/embedded
+        working-directory: tests/embedded
