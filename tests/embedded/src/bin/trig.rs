@@ -3,7 +3,6 @@
 
 use cortex_m::asm;
 use defmt::*;
-use {defmt_rtt as _, panic_probe as _};
 
 use dsp_process::FnProcess;
 use idsp_embedded_bench::*;
@@ -11,6 +10,7 @@ use idsp_embedded_bench::*;
 #[cortex_m_rt::entry]
 fn main() -> ! {
     info!("Setup");
+
     let mut c = unwrap!(cortex_m::Peripherals::take());
 
     // c.SCB.enable_icache();

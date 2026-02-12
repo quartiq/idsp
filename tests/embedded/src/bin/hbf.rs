@@ -5,7 +5,6 @@ use core::hint::black_box;
 
 use cortex_m::asm;
 use defmt::*;
-use {defmt_rtt as _, panic_probe as _};
 
 use dsp_process::{FnProcess, Split};
 use idsp::hbf;

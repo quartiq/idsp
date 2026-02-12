@@ -4,7 +4,6 @@
 use cortex_m::asm;
 use defmt::*;
 use num_traits::Float;
-use {defmt_rtt as _, panic_probe as _};
 
 use dsp_fixedpoint::Q32;
 use dsp_process::{Add, Identity, Pair, Parallel, Unsplit};
