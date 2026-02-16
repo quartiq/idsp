@@ -253,6 +253,24 @@ pub struct DirectForm1<T> {
     pub xy: [T; 4],
 }
 
+impl<T: Copy> DirectForm1<T> {
+    /// Get latest input
+    pub fn input(&self) -> T {
+        self.xy[0]
+    }
+
+    /// Get current output
+    pub fn output(&self) -> T {
+        self.xy[2]
+    }
+
+    /// Set current and last output
+    pub fn set_output(&mut self, y: T) {
+        self.xy[2] = y;
+        self.xy[3] = y;
+    }
+}
+
 /// ```
 /// # use dsp_process::SplitProcess;
 /// # use idsp::iir::*;
