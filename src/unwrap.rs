@@ -104,7 +104,7 @@ pub fn saturating_scale(lo: i32, hi: i32, shift: u32) -> i32 {
 ///
 /// This is unwrapping as in the phase and overflow unwrapping context, not
 /// unwrapping as in the `Result`/`Option` context.
-#[derive(Copy, Clone, Default, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Unwrapper<Q> {
     /// current output
     pub y: Q,
