@@ -1,6 +1,6 @@
 use super::{atan2, cossin};
 use core::num::Wrapping;
-use core::ops::{Add, Mul, Sub};
+use core::ops::{Add, Deref, DerefMut, Mul, Sub};
 use dsp_fixedpoint::{P32, Q32};
 use num_traits::AsPrimitive;
 
@@ -25,6 +25,20 @@ pub struct Complex<T>(
     /// Real and imaginary parts
     pub [T; 2],
 );
+
+impl<T> Deref for Complex<T> {
+    type Target = [T; 2];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for Complex<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl<T: Copy> Complex<T> {
     /// Create a new `Complex<T>`
