@@ -12,6 +12,7 @@ use idsp::iir::{self, wdf::Wdf};
 
 use idsp_embedded_bench::*;
 
+#[derive(Clone, Debug, Default)]
 struct BiquadProcess<B>(B);
 impl<B: biquad::Biquad<X>, X: Copy + Float> Process<X> for BiquadProcess<B> {
     fn process(&mut self, x: X) -> X {
@@ -186,6 +187,34 @@ fn main() -> ! {
         .show("lowpass1");
     bench_inplace(&mut Split::<idsp::Lowpass<2>, idsp::LowpassState<2>>::default())
         .show("lowpass2");
+
+    bench_inplace(&mut Split::<
+        iir::Cascade<[iir::Biquad<Q32<29>>; 4]>,
+        iir::DirectForm<i32, 4>,
+    >::default())
+    .show("idsp q32 Cascade4");
+
+    bench_inplace(
+        &mut Split::<iir::Biquad<Q32<29>>, iir::DirectForm1<i32>>::default().repeat::<4>(),
+    )
+    .show("idsp q32 x4");
+
+    bench_inplace(&mut Split::<
+        iir::Cascade<[iir::Biquad<f32>; 4]>,
+        iir::DirectForm<f32, 4>,
+    >::default())
+    .show("idsp f32 Cascade4");
+
+    bench_inplace(&mut Split::<iir::Biquad<f32>, iir::DirectForm1<f32>>::default().repeat::<4>())
+        .show("idsp f32 x4");
+
+    bench_inplace(
+        &mut Split::stateful(BiquadProcess(biquad::DirectForm1::new(
+            coefficients_default::<f32>(),
+        )))
+        .repeat::<4>(),
+    )
+    .show("biquad f32 x4");
 
     info!("Done");
 
