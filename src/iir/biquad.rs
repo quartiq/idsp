@@ -346,22 +346,14 @@ impl<
 /// let y = biquad.process(&mut state, x);
 /// assert_eq!(x, y);
 /// ```
-impl<
-    T: 'static + Copy + Add<Output = T> + PartialOrd,
-    C: Copy + Mul<T, Output = A>,
-    A: Add<Output = A> + AsPrimitive<T>,
-> SplitProcess<T, T, DirectForm1<T>> for BiquadClamp<C, T>
+impl<T: Copy + Add<Output = T> + PartialOrd, C> SplitProcess<T, T, DirectForm1<T>>
+    for BiquadClamp<C, T>
+where
+    Biquad<C>: SplitProcess<T, T, DirectForm1<T>>,
 {
     fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
-        let z = (self.coeff.ba[0] * x0
-            + self.coeff.ba[1] * state.x[0]
-            + self.coeff.ba[2] * state.x[1]
-            + self.coeff.ba[3] * state.y[0][0]
-            + self.coeff.ba[4] * state.y[0][1])
-            .as_();
-        let y0 = clamp(z + self.u, self.min, self.max);
-        state.x = [x0, state.x[0]];
-        state.y[0] = [y0, state.y[0][0]];
+        let y0 = clamp(self.coeff.process(state, x0) + self.u, self.min, self.max);
+        state.y[0][0] = y0; // overwrite
         y0
     }
 }

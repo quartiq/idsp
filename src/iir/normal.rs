@@ -41,15 +41,13 @@ impl<
 > SplitProcess<T, T, DirectForm1<T>> for Normal<C>
 {
     fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
-        let b = &self.b;
-        let p = &self.p;
-        let y1 = (b[0] * x0
-            + b[1] * state.x[0]
-            + b[2] * state.x[1]
-            + p.re() * state.y[0][1]
-            + (-p.im() * state.y[0][0]))
+        let y1 = (self.b[0] * x0
+            + self.b[1] * state.x[0]
+            + self.b[2] * state.x[1]
+            + self.p.re() * state.y[0][1]
+            + -self.p.im() * state.y[0][0])
             .as_();
-        let y0: T = (p.im() * state.y[0][1] + p.re() * state.y[0][0]).as_();
+        let y0: T = (self.p.im() * state.y[0][1] + self.p.re() * state.y[0][0]).as_();
         state.x = [x0, state.x[0]];
         state.y[0] = [y0, y1];
         y0

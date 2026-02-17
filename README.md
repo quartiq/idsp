@@ -47,7 +47,7 @@ Coefficient sharing for multiple channels is implemented through [`dsp_process::
 ### Comparison
 
 This is a rough feature comparison of several available `biquad` crates, with no claim for completeness, accuracy, or even fairness.
-TL;DR: `idsp` is as fast and offers more features.
+TL;DR: `idsp` is as fast or faster, and offers more features.
 
 | Feature\Crate | [`biquad-rs`](https://crates.io/crates/biquad) | [`fixed-filters`](https://crates.io/crates/fixed-filters) | `idsp::iir` |
 |---|---|---|---|
