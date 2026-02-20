@@ -428,35 +428,25 @@ pub struct DirectForm1Wide {
 
 impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for Biquad<Q<i32, i64, F>> {
     fn process(&self, state: &mut DirectForm1Wide, x0: i32) -> i32 {
-        let x = &mut state.x;
-        let y = &mut state.y;
-        let ba = &self.ba;
-        let mut acc = (ba[0] * x0 + ba[1] * x[0] + ba[2] * x[1]).inner;
-        *x = [x0, x[0]];
-        acc += (y[0] as u32 as i64 * ba[3].inner as i64) >> 32;
-        acc += (y[0] >> 32) as i32 as i64 * ba[3].inner as i64;
-        acc += (y[1] as u32 as i64 * ba[4].inner as i64) >> 32;
-        acc += (y[1] >> 32) as i32 as i64 * ba[4].inner as i64;
+        const {
+            assert!(F >= 0 && F < 32);
+        }
+        let mut acc = (self.ba[0] * x0 + self.ba[1] * state.x[0] + self.ba[2] * state.x[1]).inner;
+        state.x = [x0, state.x[0]];
+        acc += (state.y[0] as u32 as i64 * self.ba[3].inner as i64) >> 32;
+        acc += (state.y[0] >> 32) as i32 as i64 * self.ba[3].inner as i64;
+        acc += (state.y[1] as u32 as i64 * self.ba[4].inner as i64) >> 32;
+        acc += (state.y[1] >> 32) as i32 as i64 * self.ba[4].inner as i64;
         acc <<= 32 - F;
-        *y = [acc, y[0]];
+        state.y = [acc, state.y[0]];
         (acc >> 32) as _
     }
 }
 
 impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for BiquadClamp<Q<i32, i64, F>, i32> {
     fn process(&self, state: &mut DirectForm1Wide, x0: i32) -> i32 {
-        let x = &mut state.x;
-        let y = &mut state.y;
-        let ba = &self.coeff.ba;
-        let mut acc = (ba[0] * x0 + ba[1] * x[0] + ba[2] * x[1]).inner;
-        *x = [x0, x[0]];
-        acc += (y[0] as u32 as i64 * ba[3].inner as i64) >> 32;
-        acc += (y[0] >> 32) as i32 as i64 * ba[3].inner as i64;
-        acc += (y[1] as u32 as i64 * ba[4].inner as i64) >> 32;
-        acc += (y[1] >> 32) as i32 as i64 * ba[4].inner as i64;
-        acc <<= 32 - F;
-        let y0 = Ord::clamp((acc >> 32) as i32 + self.u, self.min, self.max);
-        *y = [((y0 as i64) << 32) | acc as u32 as i64, y[0]];
+        let y0 = clamp(self.coeff.process(state, x0) + self.u, self.min, self.max);
+        state.y[0] = ((y0 as i64) << 32) | state.y[0] as u32 as i64; // overwrite
         y0
     }
 }
@@ -488,10 +478,13 @@ pub struct DirectForm1Dither {
 /// assert_eq!(y0, x0);
 /// assert_eq!(state.xy.x, [x0, 1]);
 /// assert_eq!(state.xy.y, [[y0, 3]]);
-/// assert_eq!(state.e, 20);
+/// assert_eq!(state.e, 5);
 /// ```
 impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for Biquad<Q<i32, i64, F>> {
     fn process(&self, state: &mut DirectForm1Dither, x0: i32) -> i32 {
+        const {
+            assert!(F >= 0 && F < 32);
+        }
         let mut acc = state.e as i64
             + (self.ba[0] * x0
                 + self.ba[1] * state.xy.x[0]
@@ -500,7 +493,7 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for Biquad<Q<i32, i6
                 + self.ba[4] * state.xy.y[0][1])
                 .inner;
         acc <<= 32 - F;
-        state.e = acc as _;
+        state.e = (acc as u32) >> (32 - F);
         let y0 = (acc >> 32) as _;
         state.xy.x = [x0, state.xy.x[0]];
         state.xy.y[0] = [y0, state.xy.y[0][0]];
