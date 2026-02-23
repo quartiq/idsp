@@ -8,7 +8,7 @@ use dsp_process::{SplitInplace, SplitProcess};
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
 use num_traits::float::FloatCore as _;
-use num_traits::{AsPrimitive, clamp};
+use num_traits::{AsPrimitive, Float, clamp};
 
 /// Biquad IIR (second order section)
 ///
@@ -539,10 +539,7 @@ impl_from_float!(f64);
 
 /// Normalized and sign-flipped coefficients
 /// `[b0, b1, b2, a1, a2]`
-impl<C: Copy + 'static, T> From<[T; 5]> for Biquad<C>
-where
-    T: AsPrimitive<C>,
-{
+impl<C: Copy + 'static, T: AsPrimitive<C>> From<[T; 5]> for Biquad<C> {
     fn from(ba: [T; 5]) -> Self {
         Self {
             ba: ba.map(AsPrimitive::as_),
@@ -550,9 +547,8 @@ where
     }
 }
 
-impl<C, T, F> From<F> for BiquadClamp<C, T>
+impl<C, T, F: Into<Biquad<C>>> From<F> for BiquadClamp<C, T>
 where
-    F: Into<Biquad<C>>,
     Self: Default,
 {
     fn from(coeff: F) -> Self {
@@ -560,6 +556,37 @@ where
             coeff: coeff.into(),
             ..Default::default()
         }
+    }
+}
+
+/// A pair of roots
+#[derive(Debug, Clone)]
+pub enum Pair<T> {
+    /// Two real roots
+    Real([T; 2]),
+    /// A pair of complex conjugate roots `X+-jY`
+    Complex([T; 2]),
+}
+
+impl<T: Float> Pair<T> {
+    /// Convert to real polynomial coefficients
+    pub fn coeff(self) -> [T; 2] {
+        match self {
+            Self::Real([x, y]) => [x + y, x * y],
+            Self::Complex([x, y]) => [x + x, x * x + y * y],
+        }
+    }
+}
+
+impl<C> Biquad<C> {
+    /// Convert from zeros pair, poles pair and gain
+    pub fn from_zpk<T: Float>(zeros: Pair<T>, poles: Pair<T>, gain: T) -> Self
+    where
+        Self: From<[T; 5]>,
+    {
+        let b = zeros.coeff().map(|b| gain * b);
+        let a = poles.coeff();
+        [gain, -b[0], b[1], a[0], -a[1]].into()
     }
 }
 
