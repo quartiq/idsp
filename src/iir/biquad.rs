@@ -3,7 +3,7 @@
 use crate::Clamp;
 use core::ops::{Add, Div, Mul};
 use dsp_fixedpoint::Q;
-use dsp_process::{SplitInplace, SplitProcess};
+use dsp_process::{Process, SplitInplace, SplitProcess};
 
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
@@ -245,24 +245,21 @@ impl<C: Copy + Add<Output = C>, T: Copy + Div<C, Output = T> + Mul<C, Output = T
 
 #[derive(Clone, Debug)]
 /// Direct Form biquad/SOS state
-pub struct DirectForm<T, const N: usize = 1> {
+pub struct DirectForm<T, const N: usize = 1, const M: usize = 2> {
     /// Input delay line
     ///
     /// `[x0, x1]`
-    pub x: [T; 2],
+    pub x: [T; M],
     /// Intermediate and output delay lines
     ///
     /// `[[y0, y1]]`
-    pub y: [[T; 2]; N],
+    pub y: [[T; M]; N],
 }
 
-/// Direct form 1
-pub type DirectForm1<T> = DirectForm<T, 1>;
-
-impl<T, const N: usize> Default for DirectForm<T, N>
+impl<T, const N: usize, const M: usize> Default for DirectForm<T, N, M>
 where
-    [T; 2]: Default,
-    [[T; 2]; N]: Default,
+    [T; M]: Default,
+    [[T; M]; N]: Default,
 {
     fn default() -> Self {
         Self {
@@ -292,6 +289,22 @@ impl<T: Copy, const N: usize> DirectForm<T, N> {
         }
     }
 }
+
+/// N Poles at DC, N zeros at Nyquist
+impl<T: Copy + Add<Output = T>, const N: usize> Process<T> for DirectForm<T, N, 1> {
+    fn process(&mut self, x: T) -> T {
+        let (y0, y) = self.y.iter_mut().fold((x, &mut self.x), |(x0, x), y| {
+            let y0 = y[0] + x0 + x[0];
+            x[0] = x0;
+            (y0, y)
+        });
+        y[0] = y0;
+        y0
+    }
+}
+
+/// Direct form 1
+pub type DirectForm1<T, const M: usize = 2> = DirectForm<T, 1, M>;
 
 /// A cascade of `Biquad`s
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -337,6 +350,25 @@ impl<
     }
 }
 
+impl<
+    T: 'static + Copy + Add<Output = T> + PartialOrd,
+    C: Copy + Mul<T, Output = A>,
+    A: Add<Output = A> + AsPrimitive<T>,
+> SplitProcess<T, T, DirectForm1<T>> for Biquad<C>
+{
+    fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
+        let y0 = (self.ba[0] * x0
+            + self.ba[1] * state.x[0]
+            + self.ba[2] * state.x[1]
+            + self.ba[3] * state.y[0][0]
+            + self.ba[4] * state.y[0][1])
+            .as_();
+        state.x = [x0, state.x[0]];
+        state.y[0] = [y0, state.y[0][0]];
+        y0
+    }
+}
+
 /// ```
 /// use dsp_process::SplitProcess;
 /// use idsp::iir::*;
@@ -358,27 +390,8 @@ where
     }
 }
 
-impl<
-    T: 'static + Copy + Add<Output = T> + PartialOrd,
-    C: Copy + Mul<T, Output = A>,
-    A: Add<Output = A> + AsPrimitive<T>,
-> SplitProcess<T, T, DirectForm1<T>> for Biquad<C>
-{
-    fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
-        let y0 = (self.ba[0] * x0
-            + self.ba[1] * state.x[0]
-            + self.ba[2] * state.x[1]
-            + self.ba[3] * state.y[0][0]
-            + self.ba[4] * state.y[0][1])
-            .as_();
-        state.x = [x0, state.x[0]];
-        state.y[0] = [y0, state.y[0][0]];
-        y0
-    }
-}
-
 /// Direct form 2 transposed SOS state
-pub type DirectForm2Transposed<T> = DirectForm<T, 0>;
+pub type DirectForm2Transposed<T, const M: usize = 2> = DirectForm<T, 0, M>;
 
 /// ```
 /// use dsp_process::SplitProcess;
