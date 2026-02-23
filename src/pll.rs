@@ -1,8 +1,8 @@
 use core::num::Wrapping as W;
 use dsp_fixedpoint::{Q, W32};
-use dsp_process::SplitProcess;
+use dsp_process::{Process, SplitProcess};
 
-use crate::Accu;
+use crate::{Accu, ClampWrap};
 
 /// Type-II, sampled phase, discrete time PLL
 ///
@@ -97,8 +97,51 @@ impl PLL {
     }
 }
 
+/// A PLL containing a loop filter configuration
+///
+/// The phase detector is symmetric (additive): the loop filter should have negative gain.
+/// The output will compensate the input phase: it will settle to the complement.
+/// The output phase increment (the loop filter output) is the negative of the input increment.
+#[derive(Debug, Clone, Default)]
+pub struct PllWrapper<C>(pub C);
+
+/// PLL state
+#[derive(Debug, Clone, Default)]
+pub struct PllState<S> {
+    /// Input phase difference clamp
+    pub clamp: ClampWrap<W<i32>>,
+    /// Loop filter state
+    pub loop_filter: S,
+    /// Current output phase
+    pub y: W<i32>,
+}
+
+impl<S> PllState<S> {
+    /// Return the current phase estimate
+    pub fn phase(&self) -> W<i32> {
+        self.y
+    }
+}
+
+impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<W<i32>, W<i32>, PllState<S>> for PllWrapper<C> {
+    fn process(&self, state: &mut PllState<S>, x: W<i32>) -> W<i32> {
+        // output phase
+        let y = state.y;
+        // phase error
+        let z = state.clamp.process(x + y);
+        // output frequency
+        let f = self.0.process(&mut state.loop_filter, z.0);
+        // advance output phase
+        state.y += W(f);
+        y
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::iir::{Biquad, DirectForm1Dither, Pair};
+    use dsp_fixedpoint::Q32;
+
     use super::*;
     use core::num::Wrapping as W;
     use dsp_process::{Process, Split};
@@ -125,6 +168,29 @@ mod tests {
             }
             if i > n / 2 {
                 assert_eq!((a.state - x).0.abs() <= 1, true);
+            }
+        }
+    }
+
+    #[test]
+    fn converge2() {
+        let p = PllWrapper(Biquad::<Q32<30>>::from_zpk(
+            Pair::Real([-1.0, 1.0 - 4e-2]),
+            Pair::Real([1.0, 1.0 - 4e-1]),
+            -8e-2,
+        ));
+        println!("{p:?}");
+        let mut s = PllState::<DirectForm1Dither>::default();
+        let a = Accu::<W<i32>>::new(W(0x0), W(0x71f63049 >> 1));
+        let n = 1 << 11;
+        for (i, x) in a.take(n).enumerate() {
+            let y = p.process(&mut s, x);
+            println!("x: {x:#010x} y+x: {:#010x}", y + x);
+            if i > n / 4 {
+                assert!((a.step + W(s.loop_filter.xy.y0())).0.abs() <= 1);
+            }
+            if i > n / 2 {
+                assert!((x + y).0.abs() <= 4);
             }
         }
     }
