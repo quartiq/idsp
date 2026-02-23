@@ -145,6 +145,7 @@ mod tests {
     use super::*;
     use core::num::Wrapping as W;
     use dsp_process::{Process, Split};
+
     #[test]
     fn mini() {
         let mut p = Split::new(W32::new(W(1 << 24)), PLL::default());
@@ -173,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn converge2() {
+    fn converge_pllwrapper() {
         let p = PllWrapper(Biquad::<Q32<30>>::from_zpk(
             Pair::Real([-1.0, 1.0 - 4e-2]),
             Pair::Real([1.0, 1.0 - 4e-1]),
@@ -191,6 +192,30 @@ mod tests {
             }
             if i > n / 2 {
                 assert!((x + y).0.abs() <= 4);
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn converge_narrow() {
+        let p = PllWrapper(Biquad::<Q32<30>>::from_zpk(
+            Pair::Real([-1.0, 1.0 - 4e-4]),
+            Pair::Real([1.0, 1.0 - 7e-3]),
+            -5e-6,
+        ));
+        println!("{p:?}");
+        let mut s = PllState::<DirectForm1Dither>::default();
+        let a = Accu::<W<i32>>::new(W(0x0), W(0x140_1235));
+        let n = 1 << 24;
+        for (i, x) in a.take(n).enumerate() {
+            let y = p.process(&mut s, x);
+            println!("x: {x:#010x} y+x: {:#010x}", y + x);
+            if i > n / 4 {
+                assert!((a.step + W(s.loop_filter.xy.y0())).0.abs() <= 1 << 16);
+            }
+            if i > n / 2 {
+                assert!((x + y).0.abs() <= 1 << 16);
             }
         }
     }
