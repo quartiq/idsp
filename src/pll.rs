@@ -1,9 +1,8 @@
 use core::num::Wrapping as W;
 use dsp_fixedpoint::{Q, Q32, W32};
 use dsp_process::{Process, SplitProcess};
-use num_traits::{AsPrimitive, Float};
 
-use crate::{Accu, ClampWrap, iir::DirectForm};
+use crate::{Accu, ClampWrap};
 
 /// Type-II, sampled phase, discrete time PLL
 ///
