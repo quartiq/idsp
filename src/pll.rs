@@ -1,6 +1,7 @@
 use core::num::Wrapping as W;
-use dsp_fixedpoint::{Q, W32};
+use dsp_fixedpoint::{Q, Q32, W32};
 use dsp_process::{Process, SplitProcess};
+use num_traits::{AsPrimitive, Float};
 
 use crate::{Accu, ClampWrap, iir::DirectForm};
 
@@ -97,42 +98,76 @@ impl PLL {
     }
 }
 
-/// A PLL containing a loop filter configuration
+/// A PLL
+///
+/// Type 2, order 3
 ///
 /// The phase detector is symmetric (additive): the loop filter should have negative gain.
 /// The output will compensate the input phase: it will settle to the complement.
 /// The output phase increment (the loop filter output) is the negative of the input increment.
 #[derive(Debug, Clone, Default)]
-pub struct PllWrapper<C>(pub C);
+pub struct Pll {
+    /// Lead lag coefficients
+    ///
+    /// `f0 += b0*y0 + b1*y1 + a1*f1`
+    pub ba: [Q32<32>; 3],
+}
+
+impl Pll {
+    /// Return Pll from pole offsets
+    pub fn from_zpk(zero: f32, pole: f32, gain: f32) -> Self {
+        Self {
+            ba: [gain, -gain * zero, -(1.0 - pole)].map(Q32::from_f32),
+        }
+    }
+}
 
 /// PLL state
 #[derive(Debug, Clone, Default)]
-pub struct PllState<S> {
+pub struct PllState {
     /// Input phase difference clamp
     pub clamp: ClampWrap<W<i32>>,
-    /// Loop filter state
-    pub loop_filter: S,
+    /// Loop filter state: after clamp
+    pub z0: i32,
+    /// After nyquist zero
+    pub y0: i32,
+    /// After lead-lag
+    pub f0: i64,
+    /// After DC pole
+    pub f1: W<i64>,
     /// Current output phase
     pub y: W<i32>,
 }
 
-impl<S> PllState<S> {
+impl PllState {
     /// Return the current phase estimate
     pub fn phase(&self) -> W<i32> {
         self.y
     }
+
+    /// Return the current frequency estimate
+    pub fn frequency(&self) -> W<i32> {
+        W((self.f1.0 >> 32) as _)
+    }
 }
 
-impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<W<i32>, W<i32>, PllState<S>> for PllWrapper<C> {
-    fn process(&self, state: &mut PllState<S>, x: W<i32>) -> W<i32> {
-        // output phase
-        let y = state.y;
+impl SplitProcess<W<i32>, W<i32>, PllState> for Pll {
+    fn process(&self, state: &mut PllState, x: W<i32>) -> W<i32> {
         // phase error
-        let z = state.clamp.process(x + y);
-        // output frequency
-        let f = self.0.process(&mut state.loop_filter, z.0);
-        // advance output phase
-        state.y += W(f);
+        let z0 = state.clamp.process(x + state.y).0 >> 1;
+        // nyquist zero
+        let y0 = z0 + state.z0;
+        state.z0 = z0;
+        // lead lag
+        state.f0 +=
+            (self.ba[0] * y0 + self.ba[1] * state.y0 + self.ba[2] * (state.f0 >> 32) as i32).inner
+                + ((self.ba[2].inner as i64 * state.f0 as u32 as i64) >> 32);
+        state.y0 = y0;
+        // DC pole
+        state.f1 += W(state.f0);
+        // advance output phase, oscillator DC pole
+        let y = state.y;
+        state.y += W((state.f1.0 >> 32) as i32);
         y
     }
 }
@@ -174,47 +209,34 @@ mod tests {
     }
 
     #[test]
-    fn converge_pllwrapper() {
-        let p = PllWrapper(Biquad::<Q32<30>>::from_zpk(
-            Pair::Real([-1.0, 1.0 - 4e-2]),
-            Pair::Real([1.0, 1.0 - 4e-1]),
-            -8e-2,
-        ));
+    fn converge_pll() {
+        let p = Pll::from_zpk(1.0 - 4e-2, 1.0 - 4e-1, -8e-2);
         println!("{p:?}");
-        let mut s = PllState::<DirectForm1Dither>::default();
-        let a = Accu::<W<i32>>::new(W(0x0), W(0x71f63049 >> 1));
-        let n = 1 << 11;
+        let mut s = PllState::default();
+        let a = Accu::<W<i32>>::new(W(0x0), W(0x71f63049));
+        let n = 1 << 10;
         for (i, x) in a.take(n).enumerate() {
             let y = p.process(&mut s, x);
             println!("x: {x:#010x} y+x: {:#010x}", y + x);
-            if i > n / 4 {
-                assert!((a.step + W(s.loop_filter.xy.y0())).0.abs() <= 1);
-            }
             if i > n / 2 {
+                assert!((a.step + s.frequency()).0.abs() <= 1);
                 assert!((x + y).0.abs() <= 4);
             }
         }
     }
 
     #[test]
-    #[ignore]
     fn converge_narrow() {
-        let p = PllWrapper(Biquad::<Q32<30>>::from_zpk(
-            Pair::Real([-1.0, 1.0 - 4e-4]),
-            Pair::Real([1.0, 1.0 - 7e-3]),
-            -5e-6,
-        ));
+        let p = Pll::from_zpk(1.0 - 1e-4, 1.0 - 1.5e-3, -2e-6);
         println!("{p:?}");
-        let mut s = PllState::<DirectForm1Dither>::default();
+        let mut s = PllState::default();
         let a = Accu::<W<i32>>::new(W(0x0), W(0x140_1235));
-        let n = 1 << 24;
+        let n = 1 << 19;
         for (i, x) in a.take(n).enumerate() {
             let y = p.process(&mut s, x);
             println!("x: {x:#010x} y+x: {:#010x}", y + x);
-            if i > n / 4 {
-                assert!((a.step + W(s.loop_filter.xy.y0())).0.abs() <= 1 << 16);
-            }
             if i > n / 2 {
+                assert!((a.step + s.frequency()).0.abs() <= 1 << 16);
                 assert!((x + y).0.abs() <= 1 << 16);
             }
         }
