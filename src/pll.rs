@@ -113,11 +113,21 @@ pub struct Pll {
 }
 
 impl Pll {
-    /// Return Pll from pole offsets
+    /// Return Pll from zeros/pole/gain
     pub fn from_zpk(zero: f32, pole: f32, gain: f32) -> Self {
         Self {
             ba: [gain, -gain * zero, -(1.0 - pole)].map(Q32::from_f32),
         }
+    }
+
+    /// Given a crossover create a PLL
+    pub fn from_bandwidth(bw: f32) -> Self {
+        const PZ: f32 = 10.0;
+        Self::from_zpk(
+            1.0 - bw,
+            1.0 - PZ * bw,
+            (-PZ * core::f32::consts::PI) * bw.powi(2),
+        )
     }
 }
 
@@ -133,7 +143,7 @@ pub struct PllState {
     /// After lead-lag
     pub f0: i64,
     /// After DC pole
-    pub f1: W<i64>,
+    pub f: W<i64>,
     /// Current output phase
     pub y: W<i32>,
 }
@@ -146,7 +156,7 @@ impl PllState {
 
     /// Return the current frequency estimate
     pub fn frequency(&self) -> W<i32> {
-        W((self.f1.0 >> 32) as _)
+        W((self.f.0 >> 32) as _)
     }
 }
 
@@ -163,10 +173,10 @@ impl SplitProcess<W<i32>, W<i32>, PllState> for Pll {
                 + ((self.ba[2].inner as i64 * state.f0 as u32 as i64) >> 32);
         state.y0 = y0;
         // DC pole
-        state.f1 += W(state.f0);
+        state.f += W(state.f0);
         // advance output phase, oscillator DC pole
         let y = state.y;
-        state.y += W((state.f1.0 >> 32) as i32);
+        state.y += W((state.f.0 >> 32) as i32);
         y
     }
 }
@@ -209,11 +219,11 @@ mod tests {
 
     #[test]
     fn converge_pll() {
-        let p = Pll::from_zpk(1.0 - 4e-2, 1.0 - 4e-1, -8e-2);
+        let p = Pll::from_bandwidth(1e-1);
         println!("{p:?}");
         let mut s = PllState::default();
         let a = Accu::<W<i32>>::new(W(0x0), W(0x71f63049));
-        let n = 1 << 10;
+        let n = 1 << 9;
         for (i, x) in a.take(n).enumerate() {
             let y = p.process(&mut s, x);
             println!("x: {x:#010x} y+x: {:#010x}", y + x);
@@ -226,7 +236,7 @@ mod tests {
 
     #[test]
     fn converge_narrow() {
-        let p = Pll::from_zpk(1.0 - 1e-4, 1.0 - 1.5e-3, -2e-6);
+        let p = Pll::from_bandwidth(1.5e-4);
         println!("{p:?}");
         let mut s = PllState::default();
         let a = Accu::<W<i32>>::new(W(0x0), W(0x140_1235));
