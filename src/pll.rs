@@ -121,7 +121,10 @@ impl Pll {
     }
 
     /// Given a crossover create a PLL
-    pub fn from_bandwidth(bw: f32) -> Self {
+    /// 
+    /// About 2 dB peaking, 55 deg phase margin
+    pub fn from_bandwidth(mut bw: f32) -> Self {
+        bw *= 2.0;
         const PZ: f32 = 10.0;
         Self::from_zpk(
             1.0 - bw,
@@ -167,12 +170,12 @@ impl SplitProcess<W<i32>, W<i32>, PllState> for Pll {
         // nyquist zero
         let y0 = z0 + state.z0;
         state.z0 = z0;
-        // lead lag
+        // lead lag, wide state
         state.f0 +=
             (self.ba[0] * y0 + self.ba[1] * state.y0 + self.ba[2] * (state.f0 >> 32) as i32).inner
                 + ((self.ba[2].inner as i64 * state.f0 as u32 as i64) >> 32);
         state.y0 = y0;
-        // DC pole
+        // DC pole, frequency, wide state
         state.f += W(state.f0);
         // advance output phase, oscillator DC pole
         let y = state.y;
@@ -219,7 +222,7 @@ mod tests {
 
     #[test]
     fn converge_pll() {
-        let p = Pll::from_bandwidth(1e-1);
+        let p = Pll::from_bandwidth(5e-2);
         println!("{p:?}");
         let mut s = PllState::default();
         let a = Accu::<W<i32>>::new(W(0x0), W(0x71f63049));
@@ -236,11 +239,11 @@ mod tests {
 
     #[test]
     fn converge_narrow() {
-        let p = Pll::from_bandwidth(1.5e-4);
+        let p = Pll::from_bandwidth(7e-5);
         println!("{p:?}");
         let mut s = PllState::default();
         let a = Accu::<W<i32>>::new(W(0x0), W(0x140_1235));
-        let n = 1 << 19;
+        let n = 1 << 18;
         for (i, x) in a.take(n).enumerate() {
             let y = p.process(&mut s, x);
             println!("x: {x:#010x} y+x: {:#010x}", y + x);
