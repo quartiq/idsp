@@ -126,7 +126,7 @@ impl Pll {
         Self::from_zpk(
             1.0 - bw,
             1.0 - PZ * bw,
-            (-PZ * core::f32::consts::PI) * bw.powi(2),
+            (-PZ * core::f32::consts::PI) * (bw * bw),
         )
     }
 }
