@@ -25,9 +25,10 @@ use crate::ClampWrap;
 ///
 /// This PLL clamps phase wraps accumulated during (frequency) lock acquisition.
 ///
-/// The phase detector is symmetric (additive): the loop filter should have negative gain.
+/// The phase detector is symmetric (additive): the loop filter has negative gain.
 /// The output will compensate the input phase: it will settle to the complement.
-/// The output phase increment (the loop filter output) is the negative of the input increment.
+/// The output phase increment (the loop filter output, the frequency) is the negative
+/// of the input increment.
 #[derive(Debug, Clone, Default)]
 pub struct PLL {
     /// Lead lag coefficients
@@ -37,24 +38,22 @@ pub struct PLL {
 }
 
 impl PLL {
-    /// Return Pll from zeros/pole/gain
+    /// Return Pll from zero/pole/gain
     pub fn from_zpk(zero: f32, pole: f32, gain: f32) -> Self {
         Self {
             ba: [gain, -gain * zero, -(1.0 - pole)].map(Q32::from_f32),
         }
     }
 
-    /// Given a crossover create a PLL
+    /// Given a crossover, create a PLL
     ///
-    /// About 2 dB peaking, 55 deg phase margin
-    pub fn from_bandwidth(mut bw: f32) -> Self {
-        bw *= 2.0;
-        const PZ: f32 = 10.0;
-        Self::from_zpk(
-            1.0 - bw,
-            1.0 - PZ * bw,
-            (-PZ * core::f32::consts::PI) * (bw * bw),
-        )
+    /// About 1.5 dB peaking, 62 deg phase margin for split=4
+    pub fn from_bandwidth(bw: f32, split: f32) -> Self {
+        let a = bw * 2.0 * core::f32::consts::PI;
+        let z = 1.0 - a / split;
+        let p = 1.0 - a * split;
+        let k = -a * a * split;
+        Self::from_zpk(z, p, k)
     }
 }
 
@@ -89,6 +88,8 @@ impl PLLState {
 
 impl SplitProcess<W<i32>, W<i32>, PLLState> for PLL {
     fn process(&self, state: &mut PLLState, x: W<i32>) -> W<i32> {
+        // advance output phase, oscillator DC pole
+        state.y += state.frequency();
         // phase error
         let z0 = state.clamp.process(x + state.y).0 >> 1;
         // nyquist zero
@@ -101,25 +102,20 @@ impl SplitProcess<W<i32>, W<i32>, PLLState> for PLL {
         state.y0 = y0;
         // DC pole, frequency, wide state
         state.f += W(state.f0);
-        // advance output phase, oscillator DC pole
-        let y = state.y;
-        state.y += W((state.f.0 >> 32) as i32);
-        y
+        state.y
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::iir::{Biquad, DirectForm1Dither, Pair};
-    use dsp_fixedpoint::Q32;
+    use crate::Accu;
 
     use super::*;
     use core::num::Wrapping as W;
-    use dsp_process::{Process, Split};
 
     #[test]
     fn converge_pll() {
-        let p = PLL::from_bandwidth(5e-2);
+        let p = PLL::from_bandwidth(5e-2, 4.0);
         println!("{p:?}");
         let mut s = PLLState::default();
         let a = Accu::<W<i32>>::new(W(0x0), W(0x71f63049));
@@ -136,7 +132,7 @@ mod tests {
 
     #[test]
     fn converge_narrow() {
-        let p = PLL::from_bandwidth(7e-5);
+        let p = PLL::from_bandwidth(8e-5, 4.0);
         println!("{p:?}");
         let mut s = PLLState::default();
         let a = Accu::<W<i32>>::new(W(0x0), W(0x140_1235));
