@@ -3,12 +3,12 @@
 use crate::Clamp;
 use core::ops::{Add, Div, Mul};
 use dsp_fixedpoint::Q;
-use dsp_process::{SplitInplace, SplitProcess};
+use dsp_process::{Process, SplitInplace, SplitProcess};
 
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
 use num_traits::float::FloatCore as _;
-use num_traits::{AsPrimitive, clamp};
+use num_traits::{AsPrimitive, Float, clamp};
 
 /// Biquad IIR (second order section)
 ///
@@ -193,11 +193,10 @@ impl<C: Clamp + Copy> Biquad<C> {
     /// # use idsp::iir::*;
     /// # use dsp_process::SplitProcess;
     /// let mut state = DirectForm1::<f32>::default();
-    /// state.xy[2] = 2.0;
+    /// state.set_y(2.0);
     /// let x0 = 7.0;
     /// let y0 = Biquad::<f32>::HOLD.process(&mut state, x0);
     /// assert_eq!(y0, 2.0);
-    /// assert_eq!(state.xy, [x0, 0.0, y0, y0]);
     /// ```
     pub const HOLD: Self = Self {
         ba: [C::ZERO, C::ZERO, C::ZERO, C::ONE, C::ZERO],
@@ -244,34 +243,128 @@ impl<C: Copy + Add<Output = C>, T: Copy + Div<C, Output = T> + Mul<C, Output = T
     }
 }
 
-/// SOS state
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct DirectForm1<T> {
-    /// X,Y state
+#[derive(Clone, Debug)]
+/// Direct Form biquad/SOS state
+pub struct DirectForm<T, const N: usize = 1, const M: usize = 2> {
+    /// Input delay line
     ///
-    /// Contents before `process()`: `[x1, x2, y1, y2]`
-    pub xy: [T; 4],
+    /// `[x0, x1]`
+    pub x: [T; M],
+    /// Intermediate and output delay lines
+    ///
+    /// `[[y0, y1]]`
+    pub y: [[T; M]; N],
 }
+
+impl<T, const N: usize, const M: usize> Default for DirectForm<T, N, M>
+where
+    [T; M]: Default,
+    [[T; M]; N]: Default,
+{
+    fn default() -> Self {
+        Self {
+            x: Default::default(),
+            y: Default::default(),
+        }
+    }
+}
+
+impl<T: Copy, const N: usize> DirectForm<T, N> {
+    /// Get latest input
+    pub fn x0(&self) -> T {
+        self.x[0]
+    }
+
+    /// Get current output
+    pub fn y0(&self) -> T {
+        self.y.last().unwrap_or(&self.x)[0]
+    }
+
+    /// Set current and last output of the last stage.
+    ///
+    /// This is a NOP for `N=0`.
+    pub fn set_y(&mut self, y: T) {
+        if let Some(sy) = self.y.last_mut() {
+            *sy = [y, y];
+        }
+    }
+}
+
+/// N Poles at DC, N zeros at Nyquist
+impl<T: Copy + Add<Output = T>, const N: usize> Process<T> for DirectForm<T, N, 1> {
+    fn process(&mut self, x: T) -> T {
+        let (y0, y) = self.y.iter_mut().fold((x, &mut self.x), |(x0, x), y| {
+            let y0 = y[0] + x0 + x[0];
+            x[0] = x0;
+            (y0, y)
+        });
+        y[0] = y0;
+        y0
+    }
+}
+
+/// Direct form 1
+pub type DirectForm1<T, const M: usize = 2> = DirectForm<T, 1, M>;
+
+/// A cascade of `Biquad`s
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Cascade<C>(pub C);
 
 /// ```
 /// # use dsp_process::SplitProcess;
 /// # use idsp::iir::*;
 /// let mut state = DirectForm1 {
-///     xy: [0.0, 1.0, 2.0, 3.0],
+///     x: [0.0, 1.0],
+///     y: [[2.0, 3.0]],
 /// };
 /// let x0 = 4.0;
 /// let y0 = Biquad::<f32>::IDENTITY.process(&mut state, x0);
 /// assert_eq!(y0, x0);
-/// assert_eq!(state.xy, [x0, 0.0, y0, 2.0]);
+/// assert_eq!(state.x, [x0, 0.0]);
+/// assert_eq!(state.y[0], [y0, 2.0]);
 /// ```
-impl<T: 'static + Copy, C: Copy + Mul<T, Output = A>, A: Add<Output = A> + AsPrimitive<T>>
-    SplitProcess<T, T, DirectForm1<T>> for Biquad<C>
+impl<
+    const N: usize,
+    T: 'static + Copy,
+    C: Copy + Mul<T, Output = A>,
+    A: Add<Output = A> + AsPrimitive<T>,
+> SplitProcess<T, T, DirectForm<T, N>> for Cascade<[Biquad<C>; N]>
+{
+    fn process(&self, state: &mut DirectForm<T, N>, x0: T) -> T {
+        let (y0, y) =
+            self.0
+                .iter()
+                .zip(state.y.iter_mut())
+                .fold((x0, &mut state.x), |(x0, x), (c, y)| {
+                    let y0 = (c.ba[0] * x0
+                        + c.ba[1] * x[0]
+                        + c.ba[2] * x[1]
+                        + c.ba[3] * y[0]
+                        + c.ba[4] * y[1])
+                        .as_();
+                    *x = [x0, x[0]];
+                    (y0, y)
+                });
+        *y = [y0, y[0]];
+        y0
+    }
+}
+
+impl<
+    T: 'static + Copy + Add<Output = T> + PartialOrd,
+    C: Copy + Mul<T, Output = A>,
+    A: Add<Output = A> + AsPrimitive<T>,
+> SplitProcess<T, T, DirectForm1<T>> for Biquad<C>
 {
     fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
-        let xy = &mut state.xy;
-        let ba = &self.ba;
-        let y0 = (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).as_();
-        *xy = [x0, xy[0], y0, xy[2]];
+        let y0 = (self.ba[0] * x0
+            + self.ba[1] * state.x[0]
+            + self.ba[2] * state.x[1]
+            + self.ba[3] * state.y[0][0]
+            + self.ba[4] * state.y[0][1])
+            .as_();
+        state.x = [x0, state.x[0]];
+        state.y[0] = [y0, state.y[0][0]];
         y0
     }
 }
@@ -292,19 +385,13 @@ where
 {
     fn process(&self, state: &mut DirectForm1<T>, x0: T) -> T {
         let y0 = clamp(self.coeff.process(state, x0) + self.u, self.min, self.max);
-        state.xy[2] = y0; // overwrite
+        state.y[0][0] = y0; // overwrite
         y0
     }
 }
 
 /// Direct form 2 transposed SOS state
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct DirectForm2Transposed<T> {
-    /// internal state
-    ///
-    /// `[u1, u2]`
-    pub u: [T; 2],
-}
+pub type DirectForm2Transposed<T, const M: usize = 2> = DirectForm<T, 0, M>;
 
 /// ```
 /// use dsp_process::SplitProcess;
@@ -319,11 +406,10 @@ impl<T: Copy + Mul<Output = T> + Add<Output = T>> SplitProcess<T, T, DirectForm2
     for Biquad<T>
 {
     fn process(&self, state: &mut DirectForm2Transposed<T>, x0: T) -> T {
-        let u = &mut state.u;
         let ba = &self.ba;
-        let y0 = u[0] + ba[0] * x0;
-        u[0] = u[1] + ba[1] * x0 + ba[3] * y0;
-        u[1] = ba[2] * x0 + ba[4] * y0;
+        let y0 = state.x[0] + ba[0] * x0;
+        state.x[0] = state.x[1] + ba[1] * x0 + ba[3] * y0;
+        state.x[1] = ba[2] * x0 + ba[4] * y0;
         y0
     }
 }
@@ -332,11 +418,10 @@ impl<T: Copy + Add<Output = T> + Mul<Output = T> + PartialOrd>
     SplitProcess<T, T, DirectForm2Transposed<T>> for BiquadClamp<T, T>
 {
     fn process(&self, state: &mut DirectForm2Transposed<T>, x0: T) -> T {
-        let u = &mut state.u;
         let ba = &self.coeff.ba;
-        let y0 = clamp(u[0] + ba[0] * x0 + self.u, self.min, self.max);
-        u[0] = u[1] + ba[1] * x0 + ba[3] * y0;
-        u[1] = ba[2] * x0 + ba[4] * y0;
+        let y0 = clamp(state.x[0] + ba[0] * x0 + self.u, self.min, self.max);
+        state.x[0] = state.x[1] + ba[1] * x0 + ba[3] * y0;
+        state.x[1] = ba[2] * x0 + ba[4] * y0;
         y0
     }
 }
@@ -356,46 +441,36 @@ pub struct DirectForm1Wide {
 
 impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for Biquad<Q<i32, i64, F>> {
     fn process(&self, state: &mut DirectForm1Wide, x0: i32) -> i32 {
-        let x = &mut state.x;
-        let y = &mut state.y;
-        let ba = &self.ba;
-        let mut acc = (ba[0] * x0 + ba[1] * x[0] + ba[2] * x[1]).inner;
-        *x = [x0, x[0]];
-        acc += (y[0] as u32 as i64 * ba[3].inner as i64) >> 32;
-        acc += (y[0] >> 32) as i32 as i64 * ba[3].inner as i64;
-        acc += (y[1] as u32 as i64 * ba[4].inner as i64) >> 32;
-        acc += (y[1] >> 32) as i32 as i64 * ba[4].inner as i64;
+        const {
+            assert!(F >= 0 && F < 32);
+        }
+        let mut acc = (self.ba[0] * x0 + self.ba[1] * state.x[0] + self.ba[2] * state.x[1]).inner;
+        state.x = [x0, state.x[0]];
+        acc += (state.y[0] as u32 as i64 * self.ba[3].inner as i64) >> 32;
+        acc += (state.y[0] >> 32) as i32 as i64 * self.ba[3].inner as i64;
+        acc += (state.y[1] as u32 as i64 * self.ba[4].inner as i64) >> 32;
+        acc += (state.y[1] >> 32) as i32 as i64 * self.ba[4].inner as i64;
         acc <<= 32 - F;
-        *y = [acc, y[0]];
+        state.y = [acc, state.y[0]];
         (acc >> 32) as _
     }
 }
 
 impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for BiquadClamp<Q<i32, i64, F>, i32> {
     fn process(&self, state: &mut DirectForm1Wide, x0: i32) -> i32 {
-        let x = &mut state.x;
-        let y = &mut state.y;
-        let ba = &self.coeff.ba;
-        let mut acc = (ba[0] * x0 + ba[1] * x[0] + ba[2] * x[1]).inner;
-        *x = [x0, x[0]];
-        acc += (y[0] as u32 as i64 * ba[3].inner as i64) >> 32;
-        acc += (y[0] >> 32) as i32 as i64 * ba[3].inner as i64;
-        acc += (y[1] as u32 as i64 * ba[4].inner as i64) >> 32;
-        acc += (y[1] >> 32) as i32 as i64 * ba[4].inner as i64;
-        acc <<= 32 - F;
-        let y0 = Ord::clamp((acc >> 32) as i32 + self.u, self.min, self.max);
-        *y = [((y0 as i64) << 32) | acc as u32 as i64, y[0]];
+        let y0 = clamp(self.coeff.process(state, x0) + self.u, self.min, self.max);
+        state.y[0] = ((y0 as i64) << 32) | state.y[0] as u32 as i64; // overwrite
         y0
     }
 }
 
 /// SOS state with first order error feedback
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default)]
 pub struct DirectForm1Dither {
     /// X,Y state
     ///
-    /// `[x1, x2, y1, y2]`
-    pub xy: [i32; 4],
+    /// `{ x: [x0, x1], y: [[y0, y1]] }`
+    pub xy: DirectForm1<i32>,
     /// Error feedback
     pub e: u32,
 }
@@ -405,47 +480,51 @@ pub struct DirectForm1Dither {
 /// # use dsp_fixedpoint::Q32;
 /// # use idsp::iir::*;
 /// let mut state = DirectForm1Dither {
-///     xy: [1, 2, 3, 4],
+///     xy: DirectForm {
+///         x: [1, 2],
+///         y: [[3, 4]],
+///     },
 ///     e: 5,
 /// };
 /// let x0 = 6;
 /// let y0 = Biquad::<Q32<30>>::IDENTITY.process(&mut state, x0);
 /// assert_eq!(y0, x0);
-/// assert_eq!(state.xy, [x0, 1, y0, 3]);
-/// assert_eq!(state.e, 20);
+/// assert_eq!(state.xy.x, [x0, 1]);
+/// assert_eq!(state.xy.y, [[y0, 3]]);
+/// assert_eq!(state.e, 5);
 /// ```
 impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for Biquad<Q<i32, i64, F>> {
     fn process(&self, state: &mut DirectForm1Dither, x0: i32) -> i32 {
-        let xy = &mut state.xy;
-        let e = &mut state.e;
-        let ba = &self.ba;
-        let mut acc = *e as i64
-            + (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).inner;
+        const {
+            assert!(F >= 0 && F < 32);
+        }
+        let mut acc = state.e as i64
+            + (self.ba[0] * x0
+                + self.ba[1] * state.xy.x[0]
+                + self.ba[2] * state.xy.x[1]
+                + self.ba[3] * state.xy.y[0][0]
+                + self.ba[4] * state.xy.y[0][1])
+                .inner;
         acc <<= 32 - F;
-        *e = acc as _;
+        state.e = (acc as u32) >> (32 - F);
         let y0 = (acc >> 32) as _;
-        *xy = [x0, xy[0], y0, xy[2]];
+        state.xy.x = [x0, state.xy.x[0]];
+        state.xy.y[0] = [y0, state.xy.y[0][0]];
         y0
     }
 }
 
 impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for BiquadClamp<Q<i32, i64, F>, i32> {
     fn process(&self, state: &mut DirectForm1Dither, x0: i32) -> i32 {
-        let xy = &mut state.xy;
-        let e = &mut state.e;
-        let ba = &self.coeff.ba;
-        let mut acc = *e as i64
-            + (ba[0] * x0 + ba[1] * xy[0] + ba[2] * xy[1] + ba[3] * xy[2] + ba[4] * xy[3]).inner;
-        acc <<= 32 - F;
-        *e = acc as _;
-        let y0 = Ord::clamp((acc >> 32) as i32 + self.u, self.min, self.max);
-        *xy = [x0, xy[0], y0, xy[2]];
+        let y0 = clamp(self.coeff.process(state, x0) + self.u, self.min, self.max);
+        state.xy.y[0][0] = y0; // overwrite
         y0
     }
 }
 
 impl<C, T: Copy, S> SplitInplace<T, S> for Biquad<C> where Self: SplitProcess<T, T, S> {}
 impl<C, T: Copy, S> SplitInplace<T, S> for BiquadClamp<C, T> where Self: SplitProcess<T, T, S> {}
+impl<C, T: Copy, S> SplitInplace<T, S> for Cascade<C> where Self: SplitProcess<T, T, S> {}
 
 /// `[[b0, b1, b2], [a0, a1, a2]]` coefficients with the literature sign of a1/a2
 macro_rules! impl_from_float {
@@ -473,10 +552,7 @@ impl_from_float!(f64);
 
 /// Normalized and sign-flipped coefficients
 /// `[b0, b1, b2, a1, a2]`
-impl<C: Copy + 'static, T> From<[T; 5]> for Biquad<C>
-where
-    T: AsPrimitive<C>,
-{
+impl<C: Copy + 'static, T: AsPrimitive<C>> From<[T; 5]> for Biquad<C> {
     fn from(ba: [T; 5]) -> Self {
         Self {
             ba: ba.map(AsPrimitive::as_),
@@ -484,9 +560,8 @@ where
     }
 }
 
-impl<C, T, F> From<F> for BiquadClamp<C, T>
+impl<C, T, F: Into<Biquad<C>>> From<F> for BiquadClamp<C, T>
 where
-    F: Into<Biquad<C>>,
     Self: Default,
 {
     fn from(coeff: F) -> Self {
@@ -494,6 +569,37 @@ where
             coeff: coeff.into(),
             ..Default::default()
         }
+    }
+}
+
+/// A pair of roots
+#[derive(Debug, Clone)]
+pub enum Pair<T> {
+    /// Two real roots
+    Real([T; 2]),
+    /// A pair of complex conjugate roots `X+-jY`
+    Complex([T; 2]),
+}
+
+impl<T: Float> Pair<T> {
+    /// Convert to real polynomial coefficients
+    pub fn coeff(self) -> [T; 2] {
+        match self {
+            Self::Real([x, y]) => [x + y, x * y],
+            Self::Complex([x, y]) => [x + x, x * x + y * y],
+        }
+    }
+}
+
+impl<C> Biquad<C> {
+    /// Convert from zeros pair, poles pair and gain
+    pub fn from_zpk<T: Float>(zeros: Pair<T>, poles: Pair<T>, gain: T) -> Self
+    where
+        Self: From<[T; 5]>,
+    {
+        let b = zeros.coeff().map(|b| gain * b);
+        let a = poles.coeff();
+        [gain, -b[0], b[1], a[0], -a[1]].into()
     }
 }
 
@@ -514,8 +620,8 @@ mod test {
     // cargo asm idsp::iir::biquad::test::pnm -p idsp --rust --target thumbv7em-none-eabihf --lib --target-cpu cortex-m7 --color --mca -M=-iterations=1 -M=-timeline -M=-skip-unsupported-instructions=lack-sched | less -R
 
     pub fn pnm(
-        config: &[Biquad<Q32<29>>; 4],
-        state: &mut [DirectForm1<i32>; 4],
+        config: &Cascade<[Biquad<Q32<29>>; 4]>,
+        state: &mut DirectForm<i32, 4>,
         xy0: &mut [i32; 1 << 3],
     ) {
         config.inplace(state, xy0);
@@ -525,13 +631,15 @@ mod test {
     #[test]
     #[ignore]
     fn sos_insn() {
-        let cfg = [
-            [[1., 3., 5.], [19., -9., 9.]],
-            [[3., 3., 5.], [21., -11., 11.]],
-            [[1., 3., 5.], [55., -17., 17.]],
-            [[1., 8., 5.], [77., -7., 7.]],
-        ]
-        .map(|c| Biquad::from(c));
+        let cfg = Cascade(
+            [
+                [[1., 3., 5.], [19., -9., 9.]],
+                [[3., 3., 5.], [21., -11., 11.]],
+                [[1., 3., 5.], [55., -17., 17.]],
+                [[1., 8., 5.], [77., -7., 7.]],
+            ]
+            .map(|c| Biquad::from(c)),
+        );
         let mut state = Default::default();
         let mut x = [977371917; 1 << 7];
         for _ in 0..1 << 20 {

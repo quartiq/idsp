@@ -1,4 +1,4 @@
-use dsp_fixedpoint::{Q, Shift};
+use dsp_fixedpoint::Q;
 use num_traits::{ConstOne, ConstZero, clamp};
 
 /// Constants
@@ -53,7 +53,7 @@ impl_const_int!(
     i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, isize, usize
 );
 
-impl<T: Clamp + Shift + Copy + PartialOrd, A, const F: i8> Clamp for Q<T, A, F>
+impl<T: Clamp, A, const F: i8> Clamp for Q<T, A, F>
 where
     Self: ConstOne,
 {

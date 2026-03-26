@@ -4,7 +4,7 @@ rustflags = ["-C", "target-cpu=cortex-m7"]
 
 [target.thumbv7m-none-eabi]
 runner = "./qemu.sh"
-rustflags = ["-C", "target-cpu=cortex-m7"]
+rustflags = ["-C", "target-cpu=cortex-m4"]
 
 [build]
 target = "thumbv7em-none-eabihf"

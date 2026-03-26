@@ -269,6 +269,20 @@ pub struct Gains<T> {
     d2: (),
 }
 
+impl<T> Gains<T> {
+    /// Create a new `Gains` given values.
+    pub fn new(value: [T; 5]) -> Self {
+        Self {
+            value,
+            i2: (),
+            i: (),
+            p: (),
+            d: (),
+            d2: (),
+        }
+    }
+}
+
 /// Units for a biquad
 ///
 /// In desired (e.g. SI) units per machine (e.g. full scale or LSB) unit
