@@ -95,9 +95,10 @@ pub trait Accu<A> {
 /// assert_eq!(7 * Q8::<4>::from_f32(1.5), 10);
 /// assert_eq!(7 / Q8::<4>::from_f32(1.5), 4);
 /// ```
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default)]
 #[repr(transparent)]
-#[serde(transparent)]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Q<T, A, const F: i8> {
     /// The accumulator type
     _accu: PhantomData<A>,

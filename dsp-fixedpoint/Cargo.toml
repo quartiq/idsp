@@ -8,11 +8,15 @@ license.workspace = true
 repository.workspace = true
 
 [features]
+default = ["serde"]
 std = []
+serde = ["dep:serde"]
 
 [dependencies]
-num-traits.workspace = true
-serde = { version = "1.0.228", default-features = false, features = ["derive"] }
+num-traits = { workspace = true, default-features = false }
+serde = { version = "1.0.228", default-features = false, features = [
+    "derive",
+], optional = true }
 
 [lints]
 workspace = true
