@@ -1,3 +1,5 @@
+use bytemuck::{Pod, cast};
+
 use crate::{SplitInplace, SplitProcess};
 
 /// Adapts an interpolator to output chunk mode
@@ -250,6 +252,8 @@ where
 /// by flattening and re-chunking output.
 ///
 /// This is the natural adapter for small fixed-ratio interpolation kernels.
+/// Use [`ChunkOutPod`] when the output type is POD and the flattening cost
+/// matters.
 ///
 /// # Examples
 ///
@@ -291,6 +295,57 @@ where
 }
 impl<C: SplitInplace<[X; 1], S>, S, X: Copy, const N: usize> SplitInplace<[X; N], S>
     for ChunkOut<C, 1>
+where
+    Self: SplitProcess<[X; N], [X; N], S>,
+{
+    fn inplace(&self, state: &mut S, xy: &mut [[X; N]]) {
+        let (xy, []) = xy.as_flattened_mut().as_chunks_mut() else {
+            unreachable!()
+        };
+        self.0.inplace(state, xy)
+    }
+}
+
+/// POD-specialized [`ChunkOut`] variant.
+///
+/// This keeps the same semantics as [`ChunkOut`] but uses a bytemuck-backed
+/// representation cast to flatten `[[Y; R]; N]` into `[Y; R * N]` without the
+/// generic scratch-buffer path.
+///
+/// This is only available when `Y` is [`Pod`].
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{ChunkOutPod, FnSplitProcess, Process, Split};
+///
+/// let mut p = Split::stateless(ChunkOutPod::<_, 2>(FnSplitProcess(
+///     |_: &mut (), x: i32| [x, -x],
+/// )));
+/// assert_eq!(p.process([2, 3]), [2, -2, 3, -3]);
+/// ```
+#[derive(Debug, Copy, Clone, Default)]
+pub struct ChunkOutPod<P, const R: usize>(pub P);
+impl<C, S, X: Copy, Y: Pod, const N: usize, const R: usize, const M: usize>
+    SplitProcess<[X; N], [Y; M], S> for ChunkOutPod<C, R>
+where
+    C: SplitProcess<X, [Y; R], S>,
+{
+    fn process(&self, state: &mut S, x: [X; N]) -> [Y; M] {
+        const { assert!(R * N == M) }
+        cast::<[[Y; R]; N], [Y; M]>(x.map(|x| self.0.process(state, x)))
+    }
+
+    fn block(&self, state: &mut S, x: &[[X; N]], y: &mut [[Y; M]]) {
+        const { assert!(R * N == M) }
+        let (y, []) = y.as_flattened_mut().as_chunks_mut() else {
+            unreachable!()
+        };
+        self.0.block(state, x.as_flattened(), y)
+    }
+}
+impl<C: SplitInplace<[X; 1], S>, S, X: Copy, const N: usize> SplitInplace<[X; N], S>
+    for ChunkOutPod<C, 1>
 where
     Self: SplitProcess<[X; N], [X; N], S>,
 {

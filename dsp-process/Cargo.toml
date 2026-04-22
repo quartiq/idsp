@@ -12,6 +12,9 @@ categories = ["embedded", "no-std", "science"]
 [features]
 std = []
 
+[dependencies]
+bytemuck = { version = "1.25.0", features = ["min_const_generics"] }
+
 [dev-dependencies]
 dsp-fixedpoint.workspace = true
 

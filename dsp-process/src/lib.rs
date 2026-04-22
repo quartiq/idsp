@@ -97,6 +97,15 @@ mod test {
     }
 
     #[test]
+    fn chunk_out_pod() {
+        let mut p = Split::stateless(ChunkOutPod::<_, 2>(FnSplitProcess(|_: &mut (), x: i32| {
+            [x, -x]
+        })));
+        let y: [i32; 4] = p.process([2, 3]);
+        assert_eq!(y, [2, -2, 3, -3]);
+    }
+
+    #[test]
     fn buffer_blocks() {
         let mut dly = Buffer::<[_; 2]>::default();
         let mut y = [0; 5];
