@@ -214,7 +214,7 @@ impl Complex<i32> {
     /// use core::num::Wrapping as W;
     /// use idsp::Complex;
     /// assert_eq!(Complex::new(0, 0).arg(), W(0));
-    /// assert_eq!(Complex::new(0, 1).arg(), W((1 << 30) - 1));
+    /// assert_eq!(Complex::new(0, 1).arg(), W(0x3fffeba0));
     /// ```
     pub fn arg(&self) -> Wrapping<i32> {
         Wrapping(atan2(self.im(), self.re()))

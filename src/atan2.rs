@@ -1,12 +1,17 @@
 fn divi(y: u32, x: u32) -> u32 {
     debug_assert!(y <= x);
-    let z = y.leading_zeros().min(15);
-    (y << z)
-        .checked_div((x + (1 << (15 - z)) - 1) >> (16 - z))
-        .map_or(
-            0, // x == y == 0
-            |yx| (yx << 15) + (1 << 14),
-        )
+    if x == 0 {
+        return 0;
+    }
+    // Balance the divider around 16 useful bits in the denominator. After
+    // shifting by `x.leading_zeros()`, `x` lies in [2^31, 2^32), so rounding it
+    // to 16 bits gives a uniform one-UDIV approximation without the old
+    // small-vector collapse.
+    let shift = x.leading_zeros();
+    let y = y << shift;
+    let x = x << shift;
+    let d = (x >> 16) + ((x >> 15) & 1);
+    ((y / d) << 15) + (1 << 14)
 }
 
 fn atani(x: u32) -> u32 {
@@ -127,8 +132,32 @@ mod tests {
         println!("max abs err: {:.2e}", abs_err);
         println!("rms abs err: {:.2e}", rms_err);
         println!("max rel err: {:.2e}", rel_err);
-        assert!(abs_err < 1.2e-5);
-        assert!(rms_err < 4.2e-6);
+        assert!(abs_err < 1.25e-5);
+        assert!(rms_err < 4.4e-6);
         assert!(rel_err < 1e-12);
+    }
+
+    #[test]
+    fn atan2_small_equal_inputs() {
+        let scale = PI / (1i64 << 31) as f64;
+        for v in 1..1024 {
+            let have = atan2(v, v) as f64 * scale;
+            let want = PI / 4.0;
+            assert!((have - want).abs() < 1.2e-5, "{v}: {have} vs {want}");
+        }
+    }
+
+    #[test]
+    fn atan2_small_vectors_do_not_break_near_origin() {
+        let scale = PI / (1i64 << 31) as f64;
+        let mut max_err = 0.0f64;
+        for x in 1..512 {
+            for y in 0..=x {
+                let have = atan2(y, x) as f64 * scale;
+                let want = (y as f64).atan2(x as f64);
+                max_err = max_err.max((have - want).abs());
+            }
+        }
+        assert!(max_err < 1.2e-5, "{max_err}");
     }
 }

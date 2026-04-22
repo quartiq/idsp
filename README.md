@@ -19,7 +19,7 @@ One comprehensive user for these algorithms is [Stabilizer](https://github.com/q
 
 ### Two-argument arcus-tangens
 
-[`atan2()`] returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine). The RMS phase error is less than 5e-6 rad, max error is less than 1.2e-5 rad, i.e. 20.5 bit RMS, 19.1 bit max accuracy. The bias is minimal. It takes about 60 cycles on Cortex-M7 (see `tests/embedded`).
+[`atan2()`] returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine). The RMS phase error is less than 5e-6 rad, max error is less than 1.25e-5 rad, i.e. 20.5 bit RMS, 19.0 bit max accuracy. The bias is minimal. It takes about 60 cycles on Cortex-M7 (see `tests/embedded`).
 
 ### CORDIC
 
