@@ -25,6 +25,19 @@ pub use compose::*;
 /// To avoid this, use `block()` and `inplace()` on a scratch buffer ([`Major`] input or output).
 ///
 /// The corresponding state for this is `((Unsplit<Identity>, (S0, S1)), Unsplit<Add>)`.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{Add, Gain, Identity, Offset, Pair, Parallel, Process, Split, Unsplit};
+///
+/// let mut pair = Split::new(
+///     Pair::<_, _, i32>::new((((), Parallel((Offset(3), Gain(4)))), ())),
+///     ((Unsplit(Identity), Default::default()), Unsplit(Add)),
+/// );
+/// let y: i32 = pair.process(5);
+/// assert_eq!(y, 28);
+/// ```
 pub type Pair<C0, C1, X, I = (), J = ()> = Minor<((I, Parallel<(C0, C1)>), J), [X; 2]>;
 
 #[cfg(test)]
@@ -35,6 +48,7 @@ mod test {
     #[test]
     fn basic() {
         assert_eq!(3, Identity.process(3));
+        assert_eq!([7, 1], Butterfly.process([4, 3]));
         assert_eq!(Split::stateless(Gain(Q32::<3>::new(32))).process(9), 9 * 4);
         assert_eq!(Split::stateless(Offset(7)).process(9), 7 + 9);
     }
@@ -71,5 +85,14 @@ mod test {
 
         let y: [i32; 5] = f.channels().process([5; _]);
         assert_eq!(y, [(5 + 3) + ((5 * 4) >> 1); 5]);
+    }
+
+    #[test]
+    fn chunk_in_out() {
+        let mut p = Split::stateless(ChunkInOut::<_, 2, 1>(FnSplitProcess(
+            |_: &mut (), [x0, x1]: [i32; 2]| [x0 + x1],
+        )));
+        let y: [i32; 2] = p.process([1, 2, 3, 4]);
+        assert_eq!(y, [3, 7]);
     }
 }

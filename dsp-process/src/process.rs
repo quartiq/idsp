@@ -1,8 +1,36 @@
-//! Sample processing, filtering, combination of filters.
+//! Core traits for synchronous sample and block processing.
 
 /// Processing block
 ///
-/// Single input, single output
+/// Single-input processing with state held in `self`.
+///
+/// This is the simplest trait in the crate: one new sample goes in, one output
+/// value comes out. Override [`block()`](Self::block) when a specialized loop can
+/// reuse scratch storage, reduce bounds checks, or better match the desired data
+/// layout.
+///
+/// [`SplitProcess`] is the corresponding trait when immutable configuration and
+/// mutable runtime state should be separated.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::Process;
+///
+/// #[derive(Default)]
+/// struct Acc(i32);
+///
+/// impl Process<i32> for Acc {
+///     fn process(&mut self, x: i32) -> i32 {
+///         self.0 += x;
+///         self.0
+///     }
+/// }
+///
+/// let mut acc = Acc::default();
+/// assert_eq!(acc.process(2), 2);
+/// assert_eq!(acc.process(3), 5);
+/// ```
 pub trait Process<X: Copy, Y = X> {
     /// Update the state with a new input and obtain an output
     fn process(&mut self, x: X) -> Y;
@@ -10,6 +38,9 @@ pub trait Process<X: Copy, Y = X> {
     /// Process a block of inputs into a block of outputs
     ///
     /// Input and output must be of the same size.
+    ///
+    /// For hot-path use this is treated as a caller precondition; the default
+    /// implementation only checks it in debug builds.
     fn block(&mut self, x: &[X], y: &mut [Y]) {
         debug_assert_eq!(x.len(), y.len());
         for (x, y) in x.iter().zip(y) {
@@ -19,6 +50,12 @@ pub trait Process<X: Copy, Y = X> {
 }
 
 /// Inplace processing
+///
+/// This is a convenience trait for processors where input and output element
+/// types are identical and the computation can be expressed as overwriting a
+/// mutable slice.
+///
+/// See also [`SplitInplace`] for the split configuration/state form.
 pub trait Inplace<X: Copy>: Process<X> {
     /// Process an input block into the same data as output
     fn inplace(&mut self, xy: &mut [X]) {
@@ -41,6 +78,36 @@ pub trait Inplace<X: Copy>: Process<X> {
 /// * Allows the same filter to be applied to multiple states
 ///   (e.g. IQ data, multiple channels) guaranteeing consistency,
 ///   reducing memory usage, and improving caching.
+///
+/// This is the central abstraction used throughout `dsp-process`. A typical DSP
+/// filter coefficient set becomes `Self`, while delay lines, accumulators, and
+/// history buffers become the separate `state` argument.
+///
+/// Use this when one configuration should drive many runtime states, or when it
+/// is beneficial to keep mutable state small and move immutable data out of hot
+/// loops.
+///
+/// [`Process`] is often easier when state and configuration naturally live
+/// together, while [`Split`] turns a `SplitProcess` back into a stateful
+/// [`Process`] value.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::SplitProcess;
+///
+/// #[derive(Copy, Clone)]
+/// struct Gain(i32);
+///
+/// impl SplitProcess<i32> for Gain {
+///     fn process(&self, _: &mut (), x: i32) -> i32 {
+///         self.0 * x
+///     }
+/// }
+///
+/// let mut state = ();
+/// assert_eq!(Gain(4).process(&mut state, 3), 12);
+/// ```
 pub trait SplitProcess<X: Copy, Y = X, S: ?Sized = ()> {
     /// Process an input into an output
     ///
@@ -50,6 +117,8 @@ pub trait SplitProcess<X: Copy, Y = X, S: ?Sized = ()> {
     /// Process a block of inputs
     ///
     /// See also [`Process::block`]
+    ///
+    /// Length matching is a caller precondition in release builds.
     fn block(&self, state: &mut S, x: &[X], y: &mut [Y]) {
         debug_assert_eq!(x.len(), y.len());
         for (x, y) in x.iter().zip(y) {
@@ -59,6 +128,10 @@ pub trait SplitProcess<X: Copy, Y = X, S: ?Sized = ()> {
 }
 
 /// Inplace processing with a split state
+///
+/// This is the split-state companion to [`Inplace`]. Implement it when a
+/// `SplitProcess<X, X, S>` can update a buffer in place more efficiently than
+/// routing through a separate output slice.
 pub trait SplitInplace<X: Copy, S: ?Sized = ()>: SplitProcess<X, X, S> {
     /// See also [`Inplace::inplace`]
     fn inplace(&self, state: &mut S, xy: &mut [X]) {
@@ -119,6 +192,19 @@ impl<X: Copy, S: ?Sized, T: SplitInplace<X, S>> SplitInplace<X, S> for &mut T {
 }
 
 /// Wrap a `FnMut` into a `Process`/`Inplace`
+///
+/// This is useful for quick experiments, benchmarks, or adapters at the edge of
+/// a pipeline. For reusable DSP stages, prefer a named type once the closure
+/// starts carrying real semantics.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{FnProcess, Process};
+///
+/// let mut square = FnProcess(|x: i32| x * x);
+/// assert_eq!(square.process(7), 49);
+/// ```
 pub struct FnProcess<F>(pub F);
 
 impl<F: FnMut(X) -> Y, X: Copy, Y> Process<X, Y> for FnProcess<F> {
@@ -130,6 +216,25 @@ impl<F: FnMut(X) -> Y, X: Copy, Y> Process<X, Y> for FnProcess<F> {
 impl<F, X: Copy> Inplace<X> for FnProcess<F> where Self: Process<X> {}
 
 /// Wrap a `Fn` into a `SplitProcess`/`SplitInplace`
+///
+/// The closure receives both the mutable split state and the new input sample.
+/// This is a compact way to prototype split-state processors before promoting
+/// them to named types.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{FnSplitProcess, SplitProcess};
+///
+/// let proc = FnSplitProcess(|state: &mut i32, x: i32| {
+///     *state += x;
+///     *state
+/// });
+///
+/// let mut state = 0;
+/// assert_eq!(proc.process(&mut state, 2), 2);
+/// assert_eq!(proc.process(&mut state, 3), 5);
+/// ```
 pub struct FnSplitProcess<F>(pub F);
 
 impl<F: Fn(&mut S, X) -> Y, X: Copy, Y, S> SplitProcess<X, Y, S> for FnSplitProcess<F> {

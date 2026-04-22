@@ -4,7 +4,10 @@ use crate::{Inplace, Process, SplitInplace, SplitProcess};
 
 /// Summation
 ///
-/// Fan in.
+/// Fan-in addition over tuples or arrays.
+///
+/// This is the standard reducer used after [`Parallel`](crate::Parallel) or
+/// [`Pair`](crate::Pair) style branching.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Add;
 impl<X: Copy, Y: core::iter::Sum<X>, const N: usize> Process<[X; N], Y> for Add {
@@ -21,7 +24,7 @@ impl<X: Copy> Inplace<X> for Add where Self: Process<X> {}
 
 /// Product
 ///
-/// Fan in.
+/// Fan-in multiplication over tuples or arrays.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Mul;
 impl<X: Copy, Y: core::iter::Product<X>, const N: usize> Process<[X; N], Y> for Mul {
@@ -38,7 +41,7 @@ impl<X: Copy> Inplace<X> for Mul where Self: Process<X> {}
 
 /// Difference
 ///
-/// Fan in.
+/// Fan-in subtraction for pairs.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Sub;
 impl<X: Copy + core::ops::Sub<Output = Y>, Y> Process<[X; 2], Y> for Sub {
@@ -53,11 +56,22 @@ impl<X0: Copy + core::ops::Sub<X1, Output = Y>, X1: Copy, Y> Process<(X0, X1), Y
 }
 impl<X: Copy> Inplace<X> for Sub where Self: Process<X> {}
 
-/// Sum and difference
+/// Sum and difference of a two-element input.
+///
+/// This is the classic butterfly primitive used in lattice, complementary, and
+/// polyphase-style constructions.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{Butterfly, Process};
+///
+/// assert_eq!(Butterfly.process([4, 1]), [5, 3]);
+/// ```
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Butterfly;
 impl<X: Copy + core::ops::Add<Output = Y> + core::ops::Sub<Output = Y>, Y> Process<[X; 2], [Y; 2]>
-    for &Butterfly
+    for Butterfly
 {
     fn process(&mut self, x: [X; 2]) -> [Y; 2] {
         [x[0] + x[1], x[0] - x[1]]
@@ -66,7 +80,10 @@ impl<X: Copy + core::ops::Add<Output = Y> + core::ops::Sub<Output = Y>, Y> Proce
 
 impl<X: Copy> Inplace<X> for Butterfly where Self: Process<X> {}
 
-/// Identity using [`Copy`]
+/// Identity stage and simple fan-out/fan-in adapter.
+///
+/// Besides the usual `T -> T` identity, this type also provides several useful
+/// shape conversions such as scalar fan-out to arrays or tuples.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Identity;
 impl<T: Copy> Process<T> for Identity {
@@ -116,7 +133,9 @@ impl<T: Copy + core::ops::Neg<Output = T>> Process<T> for Neg {
 
 impl<T: Copy> Inplace<T> for Neg where Self: Process<T> {}
 
-/// Addition of a constant
+/// Addition of a constant in split form.
+///
+/// See also [`Gain`] and [`Clamp`].
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(transparent)]
 pub struct Offset<T>(pub T);
@@ -130,7 +149,7 @@ impl<X: Copy + core::ops::Add<T, Output = Y>, Y, T: Copy> SplitProcess<X, Y> for
 
 impl<X: Copy, T> SplitInplace<X> for Offset<T> where Self: SplitProcess<X> {}
 
-/// Multiply by constant
+/// Multiplication by a constant in split form.
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(transparent)]
 pub struct Gain<T>(pub T);
@@ -145,6 +164,9 @@ impl<X: Copy + core::ops::Mul<T, Output = Y>, Y, T: Copy> SplitProcess<X, Y> for
 impl<X: Copy, T> SplitInplace<X> for Gain<T> where Self: SplitProcess<X> {}
 
 /// Clamp between min and max using `Ord`
+///
+/// This is a split-state combinator because the bounds are immutable
+/// configuration.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Clamp<T> {
     /// Lowest output value
@@ -161,7 +183,10 @@ impl<T: Copy + Ord> SplitProcess<T> for Clamp<T> {
 
 impl<T: Copy> SplitInplace<T> for Clamp<T> where Self: SplitProcess<T> {}
 
-/// Decimate or zero stuff
+/// Select or place one sample in a fixed-size rate-conversion slot.
+///
+/// As `[X; N] -> X`, it keeps the last sample. As `X -> [X; N]`, it emits the
+/// sample in slot `0` and fills the rest with `Default::default()`.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Rate;
 impl<X: Copy, const N: usize> Process<[X; N], X> for Rate {
@@ -179,7 +204,13 @@ impl<X: Copy + Default, const N: usize> Process<X, [X; N]> for Rate {
 }
 impl<X: Copy> Inplace<X> for Rate where Self: Process<X> {}
 
-/// Buffer input or output, or fixed delay line
+/// Fixed-size sample buffer used as a delay line or chunk accumulator.
+///
+/// The exact behavior depends on the chosen `Process` implementation:
+///
+/// * `X -> X`: delay line
+/// * `X -> Option<[X; N]>`: buffer into chunks
+/// * `Option<[X; N]> -> X`: stream samples out of a chunk buffer
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Buffer<B> {
     buffer: B,
@@ -187,13 +218,19 @@ pub struct Buffer<B> {
 }
 
 impl<X, const N: usize> Buffer<[X; N]> {
-    /// The buffer is empty
+    /// Whether the chunk buffer is currently empty.
+    ///
+    /// For delay-line use this only reports whether the write index is at zero;
+    /// it does not indicate whether previous samples are all defaults.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.idx == 0
     }
 }
 
 /// Delay line
+///
+/// This is the simplest stateful FIFO in the crate.
 impl<X: Copy, const N: usize> Process<X> for Buffer<[X; N]> {
     fn process(&mut self, x: X) -> X {
         let y = core::mem::replace(&mut self.buffer[self.idx], x);
@@ -207,6 +244,8 @@ impl<X: Copy, const N: usize> Process<X> for Buffer<[X; N]> {
 impl<X: Copy, const N: usize> Inplace<X> for Buffer<[X; N]> where Self: Process<X> {}
 
 /// Buffer into chunks
+///
+/// Returns `Some(chunk)` every `N` samples and `None` otherwise.
 impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<[X; N]> {
     fn process(&mut self, x: X) -> Option<[X; N]> {
         self.buffer[self.idx] = x;
@@ -223,6 +262,9 @@ impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<[X; N]> {
 /// Buffer out of chunks
 ///
 /// Panics on underflow
+///
+/// This is useful when an upstream stage naturally produces samples in blocks
+/// but a downstream stage expects a scalar stream.
 impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<[X; N]> {
     fn process(&mut self, x: Option<[X; N]>) -> X {
         if let Some(x) = x {
@@ -240,6 +282,8 @@ impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<[X; N]> {
 /// Nyquist zero with gain 2
 ///
 /// This is inefficient for large differential delays
+///
+/// See also [`Comb`] for the corresponding difference operator.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Nyquist<X>(
     /// Previous input
@@ -258,7 +302,7 @@ impl<X: Copy + core::ops::Add<X, Output = Y>, Y, const N: usize> Process<X, Y> f
 }
 impl<X: Copy> Inplace<X> for Nyquist<X> where Self: Process<X> {}
 
-/// Integrator
+/// Running sum / discrete-time integrator.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Integrator<Y>(
     /// Current integrator value
@@ -275,6 +319,8 @@ impl<X: Copy> Inplace<X> for Integrator<X> where Self: Process<X> {}
 /// Comb (derivative)
 ///
 /// Bad for large delays
+///
+/// See also [`Nyquist`] for the sum form.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Comb<X>(
     /// Delay line

@@ -3,9 +3,11 @@ use core::marker::PhantomData;
 
 //////////// SPLIT COMPOSE ////////////
 
-/// Chain of two different large filters
+/// Chain two different processors with an explicit intermediate type.
 ///
-/// `X->Y->Y`
+/// This is the heterogeneous serial-composition primitive for tuples. The first
+/// stage may change the sample type, while the second stage must accept that
+/// intermediate value in place.
 impl<X: Copy, Y: Copy, C0, C1, S0, S1> SplitProcess<X, Y, (S0, S1)> for (C0, C1)
 where
     C0: SplitProcess<X, Y, S0>,
@@ -33,12 +35,9 @@ where
     }
 }
 
-/// Chain of multiple large filters of the same type
+/// Chain multiple homogeneous processors over one sample type.
 ///
-///
-/// `X->X->X...`
-///
-/// * Clice can be empty
+/// The slice may be empty, in which case `block()` acts as identity.
 impl<X: Copy, C, S> SplitProcess<X, X, [S]> for [C]
 where
     C: SplitInplace<X, S>,
@@ -75,9 +74,7 @@ where
     }
 }
 
-/// A chain of multiple large filters of the same type
-///
-/// `X->Y->Y...`
+/// Chain a non-empty homogeneous array of processors with one initial type change.
 impl<X: Copy, Y: Copy, C, S, const N: usize> SplitProcess<X, Y, [S; N]> for [C; N]
 where
     C: SplitProcess<X, Y, S> + SplitInplace<Y, S>,
@@ -128,6 +125,8 @@ where
 ///
 /// Note that the major implementations only override the behavior
 /// for `block()` and `inplace()`. `process()` is unaffected and the same for all.
+///
+/// This wrapper changes loop ordering rather than signal semantics.
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct Minor<C: ?Sized, U> {
@@ -138,7 +137,8 @@ pub struct Minor<C: ?Sized, U> {
 }
 
 impl<C, U> Minor<C, U> {
-    /// Create a new chain
+    /// Create a [`Minor`] wrapper around an existing composition.
+    #[must_use]
     pub const fn new(inner: C) -> Self {
         Self {
             inner,
@@ -193,7 +193,10 @@ impl<X: Copy, U, C, S> SplitInplace<X, S> for Minor<C, U> where Self: SplitProce
 
 //////////// SPLIT PARALLEL ////////////
 
-/// Fan out parallel input to parallel processors
+/// Fan out parallel input to parallel processors.
+///
+/// Use this with [`crate::Add`], [`crate::Sub`], or [`crate::Mul`] when the
+/// branch outputs should be reduced again.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Parallel<P>(pub P);
 
@@ -251,6 +254,10 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Parallel<C> where Self: SplitProcess<
 ///
 /// Like [`Parallel`] but reinterpreting data as transpose `[[X; N]] <-> [[X]; N]`
 /// such that `block()` and `inplace()` are lowered.
+///
+/// This wrapper does not allocate or physically transpose memory. It changes how
+/// flattened block storage is interpreted during block processing and is meant
+/// for layout-sensitive expert use.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Transpose<C>(pub C);
 
@@ -339,7 +346,10 @@ where
 
 //////////// CHANNELS ////////////
 
-/// Multiple channels to be processed with the same configuration
+/// Multiple channels processed with one shared configuration.
+///
+/// This is the natural companion to [`SplitProcess`]: immutable coefficients are
+/// stored once while each channel keeps separate mutable state.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Channels<C>(pub C);
 
@@ -396,6 +406,9 @@ where
 /// from individual block()s
 ///
 /// Prefer default composition for X->X->X, arrays/slices where inplace is possible
+///
+/// Use [`Major`] when block processing benefits from explicit scratch storage
+/// between stages, for example to improve locality for larger processors.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Major<P: ?Sized, U> {
     /// Intermediate buffer
@@ -404,7 +417,8 @@ pub struct Major<P: ?Sized, U> {
     pub inner: P,
 }
 impl<P, U> Major<P, U> {
-    /// Create a new chain of processors
+    /// Create a [`Major`] wrapper around an existing composition.
+    #[must_use]
     pub const fn new(inner: P) -> Self {
         Self {
             inner,
