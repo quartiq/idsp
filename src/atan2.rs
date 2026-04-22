@@ -1,14 +1,12 @@
-fn divi(mut y: u32, mut x: u32) -> u32 {
+fn divi(y: u32, x: u32) -> u32 {
     debug_assert!(y <= x);
     let z = y.leading_zeros().min(15);
-    y <<= z;
-    x += (1 << (15 - z)) - 1;
-    x >>= 16 - z;
-    if x == 0 {
-        0 // x == y == 0
-    } else {
-        ((y / x) << 15) + (1 << 14)
-    }
+    (y << z)
+        .checked_div((x + (1 << (15 - z)) - 1) >> (16 - z))
+        .map_or(
+            0, // x == y == 0
+            |yx| (yx << 15) + (1 << 14),
+        )
 }
 
 fn atani(x: u32) -> u32 {

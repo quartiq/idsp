@@ -337,7 +337,6 @@ where
 {
     /// Quantize a f32
     #[inline]
-    #[must_use]
     pub fn from_f32(value: f32) -> Self {
         value.as_()
     }
@@ -350,7 +349,6 @@ where
 {
     /// Quantize a f64
     #[inline]
-    #[must_use]
     pub fn from_f64(value: f64) -> Self {
         value.as_()
     }
