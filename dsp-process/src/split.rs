@@ -1,7 +1,7 @@
 use core::array::{from_fn, repeat};
 
 use crate::{
-    Channels, Frames, Inplace, Major, Minor, Parallel, Process, SplitInplace, SplitProcess,
+    Channels, Frames, Inplace, Major, Map, Minor, Parallel, Process, SplitInplace, SplitProcess,
     Transpose,
 };
 
@@ -155,6 +155,15 @@ impl<C, S> Split<C, S> {
     #[must_use]
     pub fn parallel(self) -> Split<Parallel<C>, S> {
         Split::new(Parallel(self.config), self.state)
+    }
+
+    /// Map `Option` and `Result` around this processor.
+    ///
+    /// This wraps the configuration in [`crate::Map`] while preserving the
+    /// current state unchanged.
+    #[must_use]
+    pub fn map(self) -> Split<Map<C>, S> {
+        Split::new(Map(self.config), self.state)
     }
 
     /// Treat each frame of a frame-major block as one chunk sample.

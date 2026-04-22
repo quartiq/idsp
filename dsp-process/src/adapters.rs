@@ -34,14 +34,108 @@ impl<X: Copy, Y, C: SplitProcess<Option<X>, Y, S>, S, const N: usize> SplitProce
 }
 impl<X: Copy, C, S> SplitInplace<X, S> for Interpolator<C> where Self: SplitProcess<X, X, S> {}
 
+/// Scalar downsampler with explicit tick phase.
+///
+/// The first input sample produces `Some(x)`, then `rate` input samples produce
+/// `None`, and the pattern repeats. This matches the phase convention used by
+/// [`crate::Decimator`] when wrapping a scalar `X -> Option<Y>` processor into a
+/// chunked one.
+///
+/// Use this when the stream is still scalar and phase must be tracked across
+/// time. It does not by itself turn a chunk `[X; N]` into one output `Y`; pair
+/// it with [`Decimator`] or [`TryDecimator`] for that.
+///
+/// Together with [`crate::Hold`], this forms the scalar optional-sample pair:
+/// `Downsample` removes samples by emitting `None`, while `Hold` fills those
+/// gaps again by repeating the last present sample.
+///
+/// Compare with:
+/// - [`crate::Rate`]: stateless chunk-slot conversion
+/// - [`Decimator`]: chunk adapter over a scalar `X -> Option<Y>` stage
+///
+/// State is the current countdown and should usually be initialized to `0`.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{Downsample, SplitProcess};
+///
+/// let ds = Downsample(2);
+/// let mut state = 0;
+/// assert_eq!(ds.process(&mut state, 10), Some(10));
+/// assert_eq!(ds.process(&mut state, 11), None);
+/// assert_eq!(ds.process(&mut state, 12), None);
+/// assert_eq!(ds.process(&mut state, 13), Some(13));
+/// ```
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Downsample(pub u32);
+
+impl<X: Copy> SplitProcess<X, Option<X>, u32> for Downsample {
+    fn process(&self, state: &mut u32, x: X) -> Option<X> {
+        if let Some(index) = state.checked_sub(1) {
+            *state = index;
+            None
+        } else {
+            *state = self.0;
+            Some(x)
+        }
+    }
+}
+
+/// Zero-order hold over optional input samples.
+///
+/// `Some(x)` updates the held value, while `None` repeats the previous one.
+/// This is useful for interpolation pipelines and event-driven sample streams.
+///
+/// Together with [`Downsample`], this forms the scalar optional-sample pair:
+/// `Downsample` creates gaps by emitting `None`, while `Hold` turns those
+/// gaps back into a continuous stream by repeating the last present sample.
+///
+/// At the chunk level, [`Interpolator`] plays the analogous role for turning a
+/// scalar stream into chunk output.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{Hold, Process};
+///
+/// let mut hold = Hold(5);
+/// assert_eq!(hold.process(None), 5);
+/// assert_eq!(hold.process(Some(7)), 7);
+/// assert_eq!(hold.process(None), 7);
+/// ```
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(transparent)]
+pub struct Hold<T>(pub T);
+
+impl<T: Copy> crate::Process<Option<T>, T> for Hold<T> {
+    fn process(&mut self, x: Option<T>) -> T {
+        if let Some(x) = x {
+            self.0 = x;
+        }
+        self.0
+    }
+}
+
 /// Adapts a decimator to input chunk mode
 ///
 /// Synchronizes to the inner tick by discarding samples after tick.
 /// Panics if tick does not match `N`.
 ///
 /// This is the chunked counterpart to [`Interpolator`].
-/// Use [`TryDecimator`] when violating the one-tick-per-chunk contract should
-/// be reported instead of panicking.
+///
+/// The inner processor must tick exactly once per input chunk. `Decimator`
+/// processes the whole chunk and panics if the contract is violated. Use
+/// [`TryDecimator`] when violating that contract should be reported instead of
+/// panicking.
+///
+/// Unlike [`crate::Rate`], this adapter still runs the
+/// inner processor on every sample in the chunk before choosing the output.
+/// That is the right semantics for recursive stages such as CIC decimators.
+///
+/// Conceptually, this is the chunk-level companion to [`crate::Downsample`]:
+/// `Downsample` gates a scalar stream into `Option<Y>`, while `Decimator`
+/// turns that exact-one-tick-per-chunk protocol into `[X; N] -> Y`.
 ///
 /// # Examples
 ///
@@ -64,9 +158,7 @@ impl<X: Copy, Y, C: SplitProcess<X, Option<Y>, S>, S, const N: usize> SplitProce
 {
     fn process(&self, state: &mut S, x: [X; N]) -> Y {
         const { assert!(N > 0) }
-        x.into_iter()
-            .find_map(|x| self.0.process(state, x))
-            .unwrap()
+        TryDecimator(&self.0).process(state, x).unwrap()
     }
 }
 impl<X: Copy, C, S> SplitInplace<X, S> for Decimator<C> where Self: SplitProcess<X, X, S> {}

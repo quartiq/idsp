@@ -185,24 +185,32 @@ impl<T: Copy> SplitInplace<T> for Clamp<T> where Self: SplitProcess<T> {}
 
 /// Select or place one sample in a fixed-size rate-conversion slot.
 ///
-/// As `[X; N] -> X`, it keeps the last sample. As `X -> [X; N]`, it emits the
-/// sample in slot `0` and fills the rest with `Default::default()`.
+/// `Rate<I>` keeps or places the sample in slot `I`.
+///
+/// As `[X; N] -> X`, it returns `x[I]`. As `X -> [X; N]`, it emits the sample
+/// in slot `I` and fills the rest with `Default::default()`.
+///
+/// This is a stateless shape-conversion primitive. It does not track stream
+/// phase over time, so it is not a substitute for [`crate::Downsample`] or
+/// [`crate::Decimator`].
 #[derive(Debug, Copy, Clone, Default)]
-pub struct Rate;
-impl<X: Copy, const N: usize> Process<[X; N], X> for Rate {
+pub struct Rate<const I: usize>;
+impl<X: Copy, const I: usize, const N: usize> Process<[X; N], X> for Rate<I> {
     fn process(&mut self, x: [X; N]) -> X {
-        x[N - 1]
+        const { assert!(I < N) }
+        x[I]
     }
 }
 
-impl<X: Copy + Default, const N: usize> Process<X, [X; N]> for Rate {
+impl<X: Copy + Default, const I: usize, const N: usize> Process<X, [X; N]> for Rate<I> {
     fn process(&mut self, x: X) -> [X; N] {
+        const { assert!(I < N) }
         let mut y = [X::default(); N];
-        y[0] = x;
+        y[I] = x;
         y
     }
 }
-impl<X: Copy> Inplace<X> for Rate where Self: Process<X> {}
+impl<X: Copy, const I: usize> Inplace<X> for Rate<I> where Self: Process<X> {}
 
 /// Fixed-size sample buffer used as a delay line or chunk accumulator.
 ///
