@@ -108,15 +108,15 @@ The crate supports several composition styles:
 * [`Major`] for block processing with explicit intermediate scratch
 * [`Parallel`] for parallel branches
 * [`Channels`] for many states with shared configuration
-* [`Transpose`] for expert-oriented block reinterpretation
+* [`Transpose`] for explicit channel-major block processing
 
 These are not interchangeable in performance terms. The point is to make the
 choice explicit.
 
 `Minor` tends to fit processors with small state and configuration. `Major` is
 for cases where block processing and explicit intermediate storage improve cache
-behavior or register pressure. `Channels` and `Transpose` exist to support
-layouts that are friendlier to multi-channel locality and vectorization.
+behavior or register pressure. `Channels` and `Transpose` pair with typed block
+views so multi-channel locality and vectorization can be expressed explicitly.
 
 ## Context in `idsp`
 
@@ -161,9 +161,9 @@ This crate is intentionally not beginner-friendly in every corner.
 * Static composition means type signatures can become large.
 * Some adapters rely on const-generic shape relations that are correct but not
   always obvious at the callsite.
-* `Channels` and especially `Transpose` expose layout-oriented APIs that are
-  powerful but easy to misuse if you assume conventional row-major block
-  semantics.
+* `Channels` and `Transpose` use explicit block views for layout-sensitive block
+  processing, which is more precise but also a more advanced API than ordinary
+  slice/block use.
 
 In short: this crate optimizes for control and performance first, convenience
 second.
@@ -187,14 +187,25 @@ composition, explicit state, and performance-sensitive DSP.
 ## Notes on `Channels` and `Transpose`
 
 `Channels` and `Transpose` are layout tools, not just semantic conveniences.
-Their `block()` and `inplace()` behavior is intentionally tied to flattened block
-memory layout for locality-oriented multi-channel processing.
+Their layout-sensitive block behavior is explicit through
+[`Block<_, _, ChannelMajor, _>`] and [`BlockMut<_, _, ChannelMajor, _>`], so the
+channel-major interpretation is visible at the type level instead of being
+silently inferred from `[[X; N]]`.
 
-If you want a conventional “transpose this ordinary `[[X; N]]` matrix” API, this
-crate does not currently model that with a dedicated block/view type. The current
-API is closer to “reinterpret the block using a layout chosen for the processing
-strategy”. That is powerful, but it also means these APIs should be treated as
-expert tools.
+```rust
+use dsp_process::{Block, BlockMut, BlockProcess, ChannelMajor, Offset, Split};
+
+let mut p = Split::stateless(Offset(3)).channels::<2>();
+let x = Block::<_, ChannelMajor, 2>::from_flat(&[1, 2, 3, 10, 20, 30], 3);
+let mut y = [0; 6];
+let yb = BlockMut::<_, ChannelMajor, 2>::from_flat(&mut y, 3);
+BlockProcess::process_block(&mut p, x, yb);
+assert_eq!(y, [4, 5, 6, 13, 23, 33]);
+```
+
+Chunk adapters remain useful alongside block views. Use [`Split::frames()`]
+together with [`FrameProcess`] or [`FrameInplace`] to apply a chunk processor
+frame by frame to a frame-major block.
 
 ## Guidance for Implementors
 

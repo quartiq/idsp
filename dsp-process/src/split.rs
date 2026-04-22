@@ -1,7 +1,8 @@
 use core::array::{from_fn, repeat};
 
 use crate::{
-    Channels, Inplace, Major, Minor, Parallel, Process, SplitInplace, SplitProcess, Transpose,
+    Channels, Frames, Inplace, Major, Minor, Parallel, Process, SplitInplace, SplitProcess,
+    Transpose,
 };
 
 //////////// SPLIT ////////////
@@ -156,6 +157,16 @@ impl<C, S> Split<C, S> {
         Split::new(Parallel(self.config), self.state)
     }
 
+    /// Treat each frame of a frame-major block as one chunk sample.
+    ///
+    /// This bridges chunk-style processors such as [`crate::Chunk`],
+    /// [`crate::ChunkIn`], [`crate::ChunkOut`], and [`crate::ChunkInOut`] into
+    /// the typed block-view API.
+    #[must_use]
+    pub fn frames(self) -> Split<Frames<C>, S> {
+        Split::new(Frames(self.config), self.state)
+    }
+
     /// Duplicate the processor by cloning both configuration and current state.
     ///
     /// The current state is copied as-is. Use this only when duplicating the
@@ -174,7 +185,8 @@ impl<C, S> Split<C, S> {
     ///
     /// This is usually preferable to [`repeat()`](Self::repeat) when the
     /// configuration should be shared but each channel needs its own mutable
-    /// runtime state.
+    /// runtime state. For channel-major block processing, pair this with
+    /// [`crate::Block`] using [`crate::ChannelMajor`].
     #[must_use]
     pub fn channels<const N: usize>(self) -> Split<Channels<C>, [S; N]>
     where
@@ -185,9 +197,9 @@ impl<C, S> Split<C, S> {
 
     /// Convert to [`Transpose`] block semantics.
     ///
-    /// This affects `block()` and `inplace()` layout interpretation and is an
-    /// expert-oriented tool for locality-sensitive multi-channel processing.
-    /// See [`Transpose`] for the caveats.
+    /// Scalar `process()` is unchanged. The layout-sensitive block behavior is
+    /// available explicitly through [`crate::Block`] using
+    /// [`crate::ChannelMajor`].
     #[must_use]
     pub fn transpose(self) -> Split<Transpose<C>, S> {
         Split::new(Transpose(self.config), self.state)
@@ -204,6 +216,14 @@ impl<C, S, U> Split<Minor<C, U>, S> {
 
 impl<C, S> Split<Parallel<C>, S> {
     /// Convert to serial
+    #[must_use]
+    pub fn inter(self) -> Split<C, S> {
+        Split::new(self.config.0, self.state)
+    }
+}
+
+impl<C, S> Split<Frames<C>, S> {
+    /// Remove frame-wise block adaptation.
     #[must_use]
     pub fn inter(self) -> Split<C, S> {
         Split::new(self.config.0, self.state)

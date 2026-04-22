@@ -3,6 +3,8 @@
 
 mod process;
 pub use process::*;
+mod block;
+pub use block::*;
 mod basic;
 pub use basic::*;
 mod adapters;
@@ -103,6 +105,49 @@ mod test {
         })));
         let y: [i32; 4] = p.process([2, 3]);
         assert_eq!(y, [2, -2, 3, -3]);
+    }
+
+    #[test]
+    fn frame_major_block_fallback() {
+        let mut p = Split::stateless(Offset(3));
+        let x = Block::<_, FrameMajor, 2>::from_frames(&[[1, 2], [3, 4]]);
+        let mut y = [[0; 2]; 2];
+        let yb = BlockMut::<_, FrameMajor, 2>::from_frames(&mut y);
+        BlockProcess::process_block(&mut p, x, yb);
+        assert_eq!(y, [[4, 5], [6, 7]]);
+    }
+
+    #[test]
+    fn channel_major_channels() {
+        let mut p = Split::stateless(Offset(3)).channels::<2>();
+        let x = Block::<_, ChannelMajor, 2>::from_flat(&[1, 2, 3, 10, 20, 30], 3);
+        let mut y = [0; 6];
+        let yb = BlockMut::<_, ChannelMajor, 2>::from_flat(&mut y, 3);
+        BlockProcess::process_block(&mut p, x, yb);
+        assert_eq!(y, [4, 5, 6, 13, 23, 33]);
+    }
+
+    #[test]
+    fn channel_major_transpose() {
+        let mut p = Split::new(Transpose([Offset(1), Offset(10)]), [(), ()]);
+        let x = Block::<_, ChannelMajor, 2>::from_flat(&[1, 2, 3, 10, 20, 30], 3);
+        let mut y = [0; 6];
+        let yb = BlockMut::<_, ChannelMajor, 2>::from_flat(&mut y, 3);
+        BlockProcess::process_block(&mut p, x, yb);
+        assert_eq!(y, [2, 3, 4, 20, 30, 40]);
+    }
+
+    #[test]
+    fn framewise_chunk_bridge() {
+        let mut p = Split::stateless(ChunkInOut::<_, 2, 1>(FnSplitProcess(
+            |_: &mut (), [x0, x1]: [i32; 2]| [x0 + x1],
+        )))
+        .frames();
+        let x = Block::<_, FrameMajor, 2>::from_frames(&[[1, 2], [3, 4]]);
+        let mut y = [[0; 1]; 2];
+        let yb = BlockMut::<_, FrameMajor, 1>::from_frames(&mut y);
+        FrameProcess::process_frames(&mut p, x, yb);
+        assert_eq!(y, [[3], [7]]);
     }
 
     #[test]

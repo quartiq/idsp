@@ -88,7 +88,7 @@ pub trait Inplace<X: Copy>: Process<X> {
 /// loops.
 ///
 /// [`Process`] is often easier when state and configuration naturally live
-/// together, while [`Split`] turns a `SplitProcess` back into a stateful
+/// together, while [`crate::Split`] turns a `SplitProcess` back into a stateful
 /// [`Process`] value.
 ///
 /// # Examples

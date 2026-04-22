@@ -1,4 +1,6 @@
-use crate::{SplitInplace, SplitProcess};
+use crate::{
+    Block, BlockMut, ChannelMajor, SplitBlockInplace, SplitBlockProcess, SplitInplace, SplitProcess,
+};
 use core::marker::PhantomData;
 
 //////////// SPLIT COMPOSE ////////////
@@ -243,12 +245,10 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Parallel<C> where Self: SplitProcess<
 
 /// Data block transposition wrapper
 ///
-/// Like [`Parallel`] but reinterpreting data as transpose `[[X; N]] <-> [[X]; N]`
-/// such that `block()` and `inplace()` are lowered.
+/// Like [`Parallel`] for scalar processing, but with explicit channel-major
+/// block processing through [`Block<_, _, ChannelMajor, _>`].
 ///
-/// This wrapper does not allocate or physically transpose memory. It changes how
-/// flattened block storage is interpreted during block processing and is meant
-/// for layout-sensitive expert use.
+/// This wrapper does not allocate or physically transpose memory.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Transpose<C>(pub C);
 
@@ -263,27 +263,24 @@ where
             self.0.1.process(&mut state.1, x[1]),
         ]
     }
-
-    fn block(&self, state: &mut (S0, S1), x: &[[X; 2]], y: &mut [[Y; 2]]) {
-        assert_eq!(x.len(), y.len());
-        let n = x.len();
-        let (x0, x1) = x.as_flattened().split_at(n);
-        let (y0, y1) = y.as_flattened_mut().split_at_mut(n);
-        self.0.0.block(&mut state.0, x0, y0);
-        self.0.1.block(&mut state.1, x1, y1);
-    }
 }
 
-impl<X: Copy, C0, C1, S0, S1> SplitInplace<[X; 2], (S0, S1)> for Transpose<(C0, C1)>
+impl<'a, 'b, X: Copy, Y, C0, C1, S0, S1>
+    SplitBlockProcess<Block<'a, X, ChannelMajor, 2>, BlockMut<'b, Y, ChannelMajor, 2>, (S0, S1)>
+    for Transpose<(C0, C1)>
 where
-    C0: SplitInplace<X, S0>,
-    C1: SplitInplace<X, S1>,
+    C0: SplitProcess<X, Y, S0>,
+    C1: SplitProcess<X, Y, S1>,
 {
-    fn inplace(&self, state: &mut (S0, S1), xy: &mut [[X; 2]]) {
-        let n = xy.len();
-        let (xy0, xy1) = xy.as_flattened_mut().split_at_mut(n);
-        self.0.0.inplace(&mut state.0, xy0);
-        self.0.1.inplace(&mut state.1, xy1);
+    fn process_block(
+        &self,
+        state: &mut (S0, S1),
+        x: Block<'a, X, ChannelMajor, 2>,
+        mut y: BlockMut<'b, Y, ChannelMajor, 2>,
+    ) {
+        debug_assert_eq!(x.frames(), y.frames());
+        self.0.0.block(&mut state.0, x.channel(0), y.channel_mut(0));
+        self.0.1.block(&mut state.1, x.channel(1), y.channel_mut(1));
     }
 }
 
@@ -295,33 +292,49 @@ where
         // `poor-codegen-from-fn-iter-next`: keep this as direct indexed construction.
         core::array::from_fn(|i| self.0[i].process(&mut state[i], x[i]))
     }
+}
 
-    fn block(&self, state: &mut [S; N], x: &[[X; N]], y: &mut [[Y; N]]) {
-        assert_eq!(x.len(), y.len());
-        let n = x.len();
-        for ((c, s), (x, y)) in self.0.iter().zip(state.iter_mut()).zip(
-            x.as_flattened()
-                .chunks_exact(n)
-                .zip(y.as_flattened_mut().chunks_exact_mut(n)),
-        ) {
-            c.block(s, x, y)
+impl<'a, 'b, X: Copy, Y, C, S, const N: usize>
+    SplitBlockProcess<Block<'a, X, ChannelMajor, N>, BlockMut<'b, Y, ChannelMajor, N>, [S; N]>
+    for Transpose<[C; N]>
+where
+    C: SplitProcess<X, Y, S>,
+{
+    fn process_block(
+        &self,
+        state: &mut [S; N],
+        x: Block<'a, X, ChannelMajor, N>,
+        mut y: BlockMut<'b, Y, ChannelMajor, N>,
+    ) {
+        debug_assert_eq!(x.frames(), y.frames());
+        for ((c, s), i) in self.0.iter().zip(state.iter_mut()).zip(0..) {
+            c.block(s, x.channel(i), y.channel_mut(i))
         }
     }
 }
 
-impl<X: Copy, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Transpose<[C; N]>
+impl<X: Copy, C, S> SplitInplace<X, S> for Transpose<C> where Self: SplitProcess<X, X, S> {}
+
+impl<'a, X: Copy, C0, C1, S0, S1> SplitBlockInplace<BlockMut<'a, X, ChannelMajor, 2>, (S0, S1)>
+    for Transpose<(C0, C1)>
+where
+    C0: SplitInplace<X, S0>,
+    C1: SplitInplace<X, S1>,
+{
+    fn inplace_block(&self, state: &mut (S0, S1), mut xy: BlockMut<'a, X, ChannelMajor, 2>) {
+        self.0.0.inplace(&mut state.0, xy.channel_mut(0));
+        self.0.1.inplace(&mut state.1, xy.channel_mut(1));
+    }
+}
+
+impl<'a, X: Copy, C, S, const N: usize> SplitBlockInplace<BlockMut<'a, X, ChannelMajor, N>, [S; N]>
+    for Transpose<[C; N]>
 where
     C: SplitInplace<X, S>,
 {
-    fn inplace(&self, state: &mut [S; N], xy: &mut [[X; N]]) {
-        let n = xy.len();
-        for ((c, s), xy) in self
-            .0
-            .iter()
-            .zip(state.iter_mut())
-            .zip(xy.as_flattened_mut().chunks_exact_mut(n))
-        {
-            c.inplace(s, xy)
+    fn inplace_block(&self, state: &mut [S; N], mut xy: BlockMut<'a, X, ChannelMajor, N>) {
+        for ((c, s), i) in self.0.iter().zip(state.iter_mut()).zip(0..) {
+            c.inplace(s, xy.channel_mut(i));
         }
     }
 }
@@ -335,10 +348,9 @@ where
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Channels<C>(pub C);
 
-/// Process data from multiple channels with a common configuration
+/// Process data from multiple channels with a common configuration.
 ///
-/// Note that block() and inplace() reinterpret the data as [`Transpose`]: __not__ as `[[X; N]]` but as `[[X]; N]`.
-/// Use `x.as_flattened().chunks_exact(x.len())`/`x.as_chunks<N>().0` etc. to match that.
+/// For layout-sensitive block processing use [`Block<_, _, ChannelMajor, _>`].
 impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Channels<C>
 where
     C: SplitProcess<X, Y, S>,
@@ -347,33 +359,37 @@ where
         // `poor-codegen-from-fn-iter-next`: keep this as direct indexed construction.
         core::array::from_fn(|i| self.0.process(&mut state[i], x[i]))
     }
+}
 
-    fn block(&self, state: &mut [S; N], x: &[[X; N]], y: &mut [[Y; N]]) {
-        assert_eq!(x.len(), y.len());
-        let n = x.len();
-        for ((x, y), state) in x
-            .as_flattened()
-            .chunks_exact(n)
-            .zip(y.as_flattened_mut().chunks_exact_mut(n))
-            .zip(state.iter_mut())
-        {
-            self.0.block(state, x, y)
+impl<'a, 'b, X: Copy, Y, C, S, const N: usize>
+    SplitBlockProcess<Block<'a, X, ChannelMajor, N>, BlockMut<'b, Y, ChannelMajor, N>, [S; N]>
+    for Channels<C>
+where
+    C: SplitProcess<X, Y, S>,
+{
+    fn process_block(
+        &self,
+        state: &mut [S; N],
+        x: Block<'a, X, ChannelMajor, N>,
+        mut y: BlockMut<'b, Y, ChannelMajor, N>,
+    ) {
+        debug_assert_eq!(x.frames(), y.frames());
+        for (state, i) in state.iter_mut().zip(0..) {
+            self.0.block(state, x.channel(i), y.channel_mut(i))
         }
     }
 }
 
-impl<X: Copy, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Channels<C>
+impl<X: Copy, C, S> SplitInplace<X, S> for Channels<C> where Self: SplitProcess<X, X, S> {}
+
+impl<'a, X: Copy, C, S, const N: usize> SplitBlockInplace<BlockMut<'a, X, ChannelMajor, N>, [S; N]>
+    for Channels<C>
 where
     C: SplitInplace<X, S>,
 {
-    fn inplace(&self, state: &mut [S; N], xy: &mut [[X; N]]) {
-        let n = xy.len();
-        for (xy, state) in xy
-            .as_flattened_mut()
-            .chunks_exact_mut(n)
-            .zip(state.iter_mut())
-        {
-            self.0.inplace(state, xy)
+    fn inplace_block(&self, state: &mut [S; N], mut xy: BlockMut<'a, X, ChannelMajor, N>) {
+        for (state, i) in state.iter_mut().zip(0..) {
+            self.0.inplace(state, xy.channel_mut(i));
         }
     }
 }
