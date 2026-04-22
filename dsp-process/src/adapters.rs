@@ -194,7 +194,10 @@ pub enum DecimatorError {
 ///
 /// let never = TryDecimator(FnSplitProcess(|_: &mut (), _: i32| None::<i32>));
 /// let mut state = ();
-/// assert_eq!(never.process(&mut state, [1, 2]), Err(DecimatorError::NoTick));
+/// assert_eq!(
+///     never.process(&mut state, [1, 2]),
+///     Err(DecimatorError::NoTick)
+/// );
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct TryDecimator<P>(pub P);
@@ -260,7 +263,7 @@ impl<X: Copy, C: SplitInplace<X, S>, S> SplitInplace<X, S> for Map<C> where
 /// # Examples
 ///
 /// ```rust
-/// use dsp_process::{Chunk, Process, Split, Offset};
+/// use dsp_process::{Chunk, Offset, Process, Split};
 ///
 /// let mut p = Split::stateless(Chunk(Offset(3)));
 /// assert_eq!(p.process([1, 2, 3]), [4, 5, 6]);
@@ -352,9 +355,9 @@ where
 /// ```rust
 /// use dsp_process::{ChunkOut, FnSplitProcess, Process, Split};
 ///
-/// let mut p = Split::stateless(ChunkOut::<_, 2>(FnSplitProcess(
-///     |_: &mut (), x: i32| [x, -x],
-/// )));
+/// let mut p = Split::stateless(ChunkOut::<_, 2>(FnSplitProcess(|_: &mut (), x: i32| {
+///     [x, -x]
+/// })));
 /// assert_eq!(p.process([2, 3]), [2, -2, 3, -3]);
 /// ```
 #[derive(Debug, Copy, Clone, Default)]
@@ -411,9 +414,9 @@ where
 /// ```rust
 /// use dsp_process::{ChunkOutPod, FnSplitProcess, Process, Split};
 ///
-/// let mut p = Split::stateless(ChunkOutPod::<_, 2>(FnSplitProcess(
-///     |_: &mut (), x: i32| [x, -x],
-/// )));
+/// let mut p = Split::stateless(ChunkOutPod::<_, 2>(FnSplitProcess(|_: &mut (), x: i32| {
+///     [x, -x]
+/// })));
 /// assert_eq!(p.process([2, 3]), [2, -2, 3, -3]);
 /// ```
 #[derive(Debug, Copy, Clone, Default)]

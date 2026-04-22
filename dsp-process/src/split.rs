@@ -20,7 +20,7 @@ use crate::{
 /// # Examples
 ///
 /// ```rust
-/// use dsp_process::{Process, Split, Offset};
+/// use dsp_process::{Offset, Process, Split};
 ///
 /// let mut p = Split::stateless(Offset(3));
 /// assert_eq!(p.process(5), 8);
