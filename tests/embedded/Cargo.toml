@@ -19,7 +19,7 @@ cortex-m-semihosting = { version = "0.5", optional = true }
 
 idsp = { version = "0.21", path = "../.." }
 dsp-process = { version = "0.2", path = "../../dsp-process" }
-dsp-fixedpoint = { version = "0.1", path = "../../dsp-fixedpoint" }
+dsp-fixedpoint = { version = "0.1", path = "../../dsp-fixedpoint", features = ["defmt"] }
 
 biquad = "0.5.0"
 num-traits = { version = "0.2.19", default-features = false }
