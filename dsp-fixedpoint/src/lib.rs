@@ -1,13 +1,15 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
+mod format;
+
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
 use num_traits::float::FloatCore;
 use num_traits::{AsPrimitive, ConstOne, ConstZero, One, Zero};
 
 use core::{
-    fmt, iter,
+    iter,
     marker::PhantomData,
     num::Wrapping,
     ops::{Add, Div, Mul, Neg, Rem, Shl, Shr, Sub},
@@ -655,50 +657,6 @@ impl<T: iter::Sum, A, const F: i8> iter::Sum for Q<T, A, F> {
     }
 }
 
-/// ```
-/// # use dsp_fixedpoint::Q8;
-/// let q = Q8::<4>::new(7);
-/// assert_eq!(format!("{q} {q:e} {q:E}"), "0.4375 4.375e-1 4.375E-1");
-/// ```
-macro_rules! impl_fmt {
-    ($tr:path) => {
-        impl<T, A, const F: i8> $tr for Q<T, A, F>
-        where
-            Self: Copy + AsPrimitive<f64>,
-        {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                <f64 as $tr>::fmt(&(*self).as_(), f)
-            }
-        }
-    };
-}
-impl_fmt!(fmt::Display);
-impl_fmt!(fmt::UpperExp);
-impl_fmt!(fmt::LowerExp);
-
-/// ```
-/// # use dsp_fixedpoint::Q8;
-/// assert_eq!(format!("{:?}", Q8::<4>::new(0x14)), "20");
-/// assert_eq!(format!("{:b}", Q8::<4>::new(0x14)), "10100");
-/// assert_eq!(format!("{:b}", Q8::<4>::new(-0x14)), "11101100");
-/// ```
-macro_rules! impl_dot_fmt {
-    ($tr:path) => {
-        impl<T: $tr, A, const F: i8> $tr for Q<T, A, F> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                self.inner.fmt(f)
-            }
-        }
-    };
-}
-impl_dot_fmt!(fmt::Debug);
-impl_dot_fmt!(fmt::Binary);
-impl_dot_fmt!(fmt::Octal);
-impl_dot_fmt!(fmt::UpperHex);
-impl_dot_fmt!(fmt::LowerHex);
-
-// TODO: dot format
-
 macro_rules! impl_q {
     // Primitive
     ($alias:ident<$t:ty, $a:ty>) => {
@@ -811,14 +769,5 @@ mod test {
             Q32::from_int(2)
         );
         assert_eq!(7 * Q32::<4>::new(0x33), 7 * 3 + ((3 * 7) >> 4));
-    }
-
-    #[cfg(feature = "std")]
-    #[test]
-    fn display() {
-        use std::format;
-
-        assert_eq!(format!("{}", Q32::<9>::new(0x12345)), "145.634765625");
-        assert_eq!(format!("{}", Q32::<9>::from_int(99)), "99");
     }
 }
