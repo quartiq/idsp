@@ -1,8 +1,8 @@
 use core::array::{from_fn, repeat};
 
 use crate::{
-    Channels, Frames, Inplace, Major, Map, Minor, Parallel, Process, SplitInplace, SplitProcess,
-    Transpose,
+    Channels, Chunk, Decimator, Frames, Inplace, Interpolator, Major, Map, Minor, Parallel,
+    Process, SplitInplace, SplitProcess, Transpose, TryDecimator,
 };
 
 //////////// SPLIT ////////////
@@ -154,7 +154,7 @@ impl<C, S> Split<C, S> {
     /// Convert to [`Parallel`] composition.
     #[must_use]
     pub fn parallel(self) -> Split<Parallel<C>, S> {
-        Split::new(Parallel(self.config), self.state)
+        Split::new(Parallel::new(self.config), self.state)
     }
 
     /// Map `Option` and `Result` around this processor.
@@ -164,6 +164,42 @@ impl<C, S> Split<C, S> {
     #[must_use]
     pub fn map(self) -> Split<Map<C>, S> {
         Split::new(Map(self.config), self.state)
+    }
+
+    /// Convert to elementwise fixed-size chunk processing.
+    ///
+    /// This wraps the configuration in [`crate::Chunk`] while preserving the
+    /// current state unchanged.
+    #[must_use]
+    pub fn chunk(self) -> Split<Chunk<C>, S> {
+        Split::new(Chunk(self.config), self.state)
+    }
+
+    /// Convert a scalar optional-input stage into chunk output mode.
+    ///
+    /// This wraps the configuration in [`crate::Interpolator`] while
+    /// preserving the current state unchanged.
+    #[must_use]
+    pub fn interpolate(self) -> Split<Interpolator<C>, S> {
+        Split::new(Interpolator(self.config), self.state)
+    }
+
+    /// Convert a scalar optional-output stage into unchecked chunk input mode.
+    ///
+    /// This wraps the configuration in [`crate::Decimator`] while preserving
+    /// the current state unchanged.
+    #[must_use]
+    pub fn decimate(self) -> Split<Decimator<C>, S> {
+        Split::new(Decimator(self.config), self.state)
+    }
+
+    /// Convert a scalar optional-output stage into checked chunk input mode.
+    ///
+    /// This wraps the configuration in [`crate::TryDecimator`] while
+    /// preserving the current state unchanged.
+    #[must_use]
+    pub fn try_decimate(self) -> Split<TryDecimator<C>, S> {
+        Split::new(TryDecimator(self.config), self.state)
     }
 
     /// Treat each frame of a frame-major block as one chunk sample.
@@ -201,7 +237,7 @@ impl<C, S> Split<C, S> {
     where
         S: Clone,
     {
-        Split::new(Channels(self.config), repeat(self.state))
+        Split::new(Channels::new(self.config), repeat(self.state))
     }
 
     /// Convert to [`Transpose`] block semantics.
@@ -211,7 +247,7 @@ impl<C, S> Split<C, S> {
     /// [`crate::ChannelMajor`].
     #[must_use]
     pub fn transpose(self) -> Split<Transpose<C>, S> {
-        Split::new(Transpose(self.config), self.state)
+        Split::new(Transpose::new(self.config), self.state)
     }
 }
 
@@ -219,7 +255,7 @@ impl<C, S, U> Split<Minor<C, U>, S> {
     /// Strip minor
     #[must_use]
     pub fn inter(self) -> Split<C, S> {
-        Split::new(self.config.inner, self.state)
+        Split::new(self.config.into_inner(), self.state)
     }
 }
 
@@ -227,7 +263,7 @@ impl<C, S> Split<Parallel<C>, S> {
     /// Convert to serial
     #[must_use]
     pub fn inter(self) -> Split<C, S> {
-        Split::new(self.config.0, self.state)
+        Split::new(self.config.into_inner(), self.state)
     }
 }
 
@@ -243,7 +279,7 @@ impl<C, S> Split<Transpose<C>, S> {
     /// Convert to non-transposing
     #[must_use]
     pub fn inter(self) -> Split<C, S> {
-        Split::new(self.config.0, self.state)
+        Split::new(self.config.into_inner(), self.state)
     }
 }
 
@@ -251,7 +287,7 @@ impl<C, S, B> Split<Major<C, B>, S> {
     /// Remove major intermediate buffering
     #[must_use]
     pub fn inter(self) -> Split<C, S> {
-        Split::new(self.config.inner, self.state)
+        Split::new(self.config.into_inner(), self.state)
     }
 }
 

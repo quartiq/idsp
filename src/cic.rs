@@ -304,9 +304,7 @@ mod test {
 #[cfg(test)]
 mod modular_tests {
     use super::*;
-    use dsp_process::{
-        Chunk, Comb, Decimator, Downsample, Hold, Integrator, Interpolator, Rate, Split, Unsplit,
-    };
+    use dsp_process::{Comb, Downsample, Hold, Integrator, Rate, Split, Unsplit};
 
     fn modular_decimator<const N: usize, const R: usize, const M: usize>()
     -> impl dsp_process::Process<[i64; R], i64> {
@@ -315,13 +313,13 @@ mod modular_tests {
         let combs = Split::stateful(Comb([0; M])).repeat::<N>().minor().map();
         let ints_down = (ints * down).minor::<i64>();
         let inner = (ints_down * combs).minor::<Option<i64>>();
-        Split::new(Decimator(inner.config), inner.state)
+        inner.decimate()
     }
 
     fn modular_decimator_chunked_prefix<const N: usize, const R: usize, const M: usize>()
     -> impl dsp_process::Process<[i64; R], i64> {
         let ints = Split::stateful(Integrator(0)).repeat::<N>().minor();
-        let ints = Split::new(Chunk(ints.config), ints.state);
+        let ints = ints.chunk();
         let phase = Split::stateful(Rate::<0>);
         let combs = Split::stateful(Comb([0; M])).repeat::<N>().minor();
         let ints_phase = (ints * phase).minor::<[i64; R]>();
@@ -335,7 +333,7 @@ mod modular_tests {
         let ints = Split::stateful(Integrator(0)).repeat::<N>().minor();
         let combs_hold = (combs * hold).minor::<Option<i64>>();
         let inner = (combs_hold * ints).minor::<i64>();
-        Split::new(Interpolator(inner.config), inner.state)
+        inner.interpolate()
     }
 
     fn modular_interpolator_chunked_suffix<const N: usize, const R: usize, const M: usize>()
@@ -343,26 +341,20 @@ mod modular_tests {
         let combs = Split::stateful(Comb([0; M])).repeat::<N>().minor().map();
         let hold = Split::stateful(Hold(0));
         let front = (combs * hold).minor::<Option<i64>>();
-        let front = Split::new(Interpolator(front.config), front.state);
+        let front = front.interpolate();
         let ints = Split::stateful(Integrator(0)).repeat::<N>().minor();
-        let ints = Split::new(Chunk(ints.config), ints.state);
+        let ints = ints.chunk();
         (front * ints).minor::<[i64; R]>()
     }
 
     fn reference_decimator<const N: usize, const R: usize, const M: usize>()
     -> impl dsp_process::Process<[i64; R], i64> {
-        Split::new(
-            Decimator(()),
-            Unsplit(Cic::<i64, N, M>::new((R - 1) as u32)),
-        )
+        Split::new((), Unsplit(Cic::<i64, N, M>::new((R - 1) as u32))).decimate()
     }
 
     fn reference_interpolator<const N: usize, const R: usize, const M: usize>()
     -> impl dsp_process::Process<i64, [i64; R]> {
-        Split::new(
-            Interpolator(()),
-            Unsplit(Cic::<i64, N, M>::new((R - 1) as u32)),
-        )
+        Split::new((), Unsplit(Cic::<i64, N, M>::new((R - 1) as u32))).interpolate()
     }
 
     fn verify_decimator<const N: usize, const R: usize, const M: usize>(x: &[i64]) {

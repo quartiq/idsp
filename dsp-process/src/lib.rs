@@ -34,7 +34,7 @@ pub use compose::*;
 /// use dsp_process::{Add, Gain, Identity, Offset, Pair, Parallel, Process, Split, Unsplit};
 ///
 /// let mut pair = Split::new(
-///     Pair::<_, _, i32>::new((((), Parallel((Offset(3), Gain(4)))), ())),
+///     Pair::<_, _, i32>::new((((), Parallel::new((Offset(3), Gain(4)))), ())),
 ///     ((Unsplit(Identity), Default::default()), Unsplit(Add)),
 /// );
 /// let y: i32 = pair.process(5);
@@ -79,7 +79,7 @@ mod test {
     fn pair() {
         let g = Gain(Q32::<1>::new(4));
         let mut f = Split::new(
-            Pair::<_, _, _>::new((((), Parallel((Offset(3), g))), ())),
+            Pair::<_, _, _>::new((((), Parallel::new((Offset(3), g))), ())),
             ((Unsplit(Identity), Default::default()), Unsplit(Add)),
         );
         let y: i32 = f.process(5);
@@ -129,7 +129,7 @@ mod test {
 
     #[test]
     fn channel_major_transpose() {
-        let mut p = Split::new(Transpose([Offset(1), Offset(10)]), [(), ()]);
+        let mut p = Split::new(Transpose::new([Offset(1), Offset(10)]), [(), ()]);
         let x = Block::<_, ChannelMajor, 2>::from_flat(&[1, 2, 3, 10, 20, 30], 3);
         let mut y = [0; 6];
         let yb = BlockMut::<_, ChannelMajor, 2>::from_flat(&mut y, 3);

@@ -135,7 +135,7 @@ pub struct Minor<C: ?Sized, U> {
     /// An intermediate data type
     _intermediate: PhantomData<U>,
     /// The inner configurations
-    pub inner: C,
+    inner: C,
 }
 
 impl<C, U> Minor<C, U> {
@@ -146,6 +146,18 @@ impl<C, U> Minor<C, U> {
             inner,
             _intermediate: PhantomData,
         }
+    }
+
+    /// Consume the wrapper and return the inner composition.
+    #[must_use]
+    pub fn into_inner(self) -> C {
+        self.inner
+    }
+
+    /// Borrow the wrapped composition.
+    #[must_use]
+    pub fn inner(&self) -> &C {
+        &self.inner
     }
 }
 
@@ -200,7 +212,21 @@ impl<X: Copy, U, C, S> SplitInplace<X, S> for Minor<C, U> where Self: SplitProce
 /// Use this with [`crate::Add`], [`crate::Sub`], or [`crate::Mul`] when the
 /// branch outputs should be reduced again.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Parallel<P>(pub P);
+pub struct Parallel<P>(P);
+
+impl<P> Parallel<P> {
+    /// Create a [`Parallel`] wrapper around an existing composition.
+    #[must_use]
+    pub const fn new(inner: P) -> Self {
+        Self(inner)
+    }
+
+    /// Consume the wrapper and return the inner composition.
+    #[must_use]
+    pub fn into_inner(self) -> P {
+        self.0
+    }
+}
 
 impl<X0: Copy, X1: Copy, Y0, Y1, C0, C1, S0, S1> SplitProcess<(X0, X1), (Y0, Y1), (S0, S1)>
     for Parallel<(C0, C1)>
@@ -250,7 +276,21 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Parallel<C> where Self: SplitProcess<
 ///
 /// This wrapper does not allocate or physically transpose memory.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Transpose<C>(pub C);
+pub struct Transpose<C>(C);
+
+impl<C> Transpose<C> {
+    /// Create a [`Transpose`] wrapper around an existing composition.
+    #[must_use]
+    pub const fn new(inner: C) -> Self {
+        Self(inner)
+    }
+
+    /// Consume the wrapper and return the inner composition.
+    #[must_use]
+    pub fn into_inner(self) -> C {
+        self.0
+    }
+}
 
 impl<X: Copy, Y, C0, C1, S0, S1> SplitProcess<[X; 2], [Y; 2], (S0, S1)> for Transpose<(C0, C1)>
 where
@@ -346,7 +386,21 @@ where
 /// This is the natural companion to [`SplitProcess`]: immutable coefficients are
 /// stored once while each channel keeps separate mutable state.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Channels<C>(pub C);
+pub struct Channels<C>(C);
+
+impl<C> Channels<C> {
+    /// Create a [`Channels`] wrapper around an existing composition.
+    #[must_use]
+    pub const fn new(inner: C) -> Self {
+        Self(inner)
+    }
+
+    /// Consume the wrapper and return the inner composition.
+    #[must_use]
+    pub fn into_inner(self) -> C {
+        self.0
+    }
+}
 
 /// Process data from multiple channels with a common configuration.
 ///
@@ -408,7 +462,7 @@ pub struct Major<P: ?Sized, U> {
     /// Intermediate buffer
     _buf: PhantomData<U>,
     /// The inner processors
-    pub inner: P,
+    inner: P,
 }
 impl<P, U> Major<P, U> {
     /// Create a [`Major`] wrapper around an existing composition.
@@ -418,6 +472,18 @@ impl<P, U> Major<P, U> {
             inner,
             _buf: PhantomData,
         }
+    }
+
+    /// Consume the wrapper and return the inner composition.
+    #[must_use]
+    pub fn into_inner(self) -> P {
+        self.inner
+    }
+
+    /// Borrow the wrapped composition.
+    #[must_use]
+    pub fn inner(&self) -> &P {
+        &self.inner
     }
 }
 
