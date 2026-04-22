@@ -227,22 +227,13 @@ where
     }
 }
 
-impl<X: Copy, Y: Copy + Default, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]>
-    for Parallel<[C; N]>
+impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Parallel<[C; N]>
 where
     C: SplitProcess<X, Y, S>,
 {
     fn process(&self, state: &mut [S; N], x: [X; N]) -> [Y; N] {
-        let mut y = [Y::default(); N];
-        for ((c, s), (x, y)) in self
-            .0
-            .iter()
-            .zip(state.iter_mut())
-            .zip(x.into_iter().zip(y.iter_mut()))
-        {
-            *y = c.process(s, x);
-        }
-        y
+        // `poor-codegen-from-fn-iter-next`: keep this as direct indexed construction.
+        core::array::from_fn(|i| self.0[i].process(&mut state[i], x[i]))
     }
 }
 
@@ -274,7 +265,7 @@ where
     }
 
     fn block(&self, state: &mut (S0, S1), x: &[[X; 2]], y: &mut [[Y; 2]]) {
-        debug_assert_eq!(x.len(), y.len());
+        assert_eq!(x.len(), y.len());
         let n = x.len();
         let (x0, x1) = x.as_flattened().split_at(n);
         let (y0, y1) = y.as_flattened_mut().split_at_mut(n);
@@ -296,26 +287,17 @@ where
     }
 }
 
-impl<X: Copy, Y: Copy + Default, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]>
-    for Transpose<[C; N]>
+impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Transpose<[C; N]>
 where
     C: SplitProcess<X, Y, S>,
 {
     fn process(&self, state: &mut [S; N], x: [X; N]) -> [Y; N] {
-        let mut y = [Y::default(); N];
-        for ((c, s), (x, y)) in self
-            .0
-            .iter()
-            .zip(state.iter_mut())
-            .zip(x.into_iter().zip(y.iter_mut()))
-        {
-            *y = c.process(s, x);
-        }
-        y
+        // `poor-codegen-from-fn-iter-next`: keep this as direct indexed construction.
+        core::array::from_fn(|i| self.0[i].process(&mut state[i], x[i]))
     }
 
     fn block(&self, state: &mut [S; N], x: &[[X; N]], y: &mut [[Y; N]]) {
-        debug_assert_eq!(x.len(), y.len());
+        assert_eq!(x.len(), y.len());
         let n = x.len();
         for ((c, s), (x, y)) in self.0.iter().zip(state.iter_mut()).zip(
             x.as_flattened()
@@ -327,7 +309,7 @@ where
     }
 }
 
-impl<X: Copy + Default, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Transpose<[C; N]>
+impl<X: Copy, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Transpose<[C; N]>
 where
     C: SplitInplace<X, S>,
 {
@@ -357,21 +339,17 @@ pub struct Channels<C>(pub C);
 ///
 /// Note that block() and inplace() reinterpret the data as [`Transpose`]: __not__ as `[[X; N]]` but as `[[X]; N]`.
 /// Use `x.as_flattened().chunks_exact(x.len())`/`x.as_chunks<N>().0` etc. to match that.
-impl<X: Copy, Y: Copy + Default, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]>
-    for Channels<C>
+impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Channels<C>
 where
     C: SplitProcess<X, Y, S>,
 {
     fn process(&self, state: &mut [S; N], x: [X; N]) -> [Y; N] {
-        let mut y = [Y::default(); N];
-        for ((x, y), state) in x.into_iter().zip(y.iter_mut()).zip(state.iter_mut()) {
-            *y = self.0.process(state, x);
-        }
-        y
+        // `poor-codegen-from-fn-iter-next`: keep this as direct indexed construction.
+        core::array::from_fn(|i| self.0.process(&mut state[i], x[i]))
     }
 
     fn block(&self, state: &mut [S; N], x: &[[X; N]], y: &mut [[Y; N]]) {
-        debug_assert_eq!(x.len(), y.len());
+        assert_eq!(x.len(), y.len());
         let n = x.len();
         for ((x, y), state) in x
             .as_flattened()
@@ -384,7 +362,7 @@ where
     }
 }
 
-impl<X: Copy + Default, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Channels<C>
+impl<X: Copy, C, S, const N: usize> SplitInplace<[X; N], [S; N]> for Channels<C>
 where
     C: SplitInplace<X, S>,
 {
@@ -440,6 +418,7 @@ where
     }
 
     fn block(&self, state: &mut (S0, S1), x: &[X], y: &mut [Y]) {
+        debug_assert_eq!(x.len(), y.len());
         let mut u = [U::default(); N];
         let (x, xr) = x.as_chunks::<N>();
         let (y, yr) = y.as_chunks_mut::<N>();
@@ -447,7 +426,6 @@ where
             self.inner.0.block(&mut state.0, x, &mut u);
             self.inner.1.block(&mut state.1, &u, y);
         }
-        debug_assert_eq!(xr.len(), yr.len());
         let ur = &mut u[..xr.len()];
         self.inner.0.block(&mut state.0, xr, ur);
         self.inner.1.block(&mut state.1, ur, yr);

@@ -233,21 +233,88 @@ impl<X, const N: usize> Buffer<[X; N]> {
 /// This is the simplest stateful FIFO in the crate.
 impl<X: Copy, const N: usize> Process<X> for Buffer<[X; N]> {
     fn process(&mut self, x: X) -> X {
+        const { assert!(N > 0) }
         let y = core::mem::replace(&mut self.buffer[self.idx], x);
         self.idx = (self.idx + 1) % N;
         y
     }
 
-    // TODO: block(), inplace(), Process<[X; M]>
+    fn block(&mut self, x: &[X], y: &mut [X]) {
+        const { assert!(N > 0) }
+        debug_assert_eq!(x.len(), y.len());
+        let mut x = x;
+        let mut y = y;
+
+        if self.idx != 0 {
+            let n = x.len().min(N - self.idx);
+            let (xh, xr) = x.split_at(n);
+            let (yh, yr) = y.split_at_mut(n);
+            yh.copy_from_slice(&self.buffer[self.idx..self.idx + n]);
+            self.buffer[self.idx..self.idx + n].copy_from_slice(xh);
+            self.idx = (self.idx + n) % N;
+            x = xr;
+            y = yr;
+        }
+
+        let (xc, xt) = x.as_chunks::<N>();
+        let (yc, yt) = y.as_chunks_mut::<N>();
+        for (xc, yc) in xc.iter().zip(yc) {
+            *yc = self.buffer;
+            self.buffer = *xc;
+        }
+
+        yt.copy_from_slice(&self.buffer[..xt.len()]);
+        self.buffer[..xt.len()].copy_from_slice(xt);
+        self.idx = xt.len();
+    }
 }
 
-impl<X: Copy, const N: usize> Inplace<X> for Buffer<[X; N]> where Self: Process<X> {}
+impl<X: Copy, const N: usize> Inplace<X> for Buffer<[X; N]> {
+    fn inplace(&mut self, xy: &mut [X]) {
+        const { assert!(N > 0) }
+        let mut xy = xy;
+
+        if self.idx != 0 {
+            let n = xy.len().min(N - self.idx);
+            let (head, rest) = xy.split_at_mut(n);
+            for (xy, buf) in head
+                .iter_mut()
+                .zip(self.buffer[self.idx..self.idx + n].iter_mut())
+            {
+                core::mem::swap(xy, buf);
+            }
+            self.idx = (self.idx + n) % N;
+            xy = rest;
+        }
+
+        let (chunks, tail) = xy.as_chunks_mut::<N>();
+        for chunk in chunks {
+            core::mem::swap(chunk, &mut self.buffer);
+        }
+
+        let n = tail.len();
+        for (xy, buf) in tail.iter_mut().zip(self.buffer[..n].iter_mut()) {
+            core::mem::swap(xy, buf);
+        }
+        self.idx = n;
+    }
+}
+
+impl<X: Copy, const N: usize, const M: usize> Process<[X; M]> for Buffer<[X; N]> {
+    fn process(&mut self, x: [X; M]) -> [X; M] {
+        const { assert!(N > 0) }
+        let mut y = x;
+        <Self as Process<X>>::block(self, &x, &mut y);
+        y
+    }
+}
 
 /// Buffer into chunks
 ///
 /// Returns `Some(chunk)` every `N` samples and `None` otherwise.
 impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<[X; N]> {
     fn process(&mut self, x: X) -> Option<[X; N]> {
+        const { assert!(N > 0) }
         self.buffer[self.idx] = x;
         self.idx += 1;
         (self.idx == N).then(|| {
@@ -256,17 +323,44 @@ impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<[X; N]> {
         })
     }
 
-    // TODO: block()
+    fn block(&mut self, x: &[X], y: &mut [Option<[X; N]>]) {
+        const { assert!(N > 0) }
+        debug_assert_eq!(x.len(), y.len());
+        let mut x = x;
+        let mut y = y;
+
+        if self.idx != 0 {
+            let n = x.len().min(N - self.idx);
+            let (xh, xr) = x.split_at(n);
+            let (yh, yr) = y.split_at_mut(n);
+            self.buffer[self.idx..self.idx + n].copy_from_slice(xh);
+            yh.fill(None);
+            self.idx += n;
+            if self.idx == N {
+                self.idx = 0;
+                yh[n - 1] = Some(self.buffer);
+            }
+            x = xr;
+            y = yr;
+        }
+
+        let (xc, xt) = x.as_chunks::<N>();
+        let (yc, yt) = y.as_chunks_mut::<N>();
+        for (xc, yc) in xc.iter().zip(yc) {
+            let (yl, yr) = yc.split_last_mut().unwrap();
+            yr.fill(None);
+            *yl = Some(*xc);
+        }
+
+        self.buffer[..xt.len()].copy_from_slice(xt);
+        yt.fill(None);
+        self.idx = xt.len();
+    }
 }
 
-/// Buffer out of chunks
-///
-/// Panics on underflow
-///
-/// This is useful when an upstream stage naturally produces samples in blocks
-/// but a downstream stage expects a scalar stream.
 impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<[X; N]> {
     fn process(&mut self, x: Option<[X; N]>) -> X {
+        const { assert!(N > 0) }
         if let Some(x) = x {
             self.buffer = x;
             self.idx = 0;
@@ -276,7 +370,28 @@ impl<X: Copy, const N: usize> Process<Option<[X; N]>, X> for Buffer<[X; N]> {
         self.buffer[self.idx]
     }
 
-    // TODO: block()
+    fn block(&mut self, x: &[Option<[X; N]>], y: &mut [X]) {
+        const { assert!(N > 0) }
+        debug_assert_eq!(x.len(), y.len());
+        let mut i = 0;
+        while i < x.len() {
+            if let Some(buf) = x[i] {
+                self.buffer = buf;
+                self.idx = 0;
+                y[i] = self.buffer[0];
+                i += 1;
+                continue;
+            }
+
+            let run = x[i..]
+                .iter()
+                .position(Option::is_some)
+                .unwrap_or(x.len() - i);
+            y[i..i + run].copy_from_slice(&self.buffer[self.idx + 1..self.idx + 1 + run]);
+            self.idx += run;
+            i += run;
+        }
+    }
 }
 
 /// Nyquist zero with gain 2
@@ -298,9 +413,34 @@ impl<X: Copy + core::ops::Add<X, Output = Y>, Y, const N: usize> Process<X, Y> f
         y
     }
 
-    // TODO: block, inplace
+    fn block(&mut self, x: &[X], y: &mut [Y]) {
+        debug_assert_eq!(x.len(), y.len());
+        let n = x.len().min(N);
+        let (xh, xt) = x.split_at(n);
+        let (yh, yt) = y.split_at_mut(n);
+
+        for ((xi, yi), s) in xh.iter().zip(yh.iter_mut()).zip(self.0[..n].iter().rev()) {
+            *yi = *xi + *s;
+        }
+        for ((xi, yi), xp) in xt.iter().zip(yt.iter_mut()).zip(x.iter()) {
+            *yi = *xi + *xp;
+        }
+
+        if x.len() >= N {
+            for (dst, src) in self.0.iter_mut().zip(x[x.len() - N..].iter().rev()) {
+                *dst = *src;
+            }
+        } else {
+            self.0.copy_within(..N - x.len(), x.len());
+            for (dst, src) in self.0.iter_mut().zip(x.iter().rev()) {
+                *dst = *src;
+            }
+        }
+    }
+
+    // TODO: inplace()
 }
-impl<X: Copy> Inplace<X> for Nyquist<X> where Self: Process<X> {}
+impl<X: Copy, const N: usize> Inplace<X> for Nyquist<[X; N]> where Self: Process<X> {}
 
 /// Running sum / discrete-time integrator.
 #[derive(Debug, Copy, Clone, Default)]
@@ -335,6 +475,31 @@ impl<X: Copy + core::ops::Sub<X, Output = Y>, Y, const N: usize> Process<X, Y> f
         y
     }
 
-    // TODO: block, inplace
+    fn block(&mut self, x: &[X], y: &mut [Y]) {
+        debug_assert_eq!(x.len(), y.len());
+        let n = x.len().min(N);
+        let (xh, xt) = x.split_at(n);
+        let (yh, yt) = y.split_at_mut(n);
+
+        for ((xi, yi), s) in xh.iter().zip(yh.iter_mut()).zip(self.0[..n].iter().rev()) {
+            *yi = *xi - *s;
+        }
+        for ((xi, yi), xp) in xt.iter().zip(yt.iter_mut()).zip(x.iter()) {
+            *yi = *xi - *xp;
+        }
+
+        if x.len() >= N {
+            for (dst, src) in self.0.iter_mut().zip(x[x.len() - N..].iter().rev()) {
+                *dst = *src;
+            }
+        } else {
+            self.0.copy_within(..N - x.len(), x.len());
+            for (dst, src) in self.0.iter_mut().zip(x.iter().rev()) {
+                *dst = *src;
+            }
+        }
+    }
+
+    // TODO: inplace()
 }
-impl<X: Copy> Inplace<X> for Comb<X> where Self: Process<X> {}
+impl<X: Copy, const N: usize> Inplace<X> for Comb<[X; N]> where Self: Process<X> {}

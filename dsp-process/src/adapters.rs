@@ -38,6 +38,8 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Interpolator<C> where Self: SplitProc
 /// Panics if tick does not match `N`.
 ///
 /// This is the chunked counterpart to [`Interpolator`].
+/// Use [`TryDecimator`] when violating the one-tick-per-chunk contract should
+/// be reported instead of panicking.
 ///
 /// # Examples
 ///
@@ -66,6 +68,58 @@ impl<X: Copy, Y, C: SplitProcess<X, Option<Y>, S>, S, const N: usize> SplitProce
     }
 }
 impl<X: Copy, C, S> SplitInplace<X, S> for Decimator<C> where Self: SplitProcess<X, X, S> {}
+
+/// Error returned by [`TryDecimator`] when the inner decimator does not tick
+/// exactly once per input chunk.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DecimatorError {
+    /// No output sample was produced for the chunk.
+    NoTick,
+    /// More than one output sample was produced for the chunk.
+    ExtraTick,
+}
+
+/// Checked variant of [`Decimator`].
+///
+/// This preserves the same chunked interface but reports contract violations
+/// instead of panicking.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{DecimatorError, FnSplitProcess, SplitProcess, TryDecimator};
+///
+/// let proc = TryDecimator(FnSplitProcess(|state: &mut bool, x: i32| {
+///     let y = if *state { Some(x) } else { None };
+///     *state = !*state;
+///     y
+/// }));
+///
+/// let mut tick = false;
+/// assert_eq!(proc.process(&mut tick, [1, 2]), Ok(2));
+///
+/// let never = TryDecimator(FnSplitProcess(|_: &mut (), _: i32| None::<i32>));
+/// let mut state = ();
+/// assert_eq!(never.process(&mut state, [1, 2]), Err(DecimatorError::NoTick));
+/// ```
+#[derive(Clone, Debug, Default)]
+pub struct TryDecimator<P>(pub P);
+impl<X: Copy, Y, C: SplitProcess<X, Option<Y>, S>, S, const N: usize>
+    SplitProcess<[X; N], Result<Y, DecimatorError>, S> for TryDecimator<C>
+{
+    fn process(&self, state: &mut S, x: [X; N]) -> Result<Y, DecimatorError> {
+        const { assert!(N > 0) }
+        let mut y = None;
+        for x in x {
+            if let Some(next) = self.0.process(state, x)
+                && y.replace(next).is_some()
+            {
+                return Err(DecimatorError::ExtraTick);
+            }
+        }
+        y.ok_or(DecimatorError::NoTick)
+    }
+}
 
 /// Map `Option` and `Result`
 ///
@@ -216,8 +270,7 @@ where
 {
     fn process(&self, state: &mut S, x: [X; N]) -> [Y; M] {
         const { assert!(R * N == M) }
-        // TODO: bytemuck y
-        // x.map(|x| self.0.process(x)).as_flattened().as_array()
+        // `poor-codegen-from-fn-iter-next`: if this changes, use a real conversion primitive.
         let mut y = [Y::default(); M];
         let (yy, []) = y.as_chunks_mut() else {
             unreachable!()
@@ -288,7 +341,7 @@ where
         const { assert!(N.is_multiple_of(Q)) }
         const { assert!(M.is_multiple_of(R)) }
         const { assert!(N / Q == M / R) }
-        // TODO: bytemuck y
+        // `poor-codegen-from-fn-iter-next`: if this changes, use a real conversion primitive.
         let mut y = [Y::default(); M];
         let (yy, []) = y.as_chunks_mut() else {
             unreachable!()

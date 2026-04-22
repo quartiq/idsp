@@ -95,4 +95,50 @@ mod test {
         let y: [i32; 2] = p.process([1, 2, 3, 4]);
         assert_eq!(y, [3, 7]);
     }
+
+    #[test]
+    fn buffer_blocks() {
+        let mut dly = Buffer::<[_; 2]>::default();
+        let mut y = [0; 5];
+        dly.block(&[1, 2, 3, 4, 5], &mut y);
+        assert_eq!(y, [0, 0, 1, 2, 3]);
+        assert_eq!(dly.process([6, 7, 8]), [4, 5, 6]);
+
+        let mut chunk = Buffer::<[_; 2]>::default();
+        let mut y = [None; 5];
+        <Buffer<[i32; 2]> as Process<i32, Option<[i32; 2]>>>::block(
+            &mut chunk,
+            &[1, 2, 3, 4, 5],
+            &mut y,
+        );
+        assert_eq!(y, [None, Some([1, 2]), None, Some([3, 4]), None]);
+
+        let mut stream = Buffer::<[_; 2]>::default();
+        let mut y = [0; 5];
+        <Buffer<[i32; 2]> as Process<Option<[i32; 2]>, i32>>::block(
+            &mut stream,
+            &[Some([1, 2]), None, Some([3, 4]), None, Some([5, 6])],
+            &mut y,
+        );
+        assert_eq!(y, [1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn diffsum_block() {
+        let mut nyq = Nyquist([10, 20]);
+        let mut y = [0; 4];
+        nyq.block(&[1, 2, 3, 4], &mut y);
+        assert_eq!(y, [21, 12, 4, 6]);
+        let mut xy = [5, 6, 7];
+        nyq.inplace(&mut xy);
+        assert_eq!(xy, [8, 10, 12]);
+
+        let mut comb = Comb([10, 20]);
+        let mut y = [0; 4];
+        comb.block(&[1, 2, 3, 4], &mut y);
+        assert_eq!(y, [-19, -8, 2, 2]);
+        let mut xy = [5, 6, 7];
+        comb.inplace(&mut xy);
+        assert_eq!(xy, [2, 2, 2]);
+    }
 }
