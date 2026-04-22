@@ -204,7 +204,112 @@ mod test {
     use core::cmp::Ordering;
 
     use super::*;
+    use dsp_process::{
+        Chunk, Comb, Decimator, Downsample, Hold, Integrator, Interpolator, Rate, Split, Unsplit,
+    };
+
     use quickcheck_macros::quickcheck;
+
+    fn modular_decimator<const N: usize, const R: usize, const M: usize>()
+    -> impl dsp_process::Process<[i64; R], i64> {
+        let ints = Split::stateful(Integrator(0)).repeat::<N>().minor();
+        let down = Split::new(Downsample((R - 1) as u32), 0);
+        let combs = Split::stateful(Comb([0; M])).repeat::<N>().minor().map();
+        let ints_down = (ints * down).minor::<i64>();
+        let inner = (ints_down * combs).minor::<Option<i64>>();
+        Split::new(Decimator(inner.config), inner.state)
+    }
+
+    fn modular_decimator_chunked_prefix<const N: usize, const R: usize, const M: usize>()
+    -> impl dsp_process::Process<[i64; R], i64> {
+        let ints = Split::stateful(Integrator(0)).repeat::<N>().minor();
+        let ints = Split::new(Chunk(ints.config), ints.state);
+        let phase = Split::stateful(Rate::<0>);
+        let combs = Split::stateful(Comb([0; M])).repeat::<N>().minor();
+        let ints_phase = (ints * phase).minor::<[i64; R]>();
+        (ints_phase * combs).minor::<i64>()
+    }
+
+    fn modular_interpolator<const N: usize, const R: usize, const M: usize>()
+    -> impl dsp_process::Process<i64, [i64; R]> {
+        let combs = Split::stateful(Comb([0; M])).repeat::<N>().minor().map();
+        let hold = Split::stateful(Hold(0));
+        let ints = Split::stateful(Integrator(0)).repeat::<N>().minor();
+        let combs_hold = (combs * hold).minor::<Option<i64>>();
+        let inner = (combs_hold * ints).minor::<i64>();
+        Split::new(Interpolator(inner.config), inner.state)
+    }
+
+    fn modular_interpolator_chunked_suffix<const N: usize, const R: usize, const M: usize>()
+    -> impl dsp_process::Process<i64, [i64; R]> {
+        let combs = Split::stateful(Comb([0; M])).repeat::<N>().minor().map();
+        let hold = Split::stateful(Hold(0));
+        let front = (combs * hold).minor::<Option<i64>>();
+        let front = Split::new(Interpolator(front.config), front.state);
+        let ints = Split::stateful(Integrator(0)).repeat::<N>().minor();
+        let ints = Split::new(Chunk(ints.config), ints.state);
+        (front * ints).minor::<[i64; R]>()
+    }
+
+    fn reference_decimator<const N: usize, const R: usize, const M: usize>()
+    -> impl dsp_process::Process<[i64; R], i64> {
+        Split::new(
+            Decimator(()),
+            Unsplit(Cic::<i64, N, M>::new((R - 1) as u32)),
+        )
+    }
+
+    fn reference_interpolator<const N: usize, const R: usize, const M: usize>()
+    -> impl dsp_process::Process<i64, [i64; R]> {
+        Split::new(
+            Interpolator(()),
+            Unsplit(Cic::<i64, N, M>::new((R - 1) as u32)),
+        )
+    }
+
+    fn verify_decimator<const N: usize, const R: usize, const M: usize>(x: &[i64]) {
+        let mut modular = modular_decimator::<N, R, M>();
+        let mut reference = reference_decimator::<N, R, M>();
+        for chunk in x.chunks_exact(R) {
+            let chunk: [i64; R] = chunk.try_into().unwrap();
+            let y_mod = dsp_process::Process::process(&mut modular, chunk);
+            let y_ref = reference.process(chunk);
+            assert_eq!(y_mod, y_ref);
+        }
+    }
+
+    fn verify_decimator_chunked_prefix<const N: usize, const R: usize, const M: usize>(x: &[i64]) {
+        let mut modular = modular_decimator_chunked_prefix::<N, R, M>();
+        let mut reference = reference_decimator::<N, R, M>();
+        for chunk in x.chunks_exact(R) {
+            let chunk: [i64; R] = chunk.try_into().unwrap();
+            let y_mod = modular.process(chunk);
+            let y_ref = reference.process(chunk);
+            assert_eq!(y_mod, y_ref);
+        }
+    }
+
+    fn verify_interpolator<const N: usize, const R: usize, const M: usize>(x: &[i64]) {
+        let mut modular = modular_interpolator::<N, R, M>();
+        let mut reference = reference_interpolator::<N, R, M>();
+        for &x in x {
+            let y_mod = dsp_process::Process::process(&mut modular, x);
+            let y_ref = dsp_process::Process::process(&mut reference, x);
+            assert_eq!(y_mod, y_ref);
+        }
+    }
+
+    fn verify_interpolator_chunked_suffix<const N: usize, const R: usize, const M: usize>(
+        x: &[i64],
+    ) {
+        let mut modular = modular_interpolator_chunked_suffix::<N, R, M>();
+        let mut reference = reference_interpolator::<N, R, M>();
+        for &x in x {
+            let y_mod = dsp_process::Process::process(&mut modular, x);
+            let y_ref = dsp_process::Process::process(&mut reference, x);
+            assert_eq!(y_mod, y_ref);
+        }
+    }
 
     #[quickcheck]
     fn new(rate: u32) {
@@ -295,7 +400,146 @@ mod test {
             let y: Option<_> = cic.process(0 as _);
             assert_eq!(y, Some(cic.get_decimate()));
             println!("{:11}", y.unwrap());
-            println!("");
+            println!();
+        }
+    }
+
+    #[test]
+    fn modular_decimator_matches_reference() {
+        let x: Vec<i64> = (-31..65).map(|x| x * 3 - 7).collect();
+        verify_decimator::<3, 4, 1>(&x);
+        verify_decimator::<2, 2, 1>(&x);
+        verify_decimator::<3, 1, 3>(&x);
+    }
+
+    #[test]
+    fn modular_decimator_chunked_prefix_matches_reference() {
+        let x: Vec<i64> = (-31..65).map(|x| x * 3 - 7).collect();
+        verify_decimator_chunked_prefix::<3, 4, 1>(&x);
+        verify_decimator_chunked_prefix::<2, 2, 1>(&x);
+        verify_decimator_chunked_prefix::<3, 1, 3>(&x);
+    }
+
+    #[test]
+    fn modular_interpolator_matches_reference() {
+        let x: Vec<i64> = (-12..20).map(|x| x * x - 3 * x + 2).collect();
+        verify_interpolator::<3, 4, 1>(&x);
+        verify_interpolator::<2, 2, 1>(&x);
+        verify_interpolator::<3, 1, 3>(&x);
+    }
+
+    #[test]
+    fn modular_interpolator_chunked_suffix_matches_reference() {
+        let x: Vec<i64> = (-12..20).map(|x| x * x - 3 * x + 2).collect();
+        verify_interpolator_chunked_suffix::<3, 4, 1>(&x);
+        verify_interpolator_chunked_suffix::<2, 2, 1>(&x);
+        verify_interpolator_chunked_suffix::<3, 1, 3>(&x);
+    }
+
+    #[cfg(test)]
+    mod perf_tests {
+        use super::*;
+        use core::hint::black_box;
+
+        const PERF_N: usize = 3;
+        const PERF_R: usize = 8;
+        const PERF_D: usize = 1;
+        const PERF_ITERS: usize = 1 << 28;
+
+        /// Spelled-out CIC decimator.
+        ///
+        /// About 1.28 core cycles/input sample on the pinned-core host run.
+        ///
+        /// Run with:
+        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_dec_ref --ignored --exact`
+        #[test]
+        #[ignore]
+        fn insn_dec_ref() {
+            let mut proc = reference_decimator::<PERF_N, PERF_R, PERF_D>();
+            let x = [9; PERF_R];
+            for _ in 0..PERF_ITERS {
+                black_box(proc.process(black_box(x)));
+            }
+        }
+
+        /// Modular `dsp-process` CIC decimator.
+        ///
+        /// About 1.32 core cycles/input sample on the pinned-core host run.
+        ///
+        /// Run with:
+        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_dec_mod --ignored --exact`
+        #[test]
+        #[ignore]
+        fn insn_dec_mod() {
+            let mut proc = modular_decimator::<PERF_N, PERF_R, PERF_D>();
+            let x = [9; PERF_R];
+            for _ in 0..PERF_ITERS {
+                black_box(proc.process(black_box(x)));
+            }
+        }
+
+        /// Modular `dsp-process` CIC decimator with a chunked integrator prefix.
+        ///
+        /// About 2.02 core cycles/input sample on the pinned-core host run.
+        ///
+        /// Run with:
+        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_dec_mod_chunked_prefix --ignored --exact`
+        #[test]
+        #[ignore]
+        fn insn_dec_mod_chunked_prefix() {
+            let mut proc = modular_decimator_chunked_prefix::<PERF_N, PERF_R, PERF_D>();
+            let x = [9; PERF_R];
+            for _ in 0..PERF_ITERS {
+                black_box(proc.process(black_box(x)));
+            }
+        }
+
+        /// Spelled-out CIC interpolator.
+        ///
+        /// About 1.26 core cycles/output sample on the pinned-core host run.
+        ///
+        /// Run with:
+        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_int_ref --ignored --exact`
+        #[test]
+        #[ignore]
+        fn insn_int_ref() {
+            let mut proc = reference_interpolator::<PERF_N, PERF_R, PERF_D>();
+            let x = 9;
+            for _ in 0..PERF_ITERS {
+                black_box(proc.process(black_box(x)));
+            }
+        }
+
+        /// Modular `dsp-process` CIC interpolator.
+        ///
+        /// About 1.22 core cycles/output sample on the pinned-core host run.
+        ///
+        /// Run with:
+        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_int_mod --ignored --exact`
+        #[test]
+        #[ignore]
+        fn insn_int_mod() {
+            let mut proc = modular_interpolator::<PERF_N, PERF_R, PERF_D>();
+            let x = 9;
+            for _ in 0..PERF_ITERS {
+                black_box(proc.process(black_box(x)));
+            }
+        }
+
+        /// Modular `dsp-process` CIC interpolator with a chunked integrator suffix.
+        ///
+        /// About 4.39 core cycles/output sample on the pinned-core host run.
+        ///
+        /// Run with:
+        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_int_mod_chunked_suffix --ignored --exact`
+        #[test]
+        #[ignore]
+        fn insn_int_mod_chunked_suffix() {
+            let mut proc = modular_interpolator_chunked_suffix::<PERF_N, PERF_R, PERF_D>();
+            let x = 9;
+            for _ in 0..PERF_ITERS {
+                black_box(proc.process(black_box(x)));
+            }
         }
     }
 }
