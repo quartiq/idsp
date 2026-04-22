@@ -204,11 +204,109 @@ mod test {
     use core::cmp::Ordering;
 
     use super::*;
+
+    use quickcheck_macros::quickcheck;
+
+    #[quickcheck]
+    fn new(rate: u32) {
+        let _ = Cic::<i64, 3>::new(rate);
+    }
+
+    #[quickcheck]
+    fn identity_dec(x: Vec<i64>) {
+        let mut dec = Cic::<_, 3>::new(0);
+        for x in x {
+            assert_eq!(Some(x), dec.process(x));
+            assert_eq!(x, dec.get_decimate());
+        }
+    }
+
+    #[quickcheck]
+    fn identity_int(x: Vec<i64>) {
+        const N: usize = 3;
+        let mut int = Cic::<_, N>::new(0);
+        for x in x {
+            assert_eq!(x >> N, int.process(Some(x >> N)));
+            assert_eq!(x >> N, int.get_interpolate());
+        }
+    }
+
+    #[quickcheck]
+    fn response_length_gain_settle(x: Vec<i32>, rate: u32) {
+        let mut int = Cic::<_, 3>::new(rate);
+        let shift = int.gain_log2();
+        if shift >= 32 {
+            return;
+        }
+        assert!(int.gain() <= 1 << shift);
+        for x in x {
+            while !int.tick() {
+                int.process(None);
+            }
+            let y_last = int.get_interpolate();
+            let y_want = x as i64 * int.gain();
+            for i in 0..2 * int.response_length() {
+                let y = int.process(if int.tick() { Some(x as i64) } else { None });
+                assert_eq!(y, int.get_interpolate());
+                if i < int.response_length() {
+                    match y_want.cmp(&y_last) {
+                        Ordering::Greater => assert!((y_last..y_want).contains(&y)),
+                        Ordering::Less => assert!((y_want..y_last).contains(&(y - 1))),
+                        Ordering::Equal => assert_eq!(y_want, y),
+                    }
+                } else {
+                    assert_eq!(y, y_want);
+                }
+            }
+        }
+    }
+
+    #[quickcheck]
+    fn settle(rate: u32, x: i32) {
+        let mut int = Cic::<i64, 3>::new(rate);
+        if int.gain_log2() >= 32 {
+            return;
+        }
+        int.settle_interpolate(x as _);
+        // let mut dec = Cic::<i64, 3>::new(rate);
+        // dec.settle_decimate(x as _);
+        for _ in 0..100 {
+            let y = int.process(if int.tick() { Some(x as _) } else { None });
+            assert_eq!(y, x as i64 * int.gain());
+            assert_eq!(y, int.get_interpolate());
+            // assert_eq!(dec.get_decimate(), x as i64 * dec.gain());
+            // if let Some(y) = dec.decimate(x as _) {
+            //     assert_eq!(y, x as i64 * dec.gain());
+            // }
+        }
+    }
+
+    #[quickcheck]
+    fn unit_rate(x: (i32, i32, i32, i32, i32)) {
+        let x: [i32; 5] = x.into();
+        let mut cic = Cic::<i64, 3, 3>::new(0);
+        assert!(cic.gain_log2() == 6);
+        assert!(cic.gain() == (cic.comb_delay() as i64).pow(cic.order() as _));
+        for x in x {
+            assert!(cic.tick());
+            let y: Option<_> = cic.process(x as _);
+            println!("{x:11} {:11}", y.unwrap());
+        }
+        for _ in 0..100 {
+            let y: Option<_> = cic.process(0 as _);
+            assert_eq!(y, Some(cic.get_decimate()));
+            println!("{:11}", y.unwrap());
+            println!();
+        }
+    }
+}
+
+#[cfg(test)]
+mod modular_tests {
+    use super::*;
     use dsp_process::{
         Chunk, Comb, Decimator, Downsample, Hold, Integrator, Interpolator, Rate, Split, Unsplit,
     };
-
-    use quickcheck_macros::quickcheck;
 
     fn modular_decimator<const N: usize, const R: usize, const M: usize>()
     -> impl dsp_process::Process<[i64; R], i64> {
@@ -311,99 +409,6 @@ mod test {
         }
     }
 
-    #[quickcheck]
-    fn new(rate: u32) {
-        let _ = Cic::<i64, 3>::new(rate);
-    }
-
-    #[quickcheck]
-    fn identity_dec(x: Vec<i64>) {
-        let mut dec = Cic::<_, 3>::new(0);
-        for x in x {
-            assert_eq!(Some(x), dec.process(x));
-            assert_eq!(x, dec.get_decimate());
-        }
-    }
-
-    #[quickcheck]
-    fn identity_int(x: Vec<i64>) {
-        const N: usize = 3;
-        let mut int = Cic::<_, N>::new(0);
-        for x in x {
-            assert_eq!(x >> N, int.process(Some(x >> N)));
-            assert_eq!(x >> N, int.get_interpolate());
-        }
-    }
-
-    #[quickcheck]
-    fn response_length_gain_settle(x: Vec<i32>, rate: u32) {
-        let mut int = Cic::<_, 3>::new(rate);
-        let shift = int.gain_log2();
-        if shift >= 32 {
-            return;
-        }
-        assert!(int.gain() <= 1 << shift);
-        for x in x {
-            while !int.tick() {
-                int.process(None);
-            }
-            let y_last = int.get_interpolate();
-            let y_want = x as i64 * int.gain();
-            for i in 0..2 * int.response_length() {
-                let y = int.process(if int.tick() { Some(x as i64) } else { None });
-                assert_eq!(y, int.get_interpolate());
-                if i < int.response_length() {
-                    match y_want.cmp(&y_last) {
-                        Ordering::Greater => assert!((y_last..y_want).contains(&y)),
-                        Ordering::Less => assert!((y_want..y_last).contains(&(y - 1))),
-                        Ordering::Equal => assert_eq!(y_want, y),
-                    }
-                } else {
-                    assert_eq!(y, y_want);
-                }
-            }
-        }
-    }
-
-    #[quickcheck]
-    fn settle(rate: u32, x: i32) {
-        let mut int = Cic::<i64, 3>::new(rate);
-        if int.gain_log2() >= 32 {
-            return;
-        }
-        int.settle_interpolate(x as _);
-        // let mut dec = Cic::<i64, 3>::new(rate);
-        // dec.settle_decimate(x as _);
-        for _ in 0..100 {
-            let y = int.process(if int.tick() { Some(x as _) } else { None });
-            assert_eq!(y, x as i64 * int.gain());
-            assert_eq!(y, int.get_interpolate());
-            // assert_eq!(dec.get_decimate(), x as i64 * dec.gain());
-            // if let Some(y) = dec.decimate(x as _) {
-            //     assert_eq!(y, x as i64 * dec.gain());
-            // }
-        }
-    }
-
-    #[quickcheck]
-    fn unit_rate(x: (i32, i32, i32, i32, i32)) {
-        let x: [i32; 5] = x.into();
-        let mut cic = Cic::<i64, 3, 3>::new(0);
-        assert!(cic.gain_log2() == 6);
-        assert!(cic.gain() == (cic.comb_delay() as i64).pow(cic.order() as _));
-        for x in x {
-            assert!(cic.tick());
-            let y: Option<_> = cic.process(x as _);
-            println!("{x:11} {:11}", y.unwrap());
-        }
-        for _ in 0..100 {
-            let y: Option<_> = cic.process(0 as _);
-            assert_eq!(y, Some(cic.get_decimate()));
-            println!("{:11}", y.unwrap());
-            println!();
-        }
-    }
-
     #[test]
     fn modular_decimator_matches_reference() {
         let x: Vec<i64> = (-31..65).map(|x| x * 3 - 7).collect();
@@ -436,110 +441,106 @@ mod test {
         verify_interpolator_chunked_suffix::<3, 1, 3>(&x);
     }
 
-    #[cfg(test)]
-    mod perf_tests {
-        use super::*;
-        use core::hint::black_box;
+    use core::hint::black_box;
 
-        const PERF_N: usize = 3;
-        const PERF_R: usize = 8;
-        const PERF_D: usize = 1;
-        const PERF_ITERS: usize = 1 << 28;
+    const PERF_N: usize = 3;
+    const PERF_R: usize = 8;
+    const PERF_D: usize = 1;
+    const PERF_ITERS: usize = 1 << 28;
 
-        /// Spelled-out CIC decimator.
-        ///
-        /// About 1.28 core cycles/input sample on the pinned-core host run.
-        ///
-        /// Run with:
-        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_dec_ref --ignored --exact`
-        #[test]
-        #[ignore]
-        fn insn_dec_ref() {
-            let mut proc = reference_decimator::<PERF_N, PERF_R, PERF_D>();
-            let x = [9; PERF_R];
-            for _ in 0..PERF_ITERS {
-                black_box(proc.process(black_box(x)));
-            }
+    /// Spelled-out CIC decimator.
+    ///
+    /// About 1.28 core cycles/input sample on the pinned-core host run.
+    ///
+    /// Run with:
+    /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_dec_ref --ignored --exact`
+    #[test]
+    #[ignore]
+    fn insn_dec_ref() {
+        let mut proc = reference_decimator::<PERF_N, PERF_R, PERF_D>();
+        let x = [9; PERF_R];
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
         }
+    }
 
-        /// Modular `dsp-process` CIC decimator.
-        ///
-        /// About 1.32 core cycles/input sample on the pinned-core host run.
-        ///
-        /// Run with:
-        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_dec_mod --ignored --exact`
-        #[test]
-        #[ignore]
-        fn insn_dec_mod() {
-            let mut proc = modular_decimator::<PERF_N, PERF_R, PERF_D>();
-            let x = [9; PERF_R];
-            for _ in 0..PERF_ITERS {
-                black_box(proc.process(black_box(x)));
-            }
+    /// Modular `dsp-process` CIC decimator.
+    ///
+    /// About 1.32 core cycles/input sample on the pinned-core host run.
+    ///
+    /// Run with:
+    /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_dec_mod --ignored --exact`
+    #[test]
+    #[ignore]
+    fn insn_dec_mod() {
+        let mut proc = modular_decimator::<PERF_N, PERF_R, PERF_D>();
+        let x = [9; PERF_R];
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
         }
+    }
 
-        /// Modular `dsp-process` CIC decimator with a chunked integrator prefix.
-        ///
-        /// About 2.02 core cycles/input sample on the pinned-core host run.
-        ///
-        /// Run with:
-        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_dec_mod_chunked_prefix --ignored --exact`
-        #[test]
-        #[ignore]
-        fn insn_dec_mod_chunked_prefix() {
-            let mut proc = modular_decimator_chunked_prefix::<PERF_N, PERF_R, PERF_D>();
-            let x = [9; PERF_R];
-            for _ in 0..PERF_ITERS {
-                black_box(proc.process(black_box(x)));
-            }
+    /// Modular `dsp-process` CIC decimator with a chunked integrator prefix.
+    ///
+    /// About 2.02 core cycles/input sample on the pinned-core host run.
+    ///
+    /// Run with:
+    /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_dec_mod_chunked_prefix --ignored --exact`
+    #[test]
+    #[ignore]
+    fn insn_dec_mod_chunked_prefix() {
+        let mut proc = modular_decimator_chunked_prefix::<PERF_N, PERF_R, PERF_D>();
+        let x = [9; PERF_R];
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
         }
+    }
 
-        /// Spelled-out CIC interpolator.
-        ///
-        /// About 1.26 core cycles/output sample on the pinned-core host run.
-        ///
-        /// Run with:
-        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_int_ref --ignored --exact`
-        #[test]
-        #[ignore]
-        fn insn_int_ref() {
-            let mut proc = reference_interpolator::<PERF_N, PERF_R, PERF_D>();
-            let x = 9;
-            for _ in 0..PERF_ITERS {
-                black_box(proc.process(black_box(x)));
-            }
+    /// Spelled-out CIC interpolator.
+    ///
+    /// About 1.26 core cycles/output sample on the pinned-core host run.
+    ///
+    /// Run with:
+    /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_int_ref --ignored --exact`
+    #[test]
+    #[ignore]
+    fn insn_int_ref() {
+        let mut proc = reference_interpolator::<PERF_N, PERF_R, PERF_D>();
+        let x = 9;
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
         }
+    }
 
-        /// Modular `dsp-process` CIC interpolator.
-        ///
-        /// About 1.22 core cycles/output sample on the pinned-core host run.
-        ///
-        /// Run with:
-        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_int_mod --ignored --exact`
-        #[test]
-        #[ignore]
-        fn insn_int_mod() {
-            let mut proc = modular_interpolator::<PERF_N, PERF_R, PERF_D>();
-            let x = 9;
-            for _ in 0..PERF_ITERS {
-                black_box(proc.process(black_box(x)));
-            }
+    /// Modular `dsp-process` CIC interpolator.
+    ///
+    /// About 1.22 core cycles/output sample on the pinned-core host run.
+    ///
+    /// Run with:
+    /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_int_mod --ignored --exact`
+    #[test]
+    #[ignore]
+    fn insn_int_mod() {
+        let mut proc = modular_interpolator::<PERF_N, PERF_R, PERF_D>();
+        let x = 9;
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
         }
+    }
 
-        /// Modular `dsp-process` CIC interpolator with a chunked integrator suffix.
-        ///
-        /// About 4.39 core cycles/output sample on the pinned-core host run.
-        ///
-        /// Run with:
-        /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_int_mod_chunked_suffix --ignored --exact`
-        #[test]
-        #[ignore]
-        fn insn_int_mod_chunked_suffix() {
-            let mut proc = modular_interpolator_chunked_suffix::<PERF_N, PERF_R, PERF_D>();
-            let x = 9;
-            for _ in 0..PERF_ITERS {
-                black_box(proc.process(black_box(x)));
-            }
+    /// Modular `dsp-process` CIC interpolator with a chunked integrator suffix.
+    ///
+    /// About 4.39 core cycles/output sample on the pinned-core host run.
+    ///
+    /// Run with:
+    /// `taskset -c 1 perf stat -d target/release/deps/idsp-... cic::test::perf_tests::insn_int_mod_chunked_suffix --ignored --exact`
+    #[test]
+    #[ignore]
+    fn insn_int_mod_chunked_suffix() {
+        let mut proc = modular_interpolator_chunked_suffix::<PERF_N, PERF_R, PERF_D>();
+        let x = 9;
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
         }
     }
 }
