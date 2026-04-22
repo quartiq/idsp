@@ -16,6 +16,33 @@ use core::{
     ops::{BitAndAssign, BitOrAssign, BitXorAssign},
 };
 
+const fn frac_shift(from: i8, to: i8) -> i8 {
+    let shift = to as i16 - from as i16;
+    assert!(
+        shift >= i8::MIN as i16 && shift <= i8::MAX as i16,
+        "fractional bit delta must fit in i8"
+    );
+    shift as i8
+}
+
+const fn neg_shift(frac: i8) -> i8 {
+    let shift = -(frac as i16);
+    assert!(
+        shift >= i8::MIN as i16 && shift <= i8::MAX as i16,
+        "fractional bit count must be negatable"
+    );
+    shift as i8
+}
+
+const fn shift_magnitude(frac: i8) -> u32 {
+    assert!(frac != i8::MIN, "fractional bit count must not be i8::MIN");
+    if frac >= 0 {
+        frac as u32
+    } else {
+        (-(frac as i16)) as u32
+    }
+}
+
 /// Shift summary trait
 ///
 /// Wrapping supports `Sh{lr}<usize>` only.
@@ -38,7 +65,7 @@ impl<T: Copy + Shl<usize, Output = T> + Shr<usize, Output = T>> Shift for T {
         if f >= 0 {
             self << (f as _)
         } else {
-            self >> (-f as _)
+            self >> (-(f as i16) as usize)
         }
     }
 }
@@ -99,6 +126,7 @@ pub trait Accu<A> {
 #[derive(Default)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", serde(transparent))]
+#[must_use = "fixed-point values are immutable and have no effect unless used"]
 pub struct Q<T, A, const F: i8> {
     /// The accumulator type
     _accu: PhantomData<A>,
@@ -149,6 +177,12 @@ where
     Self: Mul<Output = Self>,
 {
     fn one() -> Self {
+        const {
+            assert!(
+                F >= 0,
+                "`Q::one()` is only available when 1 is exactly representable"
+            );
+        }
         Self::new(T::one().shs(F))
     }
 }
@@ -178,13 +212,21 @@ impl<T, A, const F: i8> Q<T, A, F> {
     /// assert_eq!(Q32::<31>::DELTA, 2f32.powi(-31));
     /// assert_eq!(Q32::<-4>::DELTA, 2f32.powi(4));
     /// ```
+    ///
+    /// ```compile_fail
+    /// # use dsp_fixedpoint::Q32;
+    /// let _ = Q32::<-128>::DELTA;
+    /// ```
     pub const DELTA: f32 = if F > 0 {
-        1.0 / (1u128 << F) as f32
+        1.0 / (1u128 << shift_magnitude(F)) as f32
     } else {
-        (1u128 << -F) as f32
+        (1u128 << shift_magnitude(F)) as f32
     };
 
-    /// Create a new fixed point number from a given representation
+    /// Create a new fixed point number from a raw representation.
+    ///
+    /// This is equivalent to [`Q::from_bits`]. Prefer [`Q::from_int`],
+    /// [`Q::from_f32`], or [`Q::from_f64`] when constructing from numeric values.
     ///
     /// ```
     /// # use dsp_fixedpoint::P8;
@@ -196,6 +238,19 @@ impl<T, A, const F: i8> Q<T, A, F> {
             _accu: PhantomData,
             inner,
         }
+    }
+
+    /// Create a new fixed point number from a raw representation.
+    #[inline]
+    pub const fn from_bits(bits: T) -> Self {
+        Self::new(bits)
+    }
+
+    /// Return the raw representation.
+    #[inline]
+    #[must_use]
+    pub fn into_inner(self) -> T {
+        self.inner
     }
 }
 
@@ -210,7 +265,8 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     /// ```
     #[inline]
     pub fn scale<const F1: i8>(self) -> Q<T, A, F1> {
-        Q::new(self.inner.shs(F1 - F))
+        let shift = const { frac_shift(F, F1) };
+        Q::new(self.inner.shs(shift))
     }
 
     /// Return the integer part
@@ -220,8 +276,10 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     /// assert_eq!(Q8::<4>::new(0x35).trunc(), 0x3);
     /// ```
     #[inline]
+    #[must_use]
     pub fn trunc(self) -> T {
-        self.inner.shs(-F)
+        let shift = const { neg_shift(F) };
+        self.inner.shs(shift)
     }
 
     /// Scale from integer base type
@@ -232,6 +290,12 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     /// ```
     #[inline]
     pub fn from_int(value: T) -> Self {
+        const {
+            assert!(
+                F != i8::MIN,
+                "fractional bit count must not be i8::MIN for scaled construction"
+            );
+        }
         Self::new(value.shs(F))
     }
 }
@@ -246,6 +310,7 @@ impl<A: Shift, T: Accu<A>, const F: i8> Q<A, T, F> {
     /// assert_eq!((q * 7).quantize(), (7.0 * 0.25f32).floor() as _);
     /// ```
     #[inline]
+    #[must_use]
     pub fn quantize(self) -> T {
         T::down(self.trunc())
     }
@@ -259,7 +324,7 @@ impl<A: Shift, T: Accu<A>, const F: i8> Q<A, T, F> {
 /// ```
 impl<T: Accu<A> + Shift, A, const F: i8> From<(T, i8)> for Q<T, A, F> {
     fn from(value: (T, i8)) -> Self {
-        Self::new(value.0.shs(F - value.1))
+        Self::new(value.0.shs(frac_shift(value.1, F)))
     }
 }
 
@@ -342,6 +407,7 @@ where
 {
     /// Convert lossy to f32
     #[inline]
+    #[must_use]
     pub fn as_f32(self) -> f32 {
         self.as_()
     }
@@ -353,6 +419,7 @@ where
 {
     /// Convert lossy to f64
     #[inline]
+    #[must_use]
     pub fn as_f64(self) -> f64 {
         self.as_()
     }
@@ -512,7 +579,8 @@ impl<T: Copy + Accu<A>, A: Shift + Mul<A, Output = A>, const F: i8, const F1: i8
 {
     #[inline]
     fn mul_assign(&mut self, rhs: Q<T, A, F1>) {
-        self.inner = T::down((self.inner.up() * rhs.inner.up()).shs(-F1));
+        let shift = const { neg_shift(F1) };
+        self.inner = T::down((self.inner.up() * rhs.inner.up()).shs(shift));
     }
 }
 
@@ -657,7 +725,13 @@ macro_rules! impl_q {
         pub type $alias<const F: i8> = Q<$t, $a, F>;
 
         impl<const F: i8> ConstOne for Q<$t, $a, F> {
-            const ONE: Self = Self::new($wrap(if F >= 0 {1 << F as usize} else {0}));
+            const ONE: Self = {
+                assert!(
+                    F >= 0,
+                    "`Q::ONE` is only available when 1 is exactly representable"
+                );
+                Self::new($wrap(1 << F as usize))
+            };
         }
 
         impl<const F: i8> AsPrimitive<$t> for Q<$a, $t, F> {
@@ -684,6 +758,12 @@ macro_rules! impl_q {
 
             #[inline]
             fn div(self, rhs: Q<$t, $a, F>) -> Self::Output {
+                const {
+                    assert!(
+                        F != i8::MIN,
+                        "fractional bit count must not be i8::MIN for division"
+                    );
+                }
                 if F > 0 {
                     <$t>::down(self.up().shs(F) / rhs.inner.up())
                 } else {
@@ -733,8 +813,11 @@ mod test {
         assert_eq!(7 * Q32::<4>::new(0x33), 7 * 3 + ((3 * 7) >> 4));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn display() {
+        use std::format;
+
         assert_eq!(format!("{}", Q32::<9>::new(0x12345)), "145.634765625");
         assert_eq!(format!("{}", Q32::<9>::from_int(99)), "99");
     }

@@ -6,6 +6,9 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+rust-version = "1.85"
+keywords = ["dsp", "fixed-point", "no-std", "embedded"]
+categories = ["embedded", "mathematics", "no-std"]
 
 [features]
 default = ["serde"]
