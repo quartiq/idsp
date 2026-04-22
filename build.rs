@@ -40,6 +40,32 @@ fn write_cossin_table() {
     writeln!(file, "\n];").unwrap();
 }
 
+fn write_atan2_divi_table() {
+    const DEPTH: usize = 4;
+    const Q31: f64 = (1i64 << 31) as f64;
+
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("atan2_divi_table.rs");
+    let mut file = File::create(dest_path).unwrap();
+
+    writeln!(file, "pub(crate) const ATAN2_DIVI_DEPTH: usize = {DEPTH};").unwrap();
+    writeln!(
+        file,
+        "pub(crate) const ATAN2_DIVI_RECIP: [(u32, i32); 1 << ATAN2_DIVI_DEPTH] = ["
+    )
+    .unwrap();
+
+    for i in 0..(1 << DEPTH) {
+        let x0 = 1.0 + i as f64 / (1 << DEPTH) as f64;
+        let x1 = 1.0 + (i + 1) as f64 / (1 << DEPTH) as f64;
+        let y0 = (Q31 / x0).round() as u32;
+        let dy = ((1.0 / x1 - 1.0 / x0) * Q31).round() as i32;
+        writeln!(file, "    ({y0}, {dy}),").unwrap();
+    }
+
+    writeln!(file, "];").unwrap();
+}
+
 fn write_cordic_tables() {
     const DEPTH: i32 = 30;
 
@@ -94,6 +120,7 @@ fn write_cordic_tables() {
 
 fn main() {
     write_cossin_table();
+    write_atan2_divi_table();
     write_cordic_tables();
     println!("cargo:rerun-if-changed=build.rs");
 }

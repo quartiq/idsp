@@ -1,34 +1,52 @@
+use dsp_fixedpoint::Q32;
+
+include!(concat!(env!("OUT_DIR"), "/atan2_divi_table.rs"));
+
+const ATANI: [Q32<32>; 6] = [
+    Q32::new(0x0517c2cd),
+    Q32::new(-0x06c6496b),
+    Q32::new(0x0fbdb021),
+    Q32::new(-0x25b32e0a),
+    Q32::new(0x43b34c81),
+    Q32::new(-0x3bc823dd),
+];
+
+#[inline(always)]
+fn mul_q31(x: u32, y: u32) -> u32 {
+    ((x as u64 * y as u64) >> 31) as u32
+}
+
 fn divi(y: u32, x: u32) -> u32 {
     debug_assert!(y <= x);
     if x == 0 {
         return 0;
     }
-    // Balance the divider around 16 useful bits in the denominator. After
-    // shifting by `x.leading_zeros()`, `x` lies in [2^31, 2^32), so rounding it
-    // to 16 bits gives a uniform one-UDIV approximation without the old
-    // small-vector collapse.
+    // Normalize `x` to Q1.31 on [1, 2), interpolate a reciprocal seed from a
+    // small LUT, and refine it with one Newton step.
     let shift = x.leading_zeros();
     let y = y << shift;
     let x = x << shift;
-    let d = (x >> 16) + ((x >> 15) & 1);
-    ((y / d) << 15) + (1 << 14)
+    const ATAN2_DIVI_FRAC_BITS: u32 = 31 - ATAN2_DIVI_DEPTH as u32;
+    let i = (((x >> ATAN2_DIVI_FRAC_BITS) ^ (1 << ATAN2_DIVI_DEPTH) as u32)
+        & ((1 << ATAN2_DIVI_DEPTH) as u32 - 1)) as usize;
+    let rem = (x & ((1 << ATAN2_DIVI_FRAC_BITS) - 1)) as i32;
+    let (base, slope) = ATAN2_DIVI_RECIP[i];
+    let step = ((slope as i64 * rem as i64) >> ATAN2_DIVI_FRAC_BITS) as i32;
+    let r0 = base.wrapping_add(step as u32);
+    mul_q31(y, mul_q31(r0, mul_q31(x, r0).wrapping_neg()))
 }
 
 fn atani(x: u32) -> u32 {
-    const A: [i32; 6] = [
-        0x0517c2cd,
-        -0x06c6496b,
-        0x0fbdb021,
-        -0x25b32e0a,
-        0x43b34c81,
-        -0x3bc823dd,
-    ];
-    let x2 = ((x as i64 * x as i64) >> 32) as i32;
-    let r = A
+    // Evaluate the odd polynomial in x * P(x^2/4). The intermediate products
+    // stay wide and only quantize on the Q-format boundaries, which maps well
+    // to the M7 DSP multiply-high instructions.
+    let x2 = Q32::new(((x as i64 * x as i64) >> 32) as _);
+    let r = ATANI
         .iter()
+        .copied()
         .rev()
-        .fold(0, |r, a| ((r as i64 * x2 as i64) >> 32) as i32 + a);
-    ((r as i64 * x as i64) >> 28) as _
+        .fold(Q32::new(0), |r, a| (r * x2) + a);
+    (((r.inner as i64) * (x as i64)) >> 28) as u32
 }
 
 /// 2-argument arctangent function.
@@ -132,8 +150,8 @@ mod tests {
         println!("max abs err: {:.2e}", abs_err);
         println!("rms abs err: {:.2e}", rms_err);
         println!("max rel err: {:.2e}", rel_err);
-        assert!(abs_err < 1.25e-5);
-        assert!(rms_err < 4.4e-6);
+        assert!(abs_err < 2.4e-6);
+        assert!(rms_err < 1.3e-6);
         assert!(rel_err < 1e-12);
     }
 
@@ -143,7 +161,7 @@ mod tests {
         for v in 1..1024 {
             let have = atan2(v, v) as f64 * scale;
             let want = PI / 4.0;
-            assert!((have - want).abs() < 1.2e-5, "{v}: {have} vs {want}");
+            assert!((have - want).abs() < 2.4e-6, "{v}: {have} vs {want}");
         }
     }
 
@@ -158,6 +176,14 @@ mod tests {
                 max_err = max_err.max((have - want).abs());
             }
         }
-        assert!(max_err < 1.2e-5, "{max_err}");
+        assert!(max_err < 2.4e-6, "{max_err}");
+    }
+
+    #[test]
+    fn atan2_zero_axis_is_exact() {
+        assert_eq!(atan2(0, 1), 0);
+        assert_eq!(atan2(0, i32::MAX), 0);
+        assert_eq!(atan2(1, 0), 0x3fff_ffff);
+        assert_eq!(atan2(i32::MAX, 0), 0x3fff_ffff);
     }
 }
