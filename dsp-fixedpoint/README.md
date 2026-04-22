@@ -5,7 +5,7 @@ integer storage and widening accumulators.
 
 ## Model
 
-`Q<T, A, F>` stores a raw integer `T` and interprets it as scaled by `2^-F`.
+`Q<T, A, F>` stores a raw integer `T` and interprets it as scaled by `2^F`.
 
 - `T` is the storage type.
 - `A` is the widened accumulator type used for intermediate results.
@@ -66,3 +66,22 @@ let _ = Q8::<-1>::one();
 
 With the default `serde` feature, `Q` serializes transparently as its raw
 representation.
+
+## Formatting
+
+Display shows decimal notation. `Binary/Octal/UpperHex/LowerHex` show dot
+notation.
+
+```rust
+use dsp_fixedpoint::Q8;
+
+assert_eq!(format!("{:#b}", Q8::<3>::new(0b01101001)), "0b1101.001");
+assert_eq!(format!("{:x}", Q8::<4>::new(-0x14)), "-1.4");
+```
+
+## `defmt`
+
+With `feature = "defmt"`, `Q` implements `defmt::Format` and logs as a decimal
+value using `f32`. This keeps the target-side implementation compact for
+embedded use. Exact radix-dot formatting remains available through the standard
+`Binary`, `Octal`, and hex format traits.

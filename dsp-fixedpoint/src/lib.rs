@@ -27,6 +27,46 @@ const fn frac_shift(from: i8, to: i8) -> i8 {
     shift as i8
 }
 
+pub(crate) trait FloatValue: Copy {
+    #[cfg(feature = "defmt")]
+    fn as_f32(self) -> f32;
+    fn as_f64(self) -> f64;
+}
+
+macro_rules! impl_float_value {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl FloatValue for $ty {
+                #[cfg(feature = "defmt")]
+                #[inline]
+                fn as_f32(self) -> f32 {
+                    self as f32
+                }
+
+                #[inline]
+                fn as_f64(self) -> f64 {
+                    self as f64
+                }
+            }
+
+            impl FloatValue for Wrapping<$ty> {
+                #[cfg(feature = "defmt")]
+                #[inline]
+                fn as_f32(self) -> f32 {
+                    self.0 as f32
+                }
+
+                #[inline]
+                fn as_f64(self) -> f64 {
+                    self.0 as f64
+                }
+            }
+        )*
+    };
+}
+
+impl_float_value!(i8, i16, i32, i64, u8, u16, u32, u64);
+
 const fn neg_shift(frac: i8) -> i8 {
     let shift = -(frac as i16);
     assert!(
@@ -403,29 +443,52 @@ where
     }
 }
 
-impl<T, A, const F: i8> Q<T, A, F>
-where
-    Self: 'static + Copy + AsPrimitive<f32>,
-{
-    /// Convert lossy to f32
-    #[inline]
-    #[must_use]
-    pub fn as_f32(self) -> f32 {
-        self.as_()
-    }
+macro_rules! impl_q_as_float {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl<A, const F: i8> Q<$ty, A, F> {
+                /// Convert lossy to f32
+                #[inline]
+                #[must_use]
+                pub fn as_f32(self) -> f32 {
+                    self.inner as f32 * Self::DELTA
+                }
+
+                /// Convert lossy to f64
+                #[inline]
+                #[must_use]
+                pub fn as_f64(self) -> f64 {
+                    self.inner as f64 * Self::DELTA as f64
+                }
+            }
+        )*
+    };
 }
 
-impl<T, A, const F: i8> Q<T, A, F>
-where
-    Self: 'static + Copy + AsPrimitive<f64>,
-{
-    /// Convert lossy to f64
-    #[inline]
-    #[must_use]
-    pub fn as_f64(self) -> f64 {
-        self.as_()
-    }
+macro_rules! impl_newtype_q_as_float {
+    ($wrap:ident<$($ty:ty),* $(,)?>) => {
+        $(
+            impl<A, const F: i8> Q<$wrap<$ty>, A, F> {
+                /// Convert lossy to f32
+                #[inline]
+                #[must_use]
+                pub fn as_f32(self) -> f32 {
+                    self.inner.0 as f32 * Self::DELTA
+                }
+
+                /// Convert lossy to f64
+                #[inline]
+                #[must_use]
+                pub fn as_f64(self) -> f64 {
+                    self.inner.0 as f64 * Self::DELTA as f64
+                }
+            }
+        )*
+    };
 }
+
+impl_q_as_float!(i8, i16, i32, i64, u8, u16, u32, u64);
+impl_newtype_q_as_float!(Wrapping<i8, i16, i32, i64, u8, u16, u32, u64>);
 
 impl<T, A, const F: i8> AsPrimitive<Self> for Q<T, A, F>
 where

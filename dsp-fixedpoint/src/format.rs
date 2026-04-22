@@ -1,8 +1,6 @@
 use core::{fmt, fmt::Write, num::Wrapping};
 
-use num_traits::AsPrimitive;
-
-use crate::Q;
+use crate::{FloatValue, Q};
 
 /// ```
 /// # use dsp_fixedpoint::Q8;
@@ -13,10 +11,10 @@ macro_rules! impl_fmt {
     ($tr:path) => {
         impl<T, A, const F: i8> $tr for Q<T, A, F>
         where
-            Self: Copy + AsPrimitive<f64>,
+            T: FloatValue,
         {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                <f64 as $tr>::fmt(&(*self).as_(), f)
+                <f64 as $tr>::fmt(&(self.inner.as_f64() * Self::DELTA as f64), f)
             }
         }
     };
@@ -24,6 +22,16 @@ macro_rules! impl_fmt {
 impl_fmt!(fmt::Display);
 impl_fmt!(fmt::UpperExp);
 impl_fmt!(fmt::LowerExp);
+
+#[cfg(feature = "defmt")]
+impl<T, A, const F: i8> defmt::Format for Q<T, A, F>
+where
+    T: FloatValue,
+{
+    fn format(&self, fmt: defmt::Formatter<'_>) {
+        defmt::write!(fmt, "{=f32}", self.inner.as_f32() * Self::DELTA);
+    }
+}
 
 /// ```
 /// # use dsp_fixedpoint::Q8;
@@ -332,6 +340,17 @@ impl_radix_fmt!(fmt::UpperHex, Radix::UPPER_HEX);
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "defmt")]
+    #[test]
+    fn defmt_format_impls_exist() {
+        fn assert_defmt<T: defmt::Format>() {}
+
+        assert_defmt::<crate::Q8<4>>();
+        assert_defmt::<crate::P8<4>>();
+        assert_defmt::<crate::W8<4>>();
+        assert_defmt::<crate::V8<4>>();
+    }
+
     #[cfg(feature = "std")]
     #[test]
     fn display() {
@@ -340,6 +359,16 @@ mod test {
 
         assert_eq!(format!("{}", Q32::<9>::new(0x12345)), "145.634765625");
         assert_eq!(format!("{}", Q32::<9>::from_int(99)), "99");
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn float_accessors_cover_wrapping_types() {
+        use crate::{V8, W8};
+        use core::num::Wrapping;
+
+        assert_eq!(W8::<4>::new(Wrapping(-4)).as_f32(), -0.25);
+        assert_eq!(V8::<4>::new(Wrapping(4)).as_f64(), 0.25);
     }
 
     #[cfg(feature = "std")]
