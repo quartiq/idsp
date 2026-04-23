@@ -15,7 +15,7 @@ One comprehensive user for these algorithms is [Stabilizer](https://github.com/q
 
 ### Cosine/Sine
 
-[`cossin()`] uses a small (128 element or 512 byte) LUT, smart octant (un)mapping, linear interpolation and comprehensive analysis of corner cases to achieve a very clean signal (4e-6 RMS error, 9e-6 max error, 108 dB SNR typ), low spurs, and no bias with about 40 cortex-m instructions per call (23.5 cycles on Cortex-M7, see `tests/embedded`). It computes both cosine and sine (i.e. the complex signal) at once given a phase input.
+[`cossin()`] uses a small (128 element or 512 byte) midpoint LUT, smart octant (un)mapping, and first-order interpolation to compute both cosine and sine (i.e. the complex signal) at once given a phase input. The pointwise quadrature error is about 4e-6 RMS and 9e-6 max. As a coherent DDS driven by an [`Accu`], the midpoint interpolation gives a predictable dominant complex spur pair at `±(8*2^7)f = ±1024f` from the carrier at about -120.4 dBc. The implementation remains small and fast with about 40 Cortex-M instructions per call (23.5 cycles on Cortex-M7, see `tests/embedded`).
 
 ### Two-argument arcus-tangens
 
@@ -29,9 +29,9 @@ One comprehensive user for these algorithms is [Stabilizer](https://github.com/q
 
 [`PLL`], [`RPLL`]: High accuracy, zero-assumption, fully robust, forward and reciprocal PLLs with dynamically adjustable time constant and arbitrary (in the Nyquist sampling sense) capture range, and noise shaping.
 
-## `Unwrapper`, `Accu`, `saturating_scale()`
+## `Unwrapper`, `Accu`, `Uniform`, `Triangular`, `saturating_scale()`
 
-[`Unwrapper`], [`Accu`], [`saturating_scale()`]:
+[`Unwrapper`], [`Accu`], [`Uniform`], [`Triangular`], [`saturating_scale()`]:
 Tools to handle, track, and unwrap phase signals or generate them.
 
 ## Float and Fixed point

@@ -69,12 +69,66 @@ pub fn cossin(mut phase: i32) -> (i32, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{db, dds_metrics};
     use core::f64::consts::PI;
+    use num_complex::Complex64;
+
+    const DDS_LOG2: u32 = 16;
+    const DDS_LEN: usize = 1 << DDS_LOG2;
+    const AMPLITUDE: f64 = (1i64 << 31) as f64 - 0.85 * (1i64 << 15) as f64;
+
+    fn dds_step(k: usize) -> i32 {
+        (k as i32) << (32 - DDS_LOG2)
+    }
+
+    fn dds_complex<D>(k: usize, mut dither: D) -> Vec<Complex64>
+    where
+        D: Iterator<Item = i32>,
+    {
+        let step = dds_step(k);
+        let mut phase = 0i32;
+        (0..DDS_LEN)
+            .map(|_| {
+                phase = phase.wrapping_add(step);
+                let (re, im) = cossin(phase.wrapping_add(dither.next().unwrap()));
+                Complex64::new(re as f64 / AMPLITUDE, im as f64 / AMPLITUDE)
+            })
+            .collect()
+    }
+
+    fn dds_real<D>(k: usize, dither: D) -> Vec<f64>
+    where
+        D: Iterator<Item = i32>,
+    {
+        dds_complex(k, dither).into_iter().map(|z| z.re).collect()
+    }
+
+    fn complex_fft_power(x: &[Complex64]) -> Vec<f64> {
+        use rustfft::FftPlanner;
+
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(x.len());
+        let mut x = x.to_vec();
+        fft.process(&mut x);
+        x.into_iter().map(|x| x.norm_sqr()).collect()
+    }
+
+    fn complex_spur_bins(k: usize) -> (usize, usize) {
+        let m = 8 * (1 << COSSIN_DEPTH);
+        (DDS_LEN - ((m - 1) * k) % DDS_LEN, ((m + 1) * k) % DDS_LEN)
+    }
+
+    fn real_spur_bins(k: usize) -> (usize, usize) {
+        let (lo, hi) = complex_spur_bins(k);
+        (alias_bin(lo), alias_bin(hi))
+    }
+
+    fn alias_bin(bin: usize) -> usize {
+        bin.min(DDS_LEN - bin)
+    }
 
     #[test]
     fn cossin_error_max_rms_all_phase() {
-        // Constant amplitude error due to LUT data range.
-        const AMPLITUDE: f64 = (1i64 << 31) as f64 - 0.85 * (1i64 << 15) as f64;
         const MAX_PHASE: f64 = (1i64 << 32) as _;
         let mut rms_err = (0f64, 0f64);
         let mut sum_err = (0f64, 0f64);
@@ -89,7 +143,7 @@ mod tests {
         const PHASE_DEPTH: usize = 20;
 
         for phase in 0..(1 << PHASE_DEPTH) {
-            let phase = (phase << (32 - PHASE_DEPTH)) as i32;
+            let phase = phase << (32 - PHASE_DEPTH);
             let have = cossin(phase);
             // file.write(&have.0.to_le_bytes()).unwrap();
             // file.write(&have.1.to_le_bytes()).unwrap();
@@ -139,5 +193,57 @@ mod tests {
 
         assert!(max_err.0 < 1e-5);
         assert!(max_err.1 < 1e-5);
+    }
+
+    #[test]
+    fn cossin_dds_spur_prediction_complex() {
+        // For midpoint first-order interpolation, the complex multiplicative
+        // error in one cell is
+        //
+        //   ε(δ) = e^{-jδ}(1 + jδ) - 1 = δ²/2 + O(δ³),
+        //
+        // with |δ| <= h/2 and cell width h = 2π/M, M = 8*2^DEPTH cells/turn.
+        // Repeating the centered parabola over all cells yields first Fourier
+        // coefficient
+        //
+        //   |c₁| = h²/(4π²) = 1/2^(2*DEPTH + 6).
+        //
+        // With DEPTH=7: |c₁| = 2^-20 = 9.54e-7, i.e. -120.4 dBc. For a complex
+        // DDS tone at coherent bin k, the first spur pair is at (M ± 1)k.
+        let k = 7;
+        let x = dds_complex(k, core::iter::repeat(0));
+        let power = complex_fft_power(&x);
+        let carrier = power[k];
+        let (lo, hi) = complex_spur_bins(k);
+        let lo_db = db(power[lo] / carrier);
+        let hi_db = db(power[hi] / carrier);
+        let strongest = power
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != k)
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
+            .unwrap();
+
+        assert!((lo_db + 120.4).abs() < 1.5, "{lo_db}");
+        assert!((hi_db + 120.4).abs() < 1.5, "{hi_db}");
+        assert!(strongest.0 == lo || strongest.0 == hi);
+    }
+
+    #[test]
+    fn cossin_dds_metrics_real() {
+        // In the real-output FFT, the first interpolation spur pair appears at
+        // bins (M ± 1)k folded into [0, N/2]. If the two sidebands alias to the
+        // same real bin, their coherent sum can raise the visible spur by up to
+        // 6 dB. Here k=7 keeps them separate.
+        let k = 7;
+        let metrics = dds_metrics(&dds_real(k, core::iter::repeat(0)), k, 16);
+        let (lo, hi) = real_spur_bins(k);
+        let spur_bins = [alias_bin(lo), alias_bin(hi)];
+
+        assert!(spur_bins.contains(&metrics.strongest_spur_bin));
+        assert!(metrics.sfdr_db > 118.0, "{metrics:?}");
+        assert!(metrics.snr_db > 106.0, "{metrics:?}");
+        assert!(metrics.thdn_db > 105.9, "{metrics:?}");
+        assert!(metrics.thd_db > 123.0, "{metrics:?}");
     }
 }
