@@ -2,10 +2,10 @@ use dsp_fixedpoint::Q32;
 
 include!(concat!(env!("OUT_DIR"), "/atan2_divi_table.rs"));
 
-/// Fixed point unsigned multiplication without roudning bias
+/// High half of an unsigned 32x32 multiplication.
 #[inline(always)]
-fn mul_q31(x: u32, y: u32) -> u32 {
-    ((x as u64 * y as u64) >> 31) as u32
+fn mul_hi(x: u32, y: u32) -> u32 {
+    ((x as u64 * y as u64) >> 32) as u32
 }
 
 /// Divide y/x with y <= x
@@ -25,7 +25,10 @@ fn divi(y: u32, x: u32) -> u32 {
     let (base, slope) = ATAN2_DIVI_RECIP[idx];
     let step = ((slope as i64 * rem as i64) >> FRAC_BITS) as u32;
     let r0 = base.wrapping_add(step);
-    mul_q31(y, mul_q31(r0, mul_q31(x, r0).wrapping_neg()))
+    let yr0 = mul_hi(y, r0);
+    let xr0 = mul_hi(x, r0);
+    let u = (1u32 << 31).wrapping_sub(xr0);
+    ((yr0 as u64 * u as u64) >> 29) as u32
 }
 
 /// Polynomial approximation to atan(x) to 11th order
