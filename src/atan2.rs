@@ -48,7 +48,8 @@ fn atani(x: u32) -> u32 {
         .copied()
         .rev()
         .fold(Q32::new(0), |r, a| (r * x2) + a);
-    (((r.inner as i64) * (x as i64)) >> 28) as u32
+    let x = x.min(i32::MAX as u32) as i32;
+    (((r.inner as i64 * x as i64) >> 32) as i32 as u32) << 4
 }
 
 /// 2-argument arctangent function.
