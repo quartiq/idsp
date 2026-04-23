@@ -102,8 +102,15 @@ pub struct Biquad<C> {
     /// where `x0, x1, x2` are current, delayed, and doubly delayed inputs and
     /// `y0, y1, y2` are current, delayed, and doubly delayed outputs.
     ///
-    /// Note the a1, a2 sign. The transfer function is:
-    /// `H(z) = (b0 + b1*z^-1 + b2*z^-2)/((1 << F) - a2*z^-1 - a2*z^-2)`
+    /// Note the sign convention for `a1` and `a2`: they are stored exactly as
+    /// used in the recurrence above, even though many references write the
+    /// denominator with the opposite sign.
+    ///
+    /// `[[b0, b1, b2], [a0, a1_ref, a2_ref]]` coefficients from the literature
+    /// therefore map to `[b0/a0, b1/a0, b2/a0, -a1_ref/a0, -a2_ref/a0]`.
+    ///
+    /// The transfer function is:
+    /// `H(z) = (b0 + b1*z^-1 + b2*z^-2)/((1 << F) - a1*z^-1 - a2*z^-2)`
     pub ba: [C; 5],
 }
 
@@ -226,6 +233,9 @@ impl<C: Copy + Add<Output = C>, T: Copy + Div<C, Output = T> + Mul<C, Output = T
     /// i.u = 6.0;
     /// assert_eq!(i.input_offset(), 2.0);
     /// ```
+    ///
+    /// # Panic
+    /// If the forward gain (b0+b1+b2) is zero this will panic or return nan/inf.
     pub fn input_offset(&self) -> T {
         self.u / self.coeff.forward_gain()
     }
@@ -608,7 +618,7 @@ mod test {
     #![allow(dead_code)]
     use super::*;
     use dsp_fixedpoint::Q32;
-    use dsp_process::SplitInplace;
+    use dsp_process::{SplitInplace, SplitProcess};
     // No manual tuning needed here.
     // Compiler knows best how and when:
     //   unroll loops
@@ -638,7 +648,7 @@ mod test {
                 [[1., 3., 5.], [55., -17., 17.]],
                 [[1., 8., 5.], [77., -7., 7.]],
             ]
-            .map(|c| Biquad::from(c)),
+            .map(Biquad::from),
         );
         let mut state = Default::default();
         let mut x = [977371917; 1 << 7];
@@ -650,6 +660,36 @@ mod test {
             for x in x {
                 pnm(&cfg, &mut state, x);
             }
+        }
+    }
+
+    #[test]
+    fn direct_form1_matches_df2t_for_float_stream() {
+        let biquad = Biquad::from([[0.7, -0.4, 0.1], [1.0, -0.2, 0.05]]);
+        let mut df1 = DirectForm1::default();
+        let mut df2t = DirectForm2Transposed::default();
+        let x = [-1.0, 0.25, 0.75, -0.5, 0.125, 0.0, 0.5, -0.25];
+        for x0 in x {
+            let y1 = biquad.process(&mut df1, x0);
+            let y2 = biquad.process(&mut df2t, x0);
+            assert!(f32::abs(y1 - y2) < 1e-6, "{y1} != {y2} for x0={x0}");
+        }
+    }
+
+    #[test]
+    fn cascade_matches_repeated_single_stage_application() {
+        let stage: Biquad<f32> = Biquad::from([[0.5, 0.25, 0.125], [1.0, -0.1, 0.02]]);
+        let cascade = Cascade([stage.clone(), stage.clone(), stage.clone()]);
+        let mut cascade_state = DirectForm::<f32, 3>::default();
+        let mut repeated_state: [DirectForm1<f32>; 3] =
+            core::array::from_fn(|_| DirectForm1::<f32>::default());
+        let x = [-0.75, 0.5, 0.0, 0.25, -0.125, 1.0, -0.5, 0.375];
+        for x0 in x {
+            let yc = cascade.process(&mut cascade_state, x0);
+            let yr = repeated_state
+                .iter_mut()
+                .fold(x0, |y, state| stage.process(state, y));
+            assert!(f32::abs(yc - yr) < 1e-6, "{yc} != {yr} for x0={x0}");
         }
     }
 }
