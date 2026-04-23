@@ -1,5 +1,29 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
+//!
+//! ## API Parameterization Rules
+//!
+//! `dsp-process` uses a small set of parameterization rules throughout the API:
+//!
+//! - Use runtime fields for per-instance values that may reasonably vary without
+//!   changing the type, such as gains, offsets, clamps, held samples, and
+//!   downsample counts.
+//! - Use const generics for structural facts that define shape, topology, or
+//!   fixed ratios at compile time, such as channel counts, chunk widths,
+//!   input/output ratios, slot indices, and block layouts.
+//! - When a structural parameter also determines stored memory shape, encode it
+//!   in the field type itself, typically with arrays like `[T; N]`, rather than
+//!   duplicating it as both a runtime field and a const generic.
+//! - Use wrapper newtypes for semantic adaptation and composition order
+//!   (`Chunk`, `Decimator`, `Channels`, `Minor`, `Major`, `Transpose`) rather
+//!   than for user-tunable configuration.
+//! - Use stream adapters with explicit state when phase matters across time
+//!   (`Downsample`, `Hold`, `Decimator`, `Interpolator`); use structural adapters
+//!   when only per-call shape changes (`Rate`, `ChunkIn`, `ChunkOut`,
+//!   `ChunkInOut`, block layout markers).
+//!
+//! In short: values live at runtime, shapes live in types, and composition
+//! semantics live in wrappers.
 
 mod process;
 pub use process::*;

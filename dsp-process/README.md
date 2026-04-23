@@ -15,6 +15,10 @@ cares about:
 * composing filters without hiding the data layout
 * sharing one configuration across many channels or states
 
+The root `idsp` repository also carries composite examples such as a DDC/lock-in,
+FM discriminator, BPSK Costas loop, and a small polyphase channelizer that show
+how these primitives fit together in real DSP graphs.
+
 This README is the crate-level documentation via `#![doc = include_str!(...)]`.
 
 ## Mission
@@ -176,8 +180,19 @@ Concisely:
   kernel, worse once many variants or compositions need to stay consistent.
 * Iterator-heavy style: concise for non-hot code, usually a poor fit when state,
   aliasing, and exact loop shape matter.
-* Dynamic graph or audio-node frameworks: better when the graph changes at
-  runtime, much heavier than needed for fixed embedded DSP pipelines.
+* Dynamic flowgraph runtimes such as GNU Radio or FutureSDR: better when the
+  graph, scheduling policy, runtime reconfiguration, or heterogeneous execution
+  are part of the problem. Those frameworks operate at a higher level around
+  blocks, buffers, message passing, and schedulers; `dsp-process` is much lower
+  level and closer to the inner kernels inside such blocks.
+* Dynamic in-process graph libraries such as `dasp_graph`: better when nodes and
+  edges must be edited at runtime. `dsp-process` instead assumes fixed topology
+  and avoids graph ownership and scheduler concerns entirely.
+* Static signal or graph composition libraries such as `dasp_signal` or FunDSP:
+  those also support static composition, but they focus on frame/signal or
+  audio-node abstractions. `dsp-process` is narrower: split config/state,
+  explicit block layout, `no_std`, and predictable loop shape are the center of
+  the design.
 * Plain `Process`-only designs: simpler surface, but weaker support for
   coefficient sharing across many states.
 

@@ -41,6 +41,11 @@ pub struct BlockMut<'a, T, L, const C: usize> {
 /// This is the bridge between chunk semantics and typed block views:
 /// `SplitProcess<[X; Q], [Y; R], S>` becomes block processing from
 /// `Block<FrameMajor, Q>` to `BlockMut<FrameMajor, R>`.
+///
+/// Use this when each frame is one logical chunk sample and the backing storage
+/// is already frame-major. For channel-major layout-sensitive processing, use
+/// [`crate::Channels`] or [`crate::Transpose`] with explicit [`ChannelMajor`]
+/// blocks instead.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Frames<C>(pub C);
 

@@ -2,13 +2,15 @@ use bytemuck::{Pod, cast};
 
 use crate::{SplitInplace, SplitProcess};
 
-/// Adapts an interpolator to output chunk mode
+/// Adapt a scalar optional-input stage to chunk output mode.
 ///
 /// The inner processor is called with `Some(x)` once and then `None` `N-1` times
 /// to synthesize one output chunk from one input sample.
 ///
 /// This is convenient for polyphase interpolators and other stages whose natural
-/// scalar interface is `Option<X> -> Y`.
+/// scalar interface is `Option<X> -> Y`. Unlike [`crate::ChunkOut`], this
+/// preserves stream phase and still runs the recursive inner stage once per
+/// output sample.
 ///
 /// See also [`Decimator`] for the inverse direction.
 ///
@@ -117,7 +119,7 @@ impl<T: Copy> crate::Process<Option<T>, T> for Hold<T> {
     }
 }
 
-/// Adapts a decimator to input chunk mode
+/// Adapt a scalar optional-output stage to chunk input mode.
 ///
 /// Synchronizes to the inner tick by discarding samples after tick.
 /// Panics if tick does not match `N`.
@@ -136,6 +138,9 @@ impl<T: Copy> crate::Process<Option<T>, T> for Hold<T> {
 /// Conceptually, this is the chunk-level companion to [`crate::Downsample`]:
 /// `Downsample` gates a scalar stream into `Option<Y>`, while `Decimator`
 /// turns that exact-one-tick-per-chunk protocol into `[X; N] -> Y`.
+/// Unlike [`crate::ChunkIn`], this still executes the inner stage on every
+/// sample in the chunk and is therefore the right adapter for recursive
+/// decimators.
 ///
 /// # Examples
 ///
@@ -218,10 +223,11 @@ impl<X: Copy, Y, C: SplitProcess<X, Option<Y>, S>, S, const N: usize>
     }
 }
 
-/// Map `Option` and `Result`
+/// Lift a processor through `Option` or `Result`.
 ///
-/// This is useful when a processor should only run on present/valid samples while
-/// preserving outer framing or error signaling.
+/// This is useful when a processor should only run on present/valid samples
+/// while preserving outer framing or error signaling. It changes control-flow
+/// shape, not block layout.
 ///
 /// # Examples
 ///
@@ -252,13 +258,18 @@ impl<X: Copy, C: SplitInplace<X, S>, S> SplitInplace<X, S> for Map<C> where
 {
 }
 
-/// Chunked processing
+/// Elementwise fixed-size chunk lifting.
 ///
 /// Adapt a `X -> Y` processor into a `[X; N] -> [Y; N]` processor
 /// by flattening input and output.
 ///
-/// This is the simplest array-lifting adapter and is often the right choice when
-/// a scalar processor should run elementwise over fixed-size blocks.
+/// This is the simplest array-lifting adapter and is often the right choice
+/// when a scalar stage should run elementwise over fixed-size chunks with no
+/// rate change and no frame semantics beyond flattening.
+///
+/// Prefer the more specific adapters when the inner stage consumes or produces
+/// grouped samples (`ChunkIn`, `ChunkOut`, `ChunkInOut`) or when stream phase is
+/// part of the semantics (`Interpolator`, `Decimator`).
 ///
 /// # Examples
 ///
@@ -287,13 +298,14 @@ impl<C: SplitInplace<X, S>, S, X: Copy, const N: usize> SplitInplace<[X; N], S> 
     }
 }
 
-/// Chunked input
+/// Fixed-ratio chunk adapter for grouped input.
 ///
 /// Adapt a `[X; R] -> Y` processor to `[X; N=R*M]->[Y; M]` for any `M`
 /// by flattening and re-chunking input.
 ///
 /// Use this when the inner stage consumes several input samples per output, such
-/// as a small decimating FIR kernel.
+/// as a small decimating FIR kernel. This is a structural regrouping adapter:
+/// it does not track stream phase across calls.
 ///
 /// See also [`ChunkOut`] and [`ChunkInOut`].
 ///
@@ -341,14 +353,16 @@ where
     }
 }
 
-/// Chunked output
+/// Fixed-ratio chunk adapter for grouped output.
 ///
 /// Adapt a `X -> [Y; R]` processor to `[X; N]->[Y; M = R*N]` for any `N`
 /// by flattening and re-chunking output.
 ///
 /// This is the natural adapter for small fixed-ratio interpolation kernels.
 /// Use [`ChunkOutPod`] when the output type is POD and the flattening cost
-/// matters.
+/// matters. This is a structural regrouping adapter, not a phased stream
+/// interpolator; use [`Interpolator`] when the inner stage is naturally
+/// `Option<X> -> Y`.
 ///
 /// # Examples
 ///
@@ -407,7 +421,8 @@ where
 /// representation cast to flatten `[[Y; R]; N]` into `[Y; R * N]` without the
 /// generic scratch-buffer path.
 ///
-/// This is only available when `Y` is [`Pod`].
+/// This is only available when `Y` is [`Pod`] and is mainly a codegen/cache
+/// choice, not a semantic one.
 ///
 /// # Examples
 ///
@@ -452,13 +467,15 @@ where
     }
 }
 
-/// Chunked input and output
+/// General fixed-ratio regrouping adapter for chunked input and output.
 ///
 /// Adapt a `[X; Q] -> [Y; R]` processor to `[X; N = Q*I]->[Y; M = R*I]` for any `I`
 /// by flattening and re-chunking input and output.
 ///
 /// This is the most general fixed-ratio chunk adapter in the crate. It requires
-/// the input and output to represent the same number of inner chunks.
+/// the input and output to represent the same number of inner chunks. Reach for
+/// it when neither plain [`Chunk`], [`ChunkIn`], nor [`ChunkOut`] captures the
+/// actual grouping relation.
 ///
 /// # Examples
 ///

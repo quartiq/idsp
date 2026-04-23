@@ -114,21 +114,36 @@ where
 
 //////////// SPLIT MINOR ////////////
 
-/// Processor-minor, data-major
+/// Processor-minor, data-major serial composition.
 ///
-/// The various Process tooling implementations for `Minor`
-/// place the data loop as the outer-most loop (processor-minor, data-major).
-/// This is optimal for processors with small or no state and configuration.
+/// `Minor` changes only the loop nest used by `block()` and `inplace()`.
+/// Scalar `process()` and the signal semantics are unchanged.
 ///
-/// Chain of large processors are implemented through native
-/// tuples and slices/arrays or [`Major`].
-/// Those optimize well if the sizes obey configuration ~ state > data.
-/// If they do not, use `Minor`.
+/// Without `Minor`, tuple and array composition are stage-major:
+/// one stage runs over the whole block and then the next stage runs over the
+/// whole block. With `Minor`, the outer loop is over samples and each sample is
+/// pushed through the wrapped stages before moving to the next sample.
 ///
-/// Note that the major implementations only override the behavior
-/// for `block()` and `inplace()`. `process()` is unaffected and the same for all.
+/// Use this when:
+/// - the wrapped stages are small and fine-grained
+/// - per-stage state/configuration is small enough to keep hot while stepping
+///   sample by sample
+/// - there is little value in preserving each stage's own `block()`/`inplace()`
+///   specialization
+/// - tuple composition must cross an intermediate type where the downstream
+///   stage is not `SplitInplace` over that type
 ///
-/// This wrapper changes loop ordering rather than signal semantics.
+/// Avoid this when:
+/// - a stage has a meaningful `block()` specialization that benefits from
+///   seeing a long contiguous slice
+/// - SIMD or autovectorization needs stage-major contiguous data
+/// - cache behavior is dominated by streaming through data rather than by
+///   keeping tiny stage state hot
+/// - an explicit scratch buffer via [`Major`] is a better fit
+///
+/// In short: `Minor` trades stage-wise streaming locality for per-sample stage
+/// locality. It is often good for tiny recursive stages, but it can be the
+/// wrong choice for stages whose block path exists to improve cache use or SIMD.
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct Minor<C: ?Sized, U> {
@@ -207,10 +222,15 @@ impl<X: Copy, U, C, S> SplitInplace<X, S> for Minor<C, U> where Self: SplitProce
 
 //////////// SPLIT PARALLEL ////////////
 
-/// Fan out parallel input to parallel processors.
+/// Parallel branch composition over tuple or array-shaped data.
 ///
-/// Use this with [`crate::Add`], [`crate::Sub`], or [`crate::Mul`] when the
-/// branch outputs should be reduced again.
+/// `Parallel` is the branching companion to serial tuple/array composition:
+/// each branch receives its own lane of the input and produces its own lane of
+/// the output. It does not reorder memory or introduce cross-lane interaction.
+///
+/// Use this when the signal is already structurally parallel, such as I/Q pairs,
+/// stereo channels, or fixed branch banks. Use [`crate::Add`], [`crate::Sub`],
+/// or [`crate::Mul`] afterwards when those branch outputs should be reduced.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Parallel<P>(P);
 
@@ -269,12 +289,18 @@ impl<X: Copy, C, S> SplitInplace<X, S> for Parallel<C> where Self: SplitProcess<
 
 //////////// TRANSPOSE ////////////
 
-/// Data block transposition wrapper
+/// Explicit channel-major block interpretation for parallel compositions.
 ///
-/// Like [`Parallel`] for scalar processing, but with explicit channel-major
-/// block processing through [`Block<_, _, ChannelMajor, _>`].
+/// Scalar `process()` is the same as [`Parallel`]: each lane is processed by
+/// its matching branch. The difference is in block processing: under
+/// [`Block<_, _, ChannelMajor, _>`], each branch sees one long contiguous
+/// channel slice rather than strided frame-major data.
 ///
-/// This wrapper does not allocate or physically transpose memory.
+/// Use this when branches represent channels and block locality matters. This
+/// is often the right choice for SIMD-friendly per-channel kernels or when each
+/// branch has a useful `block()` specialization. Do not use it as a semantic
+/// transpose: it only changes how typed block views are interpreted and never
+/// allocates or physically moves data.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Transpose<C>(C);
 
@@ -381,10 +407,16 @@ where
 
 //////////// CHANNELS ////////////
 
-/// Multiple channels processed with one shared configuration.
+/// Multiple channels with one shared configuration and separate states.
 ///
-/// This is the natural companion to [`SplitProcess`]: immutable coefficients are
-/// stored once while each channel keeps separate mutable state.
+/// `Channels` is the main reason the split-state API exists: immutable
+/// configuration is stored once while each channel keeps its own mutable state.
+/// Scalar processing is lane-wise over `[X; N]`.
+///
+/// For block processing, pair it with [`Block<_, _, ChannelMajor, _>`] when the
+/// natural memory layout is channel-major and the inner stage benefits from long
+/// contiguous per-channel slices. Prefer this over `repeat()` when all channels
+/// should use exactly the same configuration.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Channels<C>(C);
 
@@ -450,13 +482,28 @@ where
 
 //////////// SPLIT MAJOR ////////////
 
-/// Chain of major processors with intermediate buffer supporting block() processing
-/// from individual block()s
+/// Stage-major block composition with explicit scratch storage.
 ///
-/// Prefer default composition for X->X->X, arrays/slices where inplace is possible
+/// `Major` keeps ordinary scalar `process()` semantics but changes `block()` and
+/// `inplace()` to process the pipeline in chunks through an explicit
+/// intermediate buffer. Each stage sees a contiguous scratch slice before the
+/// next stage runs.
 ///
-/// Use [`Major`] when block processing benefits from explicit scratch storage
-/// between stages, for example to improve locality for larger processors.
+/// Use this when:
+/// - stages have useful `block()` implementations that should see long slices
+/// - stage-major traversal is better for cache behavior than sample-by-sample
+///   traversal
+/// - an intermediate type change makes plain inplace composition impossible
+/// - preserving SIMD/autovectorization opportunities across block stages matters
+///
+/// Avoid it when:
+/// - stages are tiny and re-entering them per scratch chunk costs more than it saves
+/// - the intermediate buffer would be large or awkward to materialize
+/// - [`Minor`] already fits because the hot working set is tiny and per-sample
+///   stage locality dominates
+///
+/// In short: `Major` preserves stage-wise block processing and pays for that
+/// with explicit scratch.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Major<P: ?Sized, U> {
     /// Intermediate buffer

@@ -134,9 +134,13 @@ impl<C, S, const N: usize> From<[Split<C, S>; N]> for Split<[C; N], [S; N]> {
 impl<C, S> Split<C, S> {
     /// Convert to [`Minor`] composition.
     ///
-    /// This keeps the same logical processor but requests a data-major
-    /// `block()`/`inplace()` implementation that is often better for small-state
-    /// stages.
+    /// This keeps the same logical processor but requests sample-by-sample
+    /// `block()`/`inplace()` execution of the wrapped serial composition.
+    ///
+    /// Use this for small fine-grained stages, or when tuple composition must
+    /// cross an intermediate type and the downstream stage is not
+    /// [`SplitInplace`] for that intermediate. Avoid it when preserving
+    /// stage-major block processing is important for cache behavior or SIMD.
     #[must_use]
     pub fn minor<U>(self) -> Split<Minor<C, U>, S> {
         Split::new(Minor::new(self.config), self.state)
@@ -144,14 +148,18 @@ impl<C, S> Split<C, S> {
 
     /// Convert to [`Major`] composition with an explicit intermediate buffer.
     ///
-    /// This is useful when block processing through scratch storage is cheaper
-    /// than repeatedly re-entering fine-grained stages.
+    /// Use this when preserving stage-major block processing is more important
+    /// than avoiding an intermediate scratch buffer, especially for larger
+    /// stages or stages with meaningful `block()` specializations.
     #[must_use]
     pub fn major<U>(self) -> Split<Major<C, U>, S> {
         Split::new(Major::new(self.config), self.state)
     }
 
     /// Convert to [`Parallel`] composition.
+    ///
+    /// This expresses structural branching: each input lane is routed to the
+    /// matching branch and outputs stay separate unless reduced explicitly.
     #[must_use]
     pub fn parallel(self) -> Split<Parallel<C>, S> {
         Split::new(Parallel::new(self.config), self.state)
@@ -159,8 +167,8 @@ impl<C, S> Split<C, S> {
 
     /// Map `Option` and `Result` around this processor.
     ///
-    /// This wraps the configuration in [`crate::Map`] while preserving the
-    /// current state unchanged.
+    /// This lifts the processor through outer `Option`/`Result` control flow
+    /// while preserving the current state unchanged.
     #[must_use]
     pub fn map(self) -> Split<Map<C>, S> {
         Split::new(Map(self.config), self.state)
@@ -168,8 +176,9 @@ impl<C, S> Split<C, S> {
 
     /// Convert to elementwise fixed-size chunk processing.
     ///
-    /// This wraps the configuration in [`crate::Chunk`] while preserving the
-    /// current state unchanged.
+    /// This is the basic array-lifting adapter. Use the more specific chunk or
+    /// rate adapters when samples must be regrouped rather than processed
+    /// elementwise.
     #[must_use]
     pub fn chunk(self) -> Split<Chunk<C>, S> {
         Split::new(Chunk(self.config), self.state)
@@ -177,8 +186,9 @@ impl<C, S> Split<C, S> {
 
     /// Convert a scalar optional-input stage into chunk output mode.
     ///
-    /// This wraps the configuration in [`crate::Interpolator`] while
-    /// preserving the current state unchanged.
+    /// This preserves stream phase across one input sample expanded into one
+    /// output chunk. Prefer this over structural chunk regrouping when the
+    /// inner stage is naturally `Option<X> -> Y`.
     #[must_use]
     pub fn interpolate(self) -> Split<Interpolator<C>, S> {
         Split::new(Interpolator(self.config), self.state)
@@ -186,8 +196,9 @@ impl<C, S> Split<C, S> {
 
     /// Convert a scalar optional-output stage into unchecked chunk input mode.
     ///
-    /// This wraps the configuration in [`crate::Decimator`] while preserving
-    /// the current state unchanged.
+    /// This preserves stream phase across one input chunk collapsed into one
+    /// output sample. Prefer this over structural chunk regrouping when the
+    /// inner stage is naturally `X -> Option<Y>`.
     #[must_use]
     pub fn decimate(self) -> Split<Decimator<C>, S> {
         Split::new(Decimator(self.config), self.state)
@@ -195,8 +206,8 @@ impl<C, S> Split<C, S> {
 
     /// Convert a scalar optional-output stage into checked chunk input mode.
     ///
-    /// This wraps the configuration in [`crate::TryDecimator`] while
-    /// preserving the current state unchanged.
+    /// This is the checked form of [`decimate()`](Self::decimate), returning an
+    /// error when the inner stage does not tick exactly once per input chunk.
     #[must_use]
     pub fn try_decimate(self) -> Split<TryDecimator<C>, S> {
         Split::new(TryDecimator(self.config), self.state)
@@ -206,7 +217,7 @@ impl<C, S> Split<C, S> {
     ///
     /// This bridges chunk-style processors such as [`crate::Chunk`],
     /// [`crate::ChunkIn`], [`crate::ChunkOut`], and [`crate::ChunkInOut`] into
-    /// the typed block-view API.
+    /// the typed block-view API without changing the backing layout.
     #[must_use]
     pub fn frames(self) -> Split<Frames<C>, S> {
         Split::new(Frames(self.config), self.state)
@@ -242,9 +253,8 @@ impl<C, S> Split<C, S> {
 
     /// Convert to [`Transpose`] block semantics.
     ///
-    /// Scalar `process()` is unchanged. The layout-sensitive block behavior is
-    /// available explicitly through [`crate::Block`] using
-    /// [`crate::ChannelMajor`].
+    /// Scalar `process()` is unchanged. Use this when parallel branches should
+    /// process channel-major blocks as long contiguous per-channel slices.
     #[must_use]
     pub fn transpose(self) -> Split<Transpose<C>, S> {
         Split::new(Transpose::new(self.config), self.state)
