@@ -2,20 +2,13 @@ use dsp_fixedpoint::Q32;
 
 include!(concat!(env!("OUT_DIR"), "/atan2_divi_table.rs"));
 
-const ATANI: [Q32<32>; 6] = [
-    Q32::new(0x0517c2cd),
-    Q32::new(-0x06c6496b),
-    Q32::new(0x0fbdb021),
-    Q32::new(-0x25b32e0a),
-    Q32::new(0x43b34c81),
-    Q32::new(-0x3bc823dd),
-];
-
+/// Fixed point unsigned multiplication without roudning bias
 #[inline(always)]
 fn mul_q31(x: u32, y: u32) -> u32 {
     ((x as u64 * y as u64) >> 31) as u32
 }
 
+/// Divide y/x with y <= x
 fn divi(y: u32, x: u32) -> u32 {
     debug_assert!(y <= x);
     if x == 0 {
@@ -26,20 +19,26 @@ fn divi(y: u32, x: u32) -> u32 {
     let shift = x.leading_zeros();
     let y = y << shift;
     let x = x << shift;
-    const ATAN2_DIVI_FRAC_BITS: u32 = 31 - ATAN2_DIVI_DEPTH as u32;
-    let i = (((x >> ATAN2_DIVI_FRAC_BITS) ^ (1 << ATAN2_DIVI_DEPTH) as u32)
-        & ((1 << ATAN2_DIVI_DEPTH) as u32 - 1)) as usize;
-    let rem = (x & ((1 << ATAN2_DIVI_FRAC_BITS) - 1)) as i32;
-    let (base, slope) = ATAN2_DIVI_RECIP[i];
-    let step = ((slope as i64 * rem as i64) >> ATAN2_DIVI_FRAC_BITS) as i32;
-    let r0 = base.wrapping_add(step as u32);
+    const FRAC_BITS: u32 = 31 - ATAN2_DIVI_DEPTH as u32;
+    let rem = x & ((1 << FRAC_BITS) - 1);
+    let idx = ((x << 1) >> (1 + FRAC_BITS)) as usize;
+    let (base, slope) = ATAN2_DIVI_RECIP[idx];
+    let step = ((slope as i64 * rem as i64) >> FRAC_BITS) as u32;
+    let r0 = base.wrapping_add(step);
     mul_q31(y, mul_q31(r0, mul_q31(x, r0).wrapping_neg()))
 }
 
+/// Polynomial approximation to atan(x) to 11th order
 fn atani(x: u32) -> u32 {
-    // Evaluate the odd polynomial in x * P(x^2/4). The intermediate products
-    // stay wide and only quantize on the Q-format boundaries, which maps well
-    // to the M7 DSP multiply-high instructions.
+    const ATANI: [Q32<32>; 6] = [
+        Q32::new(0x0517c2cd),
+        Q32::new(-0x06c6496b),
+        Q32::new(0x0fbdb021),
+        Q32::new(-0x25b32e0a),
+        Q32::new(0x43b34c81),
+        Q32::new(-0x3bc823dd),
+    ];
+    // Evaluate the odd polynomial in x * P(x^2/4).
     let x2 = Q32::new(((x as i64 * x as i64) >> 32) as _);
     let r = ATANI
         .iter()
@@ -150,9 +149,9 @@ mod tests {
         println!("max abs err: {:.2e}", abs_err);
         println!("rms abs err: {:.2e}", rms_err);
         println!("max rel err: {:.2e}", rel_err);
-        assert!(abs_err < 2.4e-6);
+        assert!(abs_err < 2.3e-6);
         assert!(rms_err < 1.3e-6);
-        assert!(rel_err < 1e-12);
+        assert!(rel_err < 1e-15);
     }
 
     #[test]
@@ -161,7 +160,7 @@ mod tests {
         for v in 1..1024 {
             let have = atan2(v, v) as f64 * scale;
             let want = PI / 4.0;
-            assert!((have - want).abs() < 2.4e-6, "{v}: {have} vs {want}");
+            assert!((have - want).abs() < 2.3e-6, "{v}: {have} vs {want}");
         }
     }
 
@@ -176,7 +175,7 @@ mod tests {
                 max_err = max_err.max((have - want).abs());
             }
         }
-        assert!(max_err < 2.4e-6, "{max_err}");
+        assert!(max_err < 2.3e-6, "{max_err}");
     }
 
     #[test]
