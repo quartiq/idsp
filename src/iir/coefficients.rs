@@ -626,6 +626,7 @@ mod test {
     use crate::iir::{Biquad, DirectForm1Dither, response::ba_frequency_response};
     use dsp_fixedpoint::Q32;
     use dsp_process::SplitProcess;
+    use rustfft::num_complex::Complex64;
 
     #[test]
     #[ignore]
@@ -652,7 +653,7 @@ mod test {
         GainBelowDb(f64),
     }
     impl Tol {
-        fn check(&self, h: num_complex::Complex64) -> bool {
+        fn check(&self, h: Complex64) -> bool {
             let g = 10.0 * h.norm_sqr().log10();
             match self {
                 Self::GainDb(want, tol) => (g - want).abs() <= *tol,
@@ -663,6 +664,7 @@ mod test {
 
     fn check_freqz(f: f64, g: Tol, ba: &[[f64; 3]; 2]) {
         let h = ba_frequency_response(&ba[0], &ba[1], f);
+        let h = Complex64::new(h.re(), h.im());
         let hp = h.to_polar();
         assert!(
             g.check(h),

@@ -1,6 +1,6 @@
 use super::{atan2, cossin};
 use core::num::Wrapping;
-use core::ops::{Add, Deref, DerefMut, Mul, Sub};
+use core::ops::{Add, Deref, DerefMut, Div, Mul, Sub};
 use dsp_fixedpoint::{Accu, Q, Shift};
 use num_traits::AsPrimitive;
 
@@ -181,21 +181,36 @@ where
     }
 }
 
-impl Complex<f32> {
-    /// Return a unit complex number from a floating-point angle in radians.
-    pub fn from_angle(angle: f32) -> Self {
-        let (s, c) = angle.sin_cos();
-        Self::new(c, s)
-    }
-}
+macro_rules! impl_float {
+    ($t:ty) => {
+        impl Complex<$t> {
+            /// Return a unit complex number from a floating-point angle in radians.
+            pub fn from_angle(angle: $t) -> Self {
+                let (s, c) = angle.sin_cos();
+                Self::new(c, s)
+            }
 
-impl Complex<f64> {
-    /// Return a unit complex number from a floating-point angle in radians.
-    pub fn from_angle(angle: f64) -> Self {
-        let (s, c) = angle.sin_cos();
-        Self::new(c, s)
-    }
+            /// Return the angle.
+            pub fn arg(&self) -> $t {
+                self.re().atan2(self.im())
+            }
+
+            /// Return the squared norm.
+            pub fn norm_sqr(&self) -> $t {
+                self.re() * self.re() + self.im() * self.im()
+            }
+        }
+
+        impl Div for Complex<$t> {
+            type Output = Self;
+            fn div(self, rhs: Self) -> Self::Output {
+                (self * rhs.conj()) / rhs.norm_sqr()
+            }
+        }
+    };
 }
+impl_float!(f32);
+impl_float!(f64);
 
 impl Complex<i32> {
     /// Return the absolute square (the squared magnitude).

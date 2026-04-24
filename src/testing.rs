@@ -1,9 +1,9 @@
 //! Tools to test and benchmark algorithms
 #![allow(dead_code)]
 use super::Complex;
-use num_complex::Complex64;
 use num_traits::Float;
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex64;
 
 /// Maximum acceptable error between a computed and actual value given fixed and relative
 /// tolerances.

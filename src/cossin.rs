@@ -71,7 +71,7 @@ mod tests {
     use super::*;
     use crate::testing::{db, dds_metrics};
     use core::f64::consts::PI;
-    use num_complex::Complex64;
+    use rustfft::num_complex::Complex64;
 
     const DDS_LOG2: u32 = 16;
     const DDS_LEN: usize = 1 << DDS_LOG2;

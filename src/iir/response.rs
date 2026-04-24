@@ -2,7 +2,10 @@
 
 use core::iter;
 
-use num_complex::Complex;
+use crate::Complex;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use num_traits::float::Float as _;
 use num_traits::{AsPrimitive, Float, FloatConst};
 
 use crate::iir::Biquad;
@@ -20,8 +23,10 @@ fn polyval<T: Float>(p: &[T], x: Complex<T>) -> Complex<T> {
 ///
 /// `frequency` is relative to the sample rate.
 pub fn ba_frequency_response<T: Float + FloatConst>(b: &[T], a: &[T], frequency: T) -> Complex<T> {
-    let z = Complex::new(T::zero(), -T::TAU() * frequency).exp();
-    polyval(b, z) / polyval(a, z)
+    let (i, r) = (-T::TAU() * frequency).sin_cos();
+    let z = Complex::new(r, i);
+    let q = polyval(a, z);
+    polyval(b, z) * q.conj() / (q.re() * q.re() + q.im() * q.im())
 }
 
 impl<C> Biquad<C> {
