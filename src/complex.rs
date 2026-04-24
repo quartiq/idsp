@@ -4,6 +4,10 @@ use core::ops::{Add, Deref, DerefMut, Mul, Sub};
 use dsp_fixedpoint::{Accu, Q, Shift};
 use num_traits::AsPrimitive;
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use num_traits::float::Float as _;
+
 /// A complex number in cartesian coordinates
 #[derive(
     Clone,
