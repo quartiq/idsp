@@ -76,7 +76,7 @@ pub trait Inplace<X: Copy>: Process<X> {
 ///   not change configuration)
 /// * Reduces memory traffic when swapping configuration
 /// * Allows the same filter to be applied to multiple states
-///   (e.g. IQ data, multiple channels) guaranteeing consistency,
+///   (e.g. IQ data, multiple lanes) guaranteeing consistency,
 ///   reducing memory usage, and improving caching.
 ///
 /// This is the central abstraction used throughout `dsp-process`. A typical DSP

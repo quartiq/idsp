@@ -9,26 +9,26 @@
 //!   changing the type, such as gains, offsets, clamps, held samples, and
 //!   downsample counts.
 //! - Use const generics for structural facts that define shape, topology, or
-//!   fixed ratios at compile time, such as channel counts, chunk widths,
-//!   input/output ratios, slot indices, and block layouts.
+//!   fixed ratios at compile time, such as lane counts, chunk widths,
+//!   input/output ratios, slot indices, and view layouts.
 //! - When a structural parameter also determines stored memory shape, encode it
 //!   in the field type itself, typically with arrays like `[T; N]`, rather than
 //!   duplicating it as both a runtime field and a const generic.
 //! - Use wrapper newtypes for semantic adaptation and composition order
-//!   (`Chunk`, `Decimator`, `Channels`, `Minor`, `Major`, `Transpose`) rather
+//!   (`Chunk`, `Decimator`, `Lanes`, `Minor`, `Major`, `ByLane`) rather
 //!   than for user-tunable configuration.
 //! - Use stream adapters with explicit state when phase matters across time
 //!   (`Downsample`, `Hold`, `Decimator`, `Interpolator`); use structural adapters
 //!   when only per-call shape changes (`Rate`, `ChunkIn`, `ChunkOut`,
-//!   `ChunkInOut`, block layout markers).
+//!   `ChunkInOut`, view layout markers).
 //!
 //! In short: values live at runtime, shapes live in types, and composition
 //! semantics live in wrappers.
 
 mod process;
 pub use process::*;
-mod block;
-pub use block::*;
+mod view;
+pub use view::*;
 mod basic;
 pub use basic::*;
 mod adapters;
@@ -109,7 +109,7 @@ mod test {
         let y: i32 = f.process(5);
         assert_eq!(y, (5 + 3) + ((5 * 4) >> 1));
 
-        let y: [i32; 5] = f.channels().process([5; _]);
+        let y: [i32; 5] = f.lanes().process([5; _]);
         assert_eq!(y, [(5 + 3) + ((5 * 4) >> 1); 5]);
     }
 
@@ -130,32 +130,32 @@ mod test {
     }
 
     #[test]
-    fn frame_major_block_fallback() {
+    fn frame_major_view_fallback() {
         let mut p = Split::stateless(Offset(3));
-        let x = Block::from_frames(&[[1, 2], [3, 4]]);
+        let x = View::from_frames(&[[1, 2], [3, 4]]);
         let mut y = [[0; 2]; 2];
-        let yb = BlockMut::from_frames(&mut y);
-        p.process_block(x, yb);
+        let yb = ViewMut::from_frames(&mut y);
+        p.process_view(x, yb);
         assert_eq!(y, [[4, 5], [6, 7]]);
     }
 
     #[test]
-    fn channel_major_channels() {
-        let mut p = Split::stateless(Offset(3)).channels::<2>();
-        let x = Block::from_flat(&[1, 2, 3, 10, 20, 30], 3);
+    fn lane_major_lanes() {
+        let mut p = Split::stateless(Offset(3)).lanes::<2>();
+        let x = View::from_flat(&[1, 2, 3, 10, 20, 30], 3);
         let mut y = [0; 6];
-        let yb = BlockMut::from_flat(&mut y, 3);
-        p.process_block(x, yb);
+        let yb = ViewMut::from_flat(&mut y, 3);
+        p.process_view(x, yb);
         assert_eq!(y, [4, 5, 6, 13, 23, 33]);
     }
 
     #[test]
-    fn channel_major_transpose() {
-        let mut p = Split::new(Transpose::new([Offset(1), Offset(10)]), [(), ()]);
-        let x = Block::from_flat(&[1, 2, 3, 10, 20, 30], 3);
+    fn lane_major_by_lane() {
+        let mut p = Split::new(ByLane::new([Offset(1), Offset(10)]), [(), ()]);
+        let x = View::from_flat(&[1, 2, 3, 10, 20, 30], 3);
         let mut y = [0; 6];
-        let yb = BlockMut::from_flat(&mut y, 3);
-        p.process_block(x, yb);
+        let yb = ViewMut::from_flat(&mut y, 3);
+        p.process_view(x, yb);
         assert_eq!(y, [2, 3, 4, 20, 30, 40]);
     }
 
@@ -164,10 +164,10 @@ mod test {
         let mut p = Split::stateless(ChunkInOut::<_, 2, 1>(FnSplitProcess(
             |_: &mut (), [x0, x1]: [i32; 2]| [x0 + x1],
         )))
-        .frames();
-        let x = Block::from_frames(&[[1, 2], [3, 4]]);
+        .per_frame();
+        let x = View::from_frames(&[[1, 2], [3, 4]]);
         let mut y = [[0; 1]; 2];
-        let yb = BlockMut::from_frames(&mut y);
+        let yb = ViewMut::from_frames(&mut y);
         p.process_frames(x, yb);
         assert_eq!(y, [[3], [7]]);
     }

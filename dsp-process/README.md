@@ -13,7 +13,7 @@ cares about:
 * `no_std` and no allocation
 * separating immutable configuration from mutable runtime state
 * composing filters without hiding the data layout
-* sharing one configuration across many channels or states
+* sharing one configuration across many lanes or states
 
 The root `idsp` repository also carries composite examples such as a DDC/lock-in,
 FM discriminator, BPSK Costas loop, and a small polyphase channelizer that show
@@ -29,7 +29,7 @@ paths.
 
 The crate is deliberately narrower than general stream-processing frameworks. It
 does not try to model async execution, dynamic graphs, allocation, buffering
-ownership, or runtime scheduling. It focuses on synchronous sample/block
+ownership, or runtime scheduling. It focuses on synchronous sample/slice
 processing and on layouts that map cleanly to loops the compiler can optimize.
 
 ## Core Traits
@@ -42,7 +42,7 @@ The four main traits are:
 * [`SplitInplace`]: in-place variant of `SplitProcess`
 
 `SplitProcess` is the distinctive part of the crate. It lets one configuration be
-reused across many independent states, which is a good fit for multi-channel DSP,
+reused across many independent states, which is a good fit for multi-lane DSP,
 I/Q processing, polyphase banks, or coefficient sharing in embedded systems.
 
 ## Basic Example
@@ -79,13 +79,13 @@ A single filter configuration can be applied to multiple states:
 ```rust
 use dsp_process::{Process, Split, Offset};
 
-let mut channels = Split::stateless(Offset(3)).channels::<2>();
-assert_eq!(channels.process([1, 2]), [4, 5]);
-assert_eq!(channels.process([10, 20]), [13, 23]);
+let mut lanes = Split::stateless(Offset(3)).lanes::<2>();
+assert_eq!(lanes.process([1, 2]), [4, 5]);
+assert_eq!(lanes.process([10, 20]), [13, 23]);
 ```
 
 This is one of the main reasons the crate exists: the split form makes sharing
-configuration explicit instead of forcing each channel to own a full copy.
+configuration explicit instead of forcing each lane to own a full copy.
 
 ## Closures and Adapters
 
@@ -109,18 +109,18 @@ The crate supports several composition styles:
 
 * plain tuples and arrays for straightforward serial composition
 * [`Minor`] for processor-minor/data-major composition
-* [`Major`] for block processing with explicit intermediate scratch
+* [`Major`] for slice processing with explicit intermediate scratch
 * [`Parallel`] for parallel branches
-* [`Channels`] for many states with shared configuration
-* [`Transpose`] for explicit channel-major block processing
+* [`Lanes`] for many states with shared configuration
+* [`ByLane`] for explicit lane-major view processing
 
 These are not interchangeable in performance terms. The point is to make the
 choice explicit.
 
 `Minor` tends to fit processors with small state and configuration. `Major` is
-for cases where block processing and explicit intermediate storage improve cache
-behavior or register pressure. `Channels` and `Transpose` pair with typed block
-views so multi-channel locality and vectorization can be expressed explicitly.
+for cases where slice processing and explicit intermediate storage improve cache
+behavior or register pressure. `Lanes` and `ByLane` pair with typed views so
+multi-lane locality and vectorization can be expressed explicitly.
 
 ## Context in `idsp`
 
@@ -158,16 +158,16 @@ Compared with more general iterator or stream-style APIs, it keeps:
 
 This crate is intentionally not beginner-friendly in every corner.
 
-* The API is low level. Callers are expected to understand sample, block, and
-  state layout.
+* The API is low level. Callers are expected to understand sample, slice, and
+  view layout.
 * The traits are designed for hot paths, so some contracts are preconditions
   rather than dynamically checked ergonomic errors.
 * Static composition means type signatures can become large.
 * Some adapters rely on const-generic shape relations that are correct but not
   always obvious at the callsite.
-* `Channels` and `Transpose` use explicit block views for layout-sensitive block
+* `Lanes` and `ByLane` use explicit views for layout-sensitive view
   processing, which is more precise but also a more advanced API than ordinary
-  slice/block use.
+  ordinary slice use.
 
 In short: this crate optimizes for control and performance first, convenience
 second.
@@ -191,7 +191,7 @@ Concisely:
 * Static signal or graph composition libraries such as `dasp_signal` or FunDSP:
   those also support static composition, but they focus on frame/signal or
   audio-node abstractions. `dsp-process` is narrower: split config/state,
-  explicit block layout, `no_std`, and predictable loop shape are the center of
+  explicit view layout, `no_std`, and predictable loop shape are the center of
   the design.
 * Plain `Process`-only designs: simpler surface, but weaker support for
   coefficient sharing across many states.
@@ -199,28 +199,28 @@ Concisely:
 `dsp-process` is most useful in the middle ground: fixed topology, static
 composition, explicit state, and performance-sensitive DSP.
 
-## Notes on `Channels` and `Transpose`
+## Notes on `Lanes` and `ByLane`
 
-`Channels` and `Transpose` are layout tools, not just semantic conveniences.
-Their layout-sensitive block behavior is explicit through
-[`Block<_, _, ChannelMajor, _>`] and [`BlockMut<_, _, ChannelMajor, _>`], so the
-channel-major interpretation is visible at the type level instead of being
+`Lanes` and `ByLane` are layout tools, not just semantic conveniences. Their
+layout-sensitive view behavior is explicit through
+[`View<_, _, LaneMajor, _>`] and [`ViewMut<_, _, LaneMajor, _>`], so the
+lane-major interpretation is visible at the type level instead of being
 silently inferred from `[[X; N]]`.
 
 ```rust
-use dsp_process::{Block, BlockMut, BlockProcess, ChannelMajor, Offset, Split};
+use dsp_process::{LaneMajor, Offset, Split, View, ViewMut, ViewProcess};
 
-let mut p = Split::stateless(Offset(3)).channels::<2>();
-let x = Block::<_, ChannelMajor, 2>::from_flat(&[1, 2, 3, 10, 20, 30], 3);
+let mut p = Split::stateless(Offset(3)).lanes::<2>();
+let x = View::<_, LaneMajor, 2>::from_flat(&[1, 2, 3, 10, 20, 30], 3);
 let mut y = [0; 6];
-let yb = BlockMut::<_, ChannelMajor, 2>::from_flat(&mut y, 3);
-BlockProcess::process_block(&mut p, x, yb);
+let yb = ViewMut::<_, LaneMajor, 2>::from_flat(&mut y, 3);
+ViewProcess::process_view(&mut p, x, yb);
 assert_eq!(y, [4, 5, 6, 13, 23, 33]);
 ```
 
-Chunk adapters remain useful alongside block views. Use [`Split::frames()`]
-together with [`FrameProcess`] or [`FrameInplace`] to apply a chunk processor
-frame by frame to a frame-major block.
+Chunk adapters remain useful alongside typed views. Use [`Split::per_frame()`]
+and then call `process_frames()` or `inplace_frames()` on the resulting
+processor to apply a chunk processor frame by frame to a frame-major view.
 
 ## Guidance for Implementors
 

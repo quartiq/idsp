@@ -1,5 +1,5 @@
 use crate::{
-    Block, BlockMut, ChannelMajor, SplitBlockInplace, SplitBlockProcess, SplitInplace, SplitProcess,
+    LaneMajor, SplitInplace, SplitProcess, SplitViewInplace, SplitViewProcess, View, ViewMut,
 };
 use core::marker::PhantomData;
 
@@ -120,8 +120,8 @@ where
 /// Scalar `process()` and the signal semantics are unchanged.
 ///
 /// Without `Minor`, tuple and array composition are stage-major:
-/// one stage runs over the whole block and then the next stage runs over the
-/// whole block. With `Minor`, the outer loop is over samples and each sample is
+/// one stage runs over the whole slice and then the next stage runs over the
+/// whole slice. With `Minor`, the outer loop is over samples and each sample is
 /// pushed through the wrapped stages before moving to the next sample.
 ///
 /// Use this when:
@@ -143,7 +143,7 @@ where
 ///
 /// In short: `Minor` trades stage-wise streaming locality for per-sample stage
 /// locality. It is often good for tiny recursive stages, but it can be the
-/// wrong choice for stages whose block path exists to improve cache use or SIMD.
+/// wrong choice for stages whose slice path exists to improve cache use or SIMD.
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct Minor<C: ?Sized, U> {
@@ -218,7 +218,12 @@ where
     }
 }
 
-impl<X: Copy, U, C, S> SplitInplace<X, S> for Minor<C, U> where Self: SplitProcess<X, X, S> {}
+impl<X, U, C, S> SplitInplace<X, S> for Minor<C, U>
+where
+    X: Copy,
+    Self: SplitProcess<X, X, S>,
+{
+}
 
 //////////// SPLIT PARALLEL ////////////
 
@@ -229,7 +234,7 @@ impl<X: Copy, U, C, S> SplitInplace<X, S> for Minor<C, U> where Self: SplitProce
 /// the output. It does not reorder memory or introduce cross-lane interaction.
 ///
 /// Use this when the signal is already structurally parallel, such as I/Q pairs,
-/// stereo channels, or fixed branch banks. Use [`crate::Add`], [`crate::Sub`],
+/// stereo lane groups, or fixed branch banks. Use [`crate::Add`], [`crate::Sub`],
 /// or [`crate::Mul`] afterwards when those branch outputs should be reduced.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Parallel<P>(P);
@@ -285,27 +290,32 @@ where
     }
 }
 
-impl<X: Copy, C, S> SplitInplace<X, S> for Parallel<C> where Self: SplitProcess<X, X, S> {}
+impl<X, C, S> SplitInplace<X, S> for Parallel<C>
+where
+    X: Copy,
+    Self: SplitProcess<X, X, S>,
+{
+}
 
-//////////// TRANSPOSE ////////////
+//////////// BY LANE ////////////
 
-/// Explicit channel-major block interpretation for parallel compositions.
+/// Explicit lane-major view interpretation for parallel compositions.
 ///
 /// Scalar `process()` is the same as [`Parallel`]: each lane is processed by
-/// its matching branch. The difference is in block processing: under
-/// [`Block<_, _, ChannelMajor, _>`], each branch sees one long contiguous
-/// channel slice rather than strided frame-major data.
+/// its matching branch. The difference is in view processing: under
+/// [`View<_, _, LaneMajor, _>`], each branch sees one long contiguous lane
+/// slice rather than strided frame-major data.
 ///
-/// Use this when branches represent channels and block locality matters. This
-/// is often the right choice for SIMD-friendly per-channel kernels or when each
-/// branch has a useful `block()` specialization. Do not use it as a semantic
-/// transpose: it only changes how typed block views are interpreted and never
+/// Use this when branches represent lanes and view locality matters. This is
+/// often the right choice for SIMD-friendly per-lane kernels or when each
+/// branch has a useful slice-processing specialization. Do not use it as a semantic
+/// transpose: it only changes how typed views are interpreted and never
 /// allocates or physically moves data.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Transpose<C>(C);
+pub struct ByLane<C>(C);
 
-impl<C> Transpose<C> {
-    /// Create a [`Transpose`] wrapper around an existing composition.
+impl<C> ByLane<C> {
+    /// Create a [`ByLane`] wrapper around an existing composition.
     #[must_use]
     pub const fn new(inner: C) -> Self {
         Self(inner)
@@ -318,7 +328,7 @@ impl<C> Transpose<C> {
     }
 }
 
-impl<X: Copy, Y, C0, C1, S0, S1> SplitProcess<[X; 2], [Y; 2], (S0, S1)> for Transpose<(C0, C1)>
+impl<X: Copy, Y, C0, C1, S0, S1> SplitProcess<[X; 2], [Y; 2], (S0, S1)> for ByLane<(C0, C1)>
 where
     C0: SplitProcess<X, Y, S0>,
     C1: SplitProcess<X, Y, S1>,
@@ -332,25 +342,25 @@ where
 }
 
 impl<'a, 'b, X: Copy, Y, C0, C1, S0, S1>
-    SplitBlockProcess<Block<'a, X, ChannelMajor, 2>, BlockMut<'b, Y, ChannelMajor, 2>, (S0, S1)>
-    for Transpose<(C0, C1)>
+    SplitViewProcess<View<'a, X, LaneMajor, 2>, ViewMut<'b, Y, LaneMajor, 2>, (S0, S1)>
+    for ByLane<(C0, C1)>
 where
     C0: SplitProcess<X, Y, S0>,
     C1: SplitProcess<X, Y, S1>,
 {
-    fn process_block(
+    fn process_view(
         &self,
         state: &mut (S0, S1),
-        x: Block<'a, X, ChannelMajor, 2>,
-        mut y: BlockMut<'b, Y, ChannelMajor, 2>,
+        x: View<'a, X, LaneMajor, 2>,
+        mut y: ViewMut<'b, Y, LaneMajor, 2>,
     ) {
         debug_assert_eq!(x.frames(), y.frames());
-        self.0.0.block(&mut state.0, x.channel(0), y.channel_mut(0));
-        self.0.1.block(&mut state.1, x.channel(1), y.channel_mut(1));
+        self.0.0.block(&mut state.0, x.lane(0), y.lane_mut(0));
+        self.0.1.block(&mut state.1, x.lane(1), y.lane_mut(1));
     }
 }
 
-impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Transpose<[C; N]>
+impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for ByLane<[C; N]>
 where
     C: SplitProcess<X, Y, S>,
 {
@@ -361,67 +371,85 @@ where
 }
 
 impl<'a, 'b, X: Copy, Y, C, S, const N: usize>
-    SplitBlockProcess<Block<'a, X, ChannelMajor, N>, BlockMut<'b, Y, ChannelMajor, N>, [S; N]>
-    for Transpose<[C; N]>
+    SplitViewProcess<View<'a, X, LaneMajor, N>, ViewMut<'b, Y, LaneMajor, N>, [S; N]>
+    for ByLane<[C; N]>
 where
     C: SplitProcess<X, Y, S>,
 {
-    fn process_block(
+    fn process_view(
         &self,
         state: &mut [S; N],
-        x: Block<'a, X, ChannelMajor, N>,
-        mut y: BlockMut<'b, Y, ChannelMajor, N>,
+        x: View<'a, X, LaneMajor, N>,
+        mut y: ViewMut<'b, Y, LaneMajor, N>,
     ) {
         debug_assert_eq!(x.frames(), y.frames());
         for ((c, s), i) in self.0.iter().zip(state.iter_mut()).zip(0..) {
-            c.block(s, x.channel(i), y.channel_mut(i))
+            c.block(s, x.lane(i), y.lane_mut(i))
         }
     }
 }
 
-impl<X: Copy, C, S> SplitInplace<X, S> for Transpose<C> where Self: SplitProcess<X, X, S> {}
+impl<X, C, S> SplitInplace<X, S> for ByLane<C>
+where
+    X: Copy,
+    Self: SplitProcess<X, X, S>,
+{
+}
 
-impl<'a, X: Copy, C0, C1, S0, S1> SplitBlockInplace<BlockMut<'a, X, ChannelMajor, 2>, (S0, S1)>
-    for Transpose<(C0, C1)>
+impl<'a, X: Copy, C0, C1, S0, S1> SplitViewInplace<ViewMut<'a, X, LaneMajor, 2>, (S0, S1)>
+    for ByLane<(C0, C1)>
 where
     C0: SplitInplace<X, S0>,
     C1: SplitInplace<X, S1>,
 {
-    fn inplace_block(&self, state: &mut (S0, S1), mut xy: BlockMut<'a, X, ChannelMajor, 2>) {
-        self.0.0.inplace(&mut state.0, xy.channel_mut(0));
-        self.0.1.inplace(&mut state.1, xy.channel_mut(1));
+    fn inplace_view(&self, state: &mut (S0, S1), mut xy: ViewMut<'a, X, LaneMajor, 2>) {
+        self.0.0.inplace(&mut state.0, xy.lane_mut(0));
+        self.0.1.inplace(&mut state.1, xy.lane_mut(1));
     }
 }
 
-impl<'a, X: Copy, C, S, const N: usize> SplitBlockInplace<BlockMut<'a, X, ChannelMajor, N>, [S; N]>
-    for Transpose<[C; N]>
+impl<'a, X: Copy, C, S, const N: usize> SplitViewInplace<ViewMut<'a, X, LaneMajor, N>, [S; N]>
+    for ByLane<[C; N]>
 where
     C: SplitInplace<X, S>,
 {
-    fn inplace_block(&self, state: &mut [S; N], mut xy: BlockMut<'a, X, ChannelMajor, N>) {
+    fn inplace_view(&self, state: &mut [S; N], mut xy: ViewMut<'a, X, LaneMajor, N>) {
         for ((c, s), i) in self.0.iter().zip(state.iter_mut()).zip(0..) {
-            c.inplace(s, xy.channel_mut(i));
+            c.inplace(s, xy.lane_mut(i));
         }
     }
 }
 
-//////////// CHANNELS ////////////
+//////////// LANES ////////////
 
-/// Multiple channels with one shared configuration and separate states.
+/// Multiple lanes with one shared configuration and separate states.
 ///
-/// `Channels` is the main reason the split-state API exists: immutable
-/// configuration is stored once while each channel keeps its own mutable state.
+/// `Lanes` is the main reason the split-state API exists: immutable
+/// configuration is stored once while each lane keeps its own mutable state.
 /// Scalar processing is lane-wise over `[X; N]`.
 ///
-/// For block processing, pair it with [`Block<_, _, ChannelMajor, _>`] when the
-/// natural memory layout is channel-major and the inner stage benefits from long
-/// contiguous per-channel slices. Prefer this over `repeat()` when all channels
+/// For view processing, pair it with [`View<_, _, LaneMajor, _>`] when the
+/// natural memory layout is lane-major and the inner stage benefits from long
+/// contiguous per-lane slices. Prefer this over `repeat()` when all lanes
 /// should use exactly the same configuration.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{LaneMajor, Offset, Split, View, ViewMut, ViewProcess};
+///
+/// let mut p = Split::stateless(Offset(3)).lanes::<2>();
+/// let x = View::<_, LaneMajor, 2>::from_flat(&[1, 2, 3, 10, 20, 30], 3);
+/// let mut y = [0; 6];
+/// let yv = ViewMut::<_, LaneMajor, 2>::from_flat(&mut y, 3);
+/// ViewProcess::process_view(&mut p, x, yv);
+/// assert_eq!(y, [4, 5, 6, 13, 23, 33]);
+/// ```
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Channels<C>(C);
+pub struct Lanes<C>(C);
 
-impl<C> Channels<C> {
-    /// Create a [`Channels`] wrapper around an existing composition.
+impl<C> Lanes<C> {
+    /// Create a [`Lanes`] wrapper around an existing composition.
     #[must_use]
     pub const fn new(inner: C) -> Self {
         Self(inner)
@@ -434,10 +462,10 @@ impl<C> Channels<C> {
     }
 }
 
-/// Process data from multiple channels with a common configuration.
+/// Process data from multiple lanes with a common configuration.
 ///
-/// For layout-sensitive block processing use [`Block<_, _, ChannelMajor, _>`].
-impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Channels<C>
+/// For layout-sensitive view processing use [`View<_, _, LaneMajor, _>`].
+impl<X: Copy, Y, C, S, const N: usize> SplitProcess<[X; N], [Y; N], [S; N]> for Lanes<C>
 where
     C: SplitProcess<X, Y, S>,
 {
@@ -448,41 +476,45 @@ where
 }
 
 impl<'a, 'b, X: Copy, Y, C, S, const N: usize>
-    SplitBlockProcess<Block<'a, X, ChannelMajor, N>, BlockMut<'b, Y, ChannelMajor, N>, [S; N]>
-    for Channels<C>
+    SplitViewProcess<View<'a, X, LaneMajor, N>, ViewMut<'b, Y, LaneMajor, N>, [S; N]> for Lanes<C>
 where
     C: SplitProcess<X, Y, S>,
 {
-    fn process_block(
+    fn process_view(
         &self,
         state: &mut [S; N],
-        x: Block<'a, X, ChannelMajor, N>,
-        mut y: BlockMut<'b, Y, ChannelMajor, N>,
+        x: View<'a, X, LaneMajor, N>,
+        mut y: ViewMut<'b, Y, LaneMajor, N>,
     ) {
         debug_assert_eq!(x.frames(), y.frames());
         for (state, i) in state.iter_mut().zip(0..) {
-            self.0.block(state, x.channel(i), y.channel_mut(i))
+            self.0.block(state, x.lane(i), y.lane_mut(i))
         }
     }
 }
 
-impl<X: Copy, C, S> SplitInplace<X, S> for Channels<C> where Self: SplitProcess<X, X, S> {}
+impl<X, C, S> SplitInplace<X, S> for Lanes<C>
+where
+    X: Copy,
+    Self: SplitProcess<X, X, S>,
+{
+}
 
-impl<'a, X: Copy, C, S, const N: usize> SplitBlockInplace<BlockMut<'a, X, ChannelMajor, N>, [S; N]>
-    for Channels<C>
+impl<'a, X: Copy, C, S, const N: usize> SplitViewInplace<ViewMut<'a, X, LaneMajor, N>, [S; N]>
+    for Lanes<C>
 where
     C: SplitInplace<X, S>,
 {
-    fn inplace_block(&self, state: &mut [S; N], mut xy: BlockMut<'a, X, ChannelMajor, N>) {
+    fn inplace_view(&self, state: &mut [S; N], mut xy: ViewMut<'a, X, LaneMajor, N>) {
         for (state, i) in state.iter_mut().zip(0..) {
-            self.0.inplace(state, xy.channel_mut(i));
+            self.0.inplace(state, xy.lane_mut(i));
         }
     }
 }
 
 //////////// SPLIT MAJOR ////////////
 
-/// Stage-major block composition with explicit scratch storage.
+/// Stage-major slice composition with explicit scratch storage.
 ///
 /// `Major` keeps ordinary scalar `process()` semantics but changes `block()` and
 /// `inplace()` to process the pipeline in chunks through an explicit
@@ -494,7 +526,7 @@ where
 /// - stage-major traversal is better for cache behavior than sample-by-sample
 ///   traversal
 /// - an intermediate type change makes plain inplace composition impossible
-/// - preserving SIMD/autovectorization opportunities across block stages matters
+/// - preserving SIMD/autovectorization opportunities across slice stages matters
 ///
 /// Avoid it when:
 /// - stages are tiny and re-entering them per scratch chunk costs more than it saves
@@ -502,7 +534,7 @@ where
 /// - [`Minor`] already fits because the hot working set is tiny and per-sample
 ///   stage locality dominates
 ///
-/// In short: `Major` preserves stage-wise block processing and pays for that
+/// In short: `Major` preserves stage-wise slice processing and pays for that
 /// with explicit scratch.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Major<P: ?Sized, U> {
