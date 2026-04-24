@@ -1,7 +1,5 @@
 //! Frequency-response utilities for second-order sections.
 
-use core::iter;
-
 use crate::Complex;
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
@@ -11,12 +9,9 @@ use num_traits::{AsPrimitive, Float, FloatConst};
 use crate::iir::Biquad;
 
 fn polyval<T: Float>(p: &[T], x: Complex<T>) -> Complex<T> {
-    p.iter()
-        .copied()
-        .chain(iter::once(T::zero()))
-        .fold(Complex::new(T::zero(), T::zero()), |a, pi| {
-            a * x + Complex::new(pi, T::zero())
-        })
+    p.iter().fold(Complex::new(T::zero(), T::zero()), |a, &pi| {
+        a * x + Complex::new(pi, T::zero())
+    })
 }
 
 /// Evaluate a normalized `[b, a]` transfer function on the unit circle.
