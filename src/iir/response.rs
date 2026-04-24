@@ -8,10 +8,12 @@ use num_traits::{AsPrimitive, Float, FloatConst};
 
 use crate::iir::Biquad;
 
-fn polyval<T: Float>(p: &[T], x: Complex<T>) -> Complex<T> {
-    p.iter().fold(Complex::new(T::zero(), T::zero()), |a, &pi| {
-        a * x + Complex::new(pi, T::zero())
-    })
+fn polyval<T: Float>(p: &[T], z: Complex<T>) -> Complex<T> {
+    p.iter()
+        .rev()
+        .fold(Complex::new(T::zero(), T::zero()), |a, &p| {
+            a * z + Complex::new(p, T::zero())
+        })
 }
 
 /// Evaluate a normalized `[b, a]` transfer function on the unit circle.

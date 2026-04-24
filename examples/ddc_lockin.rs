@@ -50,7 +50,7 @@ struct DdcResult {
 
 fn run_graph(lo_freq: f32, cutoff: f32, x: &[f32]) -> Vec<Iq> {
     let mut ddc = ddc(lo_freq, cutoff);
-    x.iter().copied().map(|x| ddc.process(x)).collect()
+    x.iter().map(|&x| ddc.process(x)).collect()
 }
 
 // --- Fixture ---

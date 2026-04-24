@@ -40,11 +40,7 @@ fn atani(x: u32) -> u32 {
     ];
     // Evaluate the odd polynomial in x * P(x^2/4).
     let x2 = Q32::new(((x as i64 * x as i64) >> 32) as _);
-    let r = ATANI
-        .iter()
-        .copied()
-        .rev()
-        .fold(Q32::new(0), |r, a| (r * x2) + a);
+    let r = ATANI.iter().rev().fold(Q32::new(0), |r, &a| (r * x2) + a);
     (((r.inner as i64) * (x as i64)) >> 28) as u32
 }
 

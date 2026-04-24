@@ -179,9 +179,9 @@ mod test {
             let (y, f) = self.run(n);
             // println!("{:?} {:?}", f, y);
 
-            let fm = f.iter().copied().sum::<f32>() / f.len() as f32;
+            let fm = f.iter().sum::<f32>() / f.len() as f32;
             let fs = f.iter().map(|f| (*f - fm).powi(2)).sum::<f32>().sqrt() / f.len() as f32;
-            let ym = y.iter().copied().sum::<f32>() / y.len() as f32;
+            let ym = y.iter().sum::<f32>() / y.len() as f32;
             let ys = y.iter().map(|y| (*y - ym).powi(2)).sum::<f32>().sqrt() / y.len() as f32;
 
             println!("f: {:.2e}±{:.2e}; y: {:.2e}±{:.2e}", fm, fs, ym, ys);

@@ -175,7 +175,7 @@ impl<
             }
             // compute output
             let odd = get::<_, _, _, false, true>(&self.0, &state.odd);
-            for (y, (odd, even)) in y.iter_mut().zip(odd.zip(state.even.iter().copied())) {
+            for (y, (odd, &even)) in y.iter_mut().zip(odd.zip(state.even.iter())) {
                 *y = odd + even;
             }
             // keep state
@@ -220,7 +220,7 @@ impl<
             state.x[Self::LEN..][..x.len()].copy_from_slice(x);
             // compute output
             let odd = get::<_, _, _, false, true>(&self.0, &state.x);
-            for (y, (even, odd)) in y.iter_mut().zip(odd.zip(state.x[M..].iter().copied())) {
+            for (y, (even, &odd)) in y.iter_mut().zip(odd.zip(state.x[M..].iter())) {
                 *y = [even, odd]; // interpolated, center tap: identity
             }
             // keep state
