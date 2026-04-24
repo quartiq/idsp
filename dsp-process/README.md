@@ -15,9 +15,8 @@ cares about:
 * composing filters without hiding the data layout
 * sharing one configuration across many lanes or states
 
-The root `idsp` repository also carries composite examples such as a DDC/lock-in,
-FM discriminator, BPSK Costas loop, and a small polyphase channelizer that show
-how these primitives fit together in real DSP graphs.
+The root `idsp` repository also carries composite examples that show how these
+primitives fit together in real DSP graphs.
 
 This README is the crate-level documentation via `#![doc = include_str!(...)]`.
 

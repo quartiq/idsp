@@ -11,6 +11,15 @@ Many of the algorithms are implemented on integer (fixed point) datatypes.
 
 One comprehensive user for these algorithms is [Stabilizer](https://github.com/quartiq/stabilizer).
 
+## Showcase examples
+
+The repository examples are small composite DSP graphs built from `idsp` and
+`dsp-process` primitives:
+
+* `cargo run --example ddc_lockin --features std`: real-input DDC / lock-in with shared biquad state
+* `cargo run --example fm_disc --features std`: FM discriminator receiver core using `cossin()`/`atan2()`
+* `cargo run --example polyphase_channelizer --features std`: static 4-channel polyphase analysis bank
+
 ## Fixed point
 
 ### Cosine/Sine
@@ -42,7 +51,7 @@ Tools to handle, track, and unwrap phase signals or generate them.
 Robust and clean clipping and offset (anti-windup, no derivative kick, dynamically adjustable gains and gain limits) suitable for PID controller applications.
 Four kinds of filter action are supported for each Biquad: Direct Form 1, Direct Form 2 Transposed, Direct Form 1 with noise shaping,
 and Direct Form 1 with wide output.
-Coefficient sharing for multiple channels is implemented through [`dsp_process::SplitProcess`], [`dsp_process::Channels`].
+Coefficient sharing for multiple lanes/channels is implemented through [`dsp_process::SplitProcess`], [`dsp_process::Lanes`].
 
 ### Comparison
 
