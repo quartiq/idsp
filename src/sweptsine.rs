@@ -1,6 +1,8 @@
 use core::iter::FusedIterator;
+use core::num::Wrapping;
 
-use crate::{Complex, cossin::cossin};
+use crate::Complex;
+use dsp_process::{Integrator, Process, Split, SplitProcess};
 use num_traits::{FloatConst, real::Real};
 
 const Q: f32 = (1i64 << 32) as f32;
@@ -24,13 +26,7 @@ impl Iterator for Sweep {
     fn next(&mut self) -> Option<Self::Item> {
         const BIAS: i64 = 1 << 31;
         let s = self.state;
-        match self
-            .state
-            .checked_add(self.rate as i64 * ((s + BIAS) >> 32))
-        {
-            Some(s) => self.state = s,
-            None => self.state = 0,
-        }
+        self.state = s.checked_add(self.rate as i64 * ((s + BIAS) >> 32))?;
         Some(s)
     }
 }
@@ -133,39 +129,52 @@ pub enum SweepError {
     Stop,
 }
 
-/// Accumulating oscillator
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+/// Phase to IQ conversion
+#[derive(Clone, Debug, PartialEq, PartialOrd, Default)]
+pub struct Osc;
+
+macro_rules! impl_osc {
+    ($x:ty, $y:ty) => {
+        impl SplitProcess<$x, Complex<$y>> for Osc {
+            fn process(&self, _: &mut (), x: $x) -> Complex<$y> {
+                Complex::<$y>::from_angle(x)
+            }
+        }
+    };
+}
+impl_osc!(Wrapping<i32>, i32);
+impl_osc!(f32, f32);
+impl_osc!(f64, f64);
+
+/// Exponentially swept sine
+#[derive(Clone, Debug)]
 pub struct AccuOsc<T> {
     sweep: T,
-    /// Current phase
-    pub state: i64,
+    accu: Integrator<Wrapping<i64>>,
 }
 
 impl<T> AccuOsc<T> {
-    /// Create a new accumulating oscillator
-    #[inline]
-    pub const fn new(sweep: T) -> Self {
-        Self { sweep, state: 0 }
+    /// Create a new ExpSweptSine
+    pub fn new(sweep: T) -> Self {
+        Self {
+            sweep,
+            accu: Default::default(),
+        }
+    }
+
+    /// Get the current phase
+    pub fn state(&self) -> Wrapping<i64> {
+        self.accu.0
     }
 }
 
-/// Post-increment
 impl<T: Iterator<Item = i64>> Iterator for AccuOsc<T> {
     type Item = Complex<i32>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.sweep.next().map(|f| {
-            let s = self.state;
-            self.state = s.wrapping_add(f);
-            let (re, im) = cossin((s >> 32) as _);
-            Complex::new(re, im)
-        })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.sweep.size_hint()
+        self.sweep
+            .next()
+            .map(|p| Split::stateless(Osc).process(Wrapping((self.accu.process(p).0 >> 32) as _)))
     }
 }
 

@@ -123,10 +123,7 @@ fn run_graph(x: &[Iq]) -> Vec<Frame> {
 
 fn tone(freq: f32, n: usize) -> Vec<Iq> {
     (0..n)
-        .map(|i| {
-            let z = Complex::<f32>::from_angle_rad(TAU * freq * i as f32);
-            [z.re(), z.im()]
-        })
+        .map(|i| Complex::<f32>::from_angle(TAU * freq * i as f32).0)
         .collect()
 }
 

@@ -179,7 +179,7 @@ where
 
 impl Complex<f32> {
     /// Return a unit complex number from a floating-point angle in radians.
-    pub fn from_angle_rad(angle: f32) -> Self {
+    pub fn from_angle(angle: f32) -> Self {
         let (s, c) = angle.sin_cos();
         Self::new(c, s)
     }
@@ -187,7 +187,7 @@ impl Complex<f32> {
 
 impl Complex<f64> {
     /// Return a unit complex number from a floating-point angle in radians.
-    pub fn from_angle_rad(angle: f64) -> Self {
+    pub fn from_angle(angle: f64) -> Self {
         let (s, c) = angle.sin_cos();
         Self::new(c, s)
     }
@@ -222,9 +222,9 @@ impl Complex<i32> {
     /// ```
     /// use core::num::Wrapping as W;
     /// use idsp::Complex;
-    /// Complex::<_>::from_angle(W(0));
-    /// Complex::<_>::from_angle(W(1 << 30)); // pi/2
-    /// Complex::<_>::from_angle(W(-1 << 30)); // -pi/2
+    /// Complex::<i32>::from_angle(W(0));
+    /// Complex::<i32>::from_angle(W(1 << 30)); // pi/2
+    /// Complex::<i32>::from_angle(W(-1 << 30)); // -pi/2
     /// ```
     pub fn from_angle(angle: Wrapping<i32>) -> Self {
         let (c, s) = cossin(angle.0);

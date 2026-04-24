@@ -32,7 +32,7 @@ impl<C: SplitProcess<i32, i32, S>, S> SplitProcess<(i32, Wrapping<i32>), Complex
     /// Update the lockin with a sample taken at a given phase.
     fn process(&self, state: &mut [S; 2], x: (i32, Wrapping<i32>)) -> Complex<i32> {
         // Get the LO signal for demodulation and mix the sample;
-        let lo = Complex::<Q32<32>>::from_bits(Complex::from_angle(x.1));
+        let lo = Complex::<Q32<32>>::from_bits(Complex::<i32>::from_angle(x.1));
         self.process(state, (x.0, lo))
     }
 }

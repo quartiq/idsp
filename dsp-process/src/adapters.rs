@@ -419,11 +419,10 @@ where
 /// representation cast to flatten `[[Y; R]; N]` into `[Y; R * N]` without the
 /// generic scratch-buffer path.
 ///
-/// This is only available when `Y` is [`Pod`] and is mainly a codegen/cache
+/// This is only available when `Y` is `bytemuck::Pod` and is mainly a codegen/cache
 /// choice, not a semantic one.
 ///
 /// # Examples
-///
 #[cfg_attr(
     feature = "bytemuck",
     doc = r##"/// ```rust
