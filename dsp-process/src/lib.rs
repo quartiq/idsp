@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 #![doc = include_str!("../README.md")]
 //!
 //! ## API Parameterization Rules
@@ -122,6 +122,7 @@ mod test {
         assert_eq!(y, [3, 7]);
     }
 
+    #[cfg(feature = "bytemuck")]
     #[test]
     fn chunk_out_pod() {
         let mut p = Split::stateless(ChunkOutPod(FnSplitProcess(|_: &mut (), x: i32| [x, -x])));

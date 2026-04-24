@@ -1,5 +1,3 @@
-use bytemuck::{Pod, cast};
-
 use crate::{SplitInplace, SplitProcess};
 
 /// Adapt a scalar optional-input stage to chunk output mode.
@@ -426,24 +424,28 @@ where
 ///
 /// # Examples
 ///
-/// ```rust
+#[cfg_attr(
+    feature = "bytemuck",
+    doc = r##"/// ```rust
 /// use dsp_process::{ChunkOutPod, FnSplitProcess, Process, Split};
 ///
 /// let mut p = Split::stateless(ChunkOutPod::<_, 2>(FnSplitProcess(|_: &mut (), x: i32| {
 ///     [x, -x]
 /// })));
 /// assert_eq!(p.process([2, 3]), [2, -2, 3, -3]);
-/// ```
+/// ```"##
+)]
 #[derive(Debug, Copy, Clone, Default)]
 pub struct ChunkOutPod<P, const R: usize>(pub P);
-impl<C, S, X: Copy, Y: Pod, const N: usize, const R: usize, const M: usize>
+#[cfg(feature = "bytemuck")]
+impl<C, S, X: Copy, Y: bytemuck::Pod, const N: usize, const R: usize, const M: usize>
     SplitProcess<[X; N], [Y; M], S> for ChunkOutPod<C, R>
 where
     C: SplitProcess<X, [Y; R], S>,
 {
     fn process(&self, state: &mut S, x: [X; N]) -> [Y; M] {
         const { assert!(R * N == M) }
-        cast::<[[Y; R]; N], [Y; M]>(x.map(|x| self.0.process(state, x)))
+        bytemuck::cast::<[[Y; R]; N], [Y; M]>(x.map(|x| self.0.process(state, x)))
     }
 
     fn block(&self, state: &mut S, x: &[[X; N]], y: &mut [[Y; M]]) {
@@ -454,6 +456,7 @@ where
         self.0.block(state, x.as_flattened(), y)
     }
 }
+#[cfg(feature = "bytemuck")]
 impl<C: SplitInplace<[X; 1], S>, S, X: Copy, const N: usize> SplitInplace<[X; N], S>
     for ChunkOutPod<C, 1>
 where

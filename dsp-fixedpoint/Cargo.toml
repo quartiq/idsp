@@ -29,3 +29,6 @@ serde = { version = "1.0.228", default-features = false, features = [
 
 [lints]
 workspace = true
+
+[package.metadata."docs.rs"]
+all-features = true

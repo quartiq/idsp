@@ -10,13 +10,16 @@ keywords = ["dsp", "embedded", "no-std", "filter", "pipeline"]
 categories = ["embedded", "no-std", "science"]
 
 [features]
-std = []
+bytemuck = ["dep:bytemuck"]
 
 [dependencies]
-bytemuck = { version = "1.25.0", features = ["min_const_generics"] }
+bytemuck = { version = "1.25.0", features = ["min_const_generics"], optional = true }
 
 [dev-dependencies]
 dsp-fixedpoint.workspace = true
 
 [lints]
 workspace = true
+
+[package.metadata."docs.rs"]
+all-features = true
