@@ -2,6 +2,8 @@
 use num_traits::{AsPrimitive, Float, FloatConst};
 use serde::{Deserialize, Serialize};
 
+use crate::iir::{Biquad, BiquadClamp, Error};
+
 /// Transition/corner shape
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Shape<T> {
@@ -36,6 +38,49 @@ pub struct Filter<T> {
     pub shape: Shape<T>,
 }
 
+/// Standard audio/WebAudio biquad type.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default, PartialEq, PartialOrd)]
+pub enum Type {
+    /// A lowpass
+    #[default]
+    Lowpass,
+    /// A highpass
+    Highpass,
+    /// A bandpass
+    Bandpass,
+    /// An allpass
+    Allpass,
+    /// A notch
+    Notch,
+    /// A peaking filter
+    Peaking,
+    /// A low shelf
+    Lowshelf,
+    /// A high shelf
+    Highshelf,
+    /// Integrator over harmonic oscillator
+    IHo,
+}
+
+/// WebAudio-style biquad builder.
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct WebAudio<T> {
+    /// Filter type.
+    pub typ: Type,
+    /// Reference frequency in Hz.
+    pub frequency_hz: T,
+    /// Sample rate in Hz.
+    pub sample_rate_hz: T,
+    /// Detune in cents.
+    pub detune_cents: T,
+    /// Quality factor.
+    pub q: T,
+    /// Filter gain in dB.
+    ///
+    /// Used for `Peaking`, `Lowshelf`, and `Highshelf`.
+    pub gain_db: T,
+}
+
 impl<T: Float + FloatConst> Default for Filter<T> {
     fn default() -> Self {
         Self {
@@ -43,6 +88,19 @@ impl<T: Float + FloatConst> Default for Filter<T> {
             gain: T::one(),
             shape: Shape::default(),
             shelf: T::one(),
+        }
+    }
+}
+
+impl<T: Float + FloatConst> Default for WebAudio<T> {
+    fn default() -> Self {
+        Self {
+            typ: Type::Lowpass,
+            frequency_hz: T::from(350.0).unwrap(),
+            sample_rate_hz: T::from(48e3).unwrap(),
+            detune_cents: T::zero(),
+            q: T::one(),
+            gain_db: T::zero(),
         }
     }
 }
@@ -176,6 +234,31 @@ where
         self
     }
 
+    /// Check whether the parametrization is valid.
+    pub fn validate(&self) -> Result<(), Error> {
+        if !self.frequency.is_finite() {
+            return Err(Error::NonFinite("frequency"));
+        }
+        if self.frequency < T::zero() || self.frequency > T::PI() {
+            return Err(Error::OutOfRange("frequency"));
+        }
+        if !self.gain.is_finite() || self.gain <= T::zero() {
+            return Err(Error::NonPositive("gain"));
+        }
+        if !self.shelf.is_finite() || self.shelf <= T::zero() {
+            return Err(Error::NonPositive("shelf"));
+        }
+        match self.shape {
+            Shape::Q(q) if !q.is_finite() => Err(Error::NonFinite("q")),
+            Shape::Q(q) if q <= T::zero() => Err(Error::NonPositive("q")),
+            Shape::Bandwidth(bw) if !bw.is_finite() => Err(Error::NonFinite("bandwidth")),
+            Shape::Bandwidth(_) => Ok(()),
+            Shape::Slope(s) if !s.is_finite() => Err(Error::NonFinite("slope")),
+            Shape::Slope(s) if s <= T::zero() => Err(Error::NonPositive("slope")),
+            Shape::Q(_) | Shape::Slope(_) => Ok(()),
+        }
+    }
+
     /// Get inverse Q
     fn qi(&self) -> T {
         match self.shape {
@@ -184,9 +267,9 @@ where
                 2.0.as_()
                     * (T::LN_2() / 2.0.as_() * bw * self.frequency / self.frequency.sin()).sinh()
             }
-            Shape::Slope(s) => {
-                ((self.gain + T::one() / self.gain) * (T::one() / s - T::one()) + 2.0.as_()).sqrt()
-            }
+            Shape::Slope(s) => ((self.shelf + T::one() / self.shelf) * (T::one() / s - T::one())
+                + 2.0.as_())
+            .sqrt(),
         }
     }
 
@@ -385,6 +468,148 @@ where
             [a + fsin, (-2.0).as_() * a, a - fsin],
         ]
     }
+
+    /// Build the requested filter coefficients in cookbook `[b, a]` form.
+    pub fn build(&self, typ: Type) -> [[T; 3]; 2] {
+        match typ {
+            Type::Lowpass => self.lowpass(),
+            Type::Highpass => self.highpass(),
+            Type::Bandpass => self.bandpass(),
+            Type::Allpass => self.allpass(),
+            Type::Notch => self.notch(),
+            Type::Peaking => self.peaking(),
+            Type::Lowshelf => self.lowshelf(),
+            Type::Highshelf => self.highshelf(),
+            Type::IHo => self.iho(),
+        }
+    }
+
+    /// Build the requested filter coefficients after validation.
+    pub fn try_build(&self, typ: Type) -> Result<[[T; 3]; 2], Error> {
+        self.validate()?;
+        Ok(self.build(typ))
+    }
+
+    /// Build the requested filter as a normalized [`Biquad`].
+    pub fn build_biquad<C>(&self, typ: Type) -> Biquad<C>
+    where
+        Biquad<C>: From<[[T; 3]; 2]>,
+    {
+        self.build(typ).into()
+    }
+
+    /// Build the requested filter as a normalized [`Biquad`] after validation.
+    pub fn try_build_biquad<C>(&self, typ: Type) -> Result<Biquad<C>, Error>
+    where
+        Biquad<C>: From<[[T; 3]; 2]>,
+    {
+        Ok(self.try_build(typ)?.into())
+    }
+
+    /// Build the requested filter as a default-clamped [`BiquadClamp`].
+    pub fn build_clamped<C, Y>(&self, typ: Type) -> BiquadClamp<C, Y>
+    where
+        BiquadClamp<C, Y>: From<[[T; 3]; 2]>,
+    {
+        self.build(typ).into()
+    }
+
+    /// Build the requested filter as a default-clamped [`BiquadClamp`] after validation.
+    pub fn try_build_clamped<C, Y>(&self, typ: Type) -> Result<BiquadClamp<C, Y>, Error>
+    where
+        BiquadClamp<C, Y>: From<[[T; 3]; 2]>,
+    {
+        Ok(self.try_build(typ)?.into())
+    }
+}
+
+impl<T> WebAudio<T>
+where
+    T: 'static + Float + FloatConst,
+    f32: AsPrimitive<T>,
+{
+    /// Build the equivalent cookbook filter.
+    pub fn filter(&self) -> Filter<T> {
+        let mut filter = Filter::default();
+        filter.frequency(
+            self.frequency_hz * (self.detune_cents / 1200.0.as_()).exp2(),
+            self.sample_rate_hz,
+        );
+        filter.q(self.q);
+        if matches!(self.typ, Type::Peaking | Type::Lowshelf | Type::Highshelf) {
+            filter.shelf_db(self.gain_db);
+        }
+        filter
+    }
+
+    /// Check whether the parametrization is valid.
+    pub fn validate(&self) -> Result<(), Error> {
+        for (name, value) in [
+            ("frequency_hz", self.frequency_hz),
+            ("sample_rate_hz", self.sample_rate_hz),
+            ("detune_cents", self.detune_cents),
+            ("q", self.q),
+            ("gain_db", self.gain_db),
+        ] {
+            if !value.is_finite() {
+                return Err(Error::NonFinite(name));
+            }
+        }
+        if self.sample_rate_hz <= T::zero() {
+            return Err(Error::NonPositive("sample_rate_hz"));
+        }
+        if self.q <= T::zero() {
+            return Err(Error::NonPositive("q"));
+        }
+        let computed_frequency = self.frequency_hz * (self.detune_cents / 1200.0.as_()).exp2();
+        if computed_frequency < T::zero() || computed_frequency > self.sample_rate_hz / 2.0.as_() {
+            return Err(Error::OutOfRange("computed_frequency_hz"));
+        }
+        Ok(())
+    }
+
+    /// Build the requested coefficients in cookbook `[b, a]` form.
+    pub fn build(&self) -> [[T; 3]; 2] {
+        self.filter().build(self.typ)
+    }
+
+    /// Build the requested coefficients after validation.
+    pub fn try_build(&self) -> Result<[[T; 3]; 2], Error> {
+        self.validate()?;
+        self.filter().try_build(self.typ)
+    }
+
+    /// Build a normalized [`Biquad`].
+    pub fn build_biquad<C>(&self) -> Biquad<C>
+    where
+        Biquad<C>: From<[[T; 3]; 2]>,
+    {
+        self.build().into()
+    }
+
+    /// Build a normalized [`Biquad`] after validation.
+    pub fn try_build_biquad<C>(&self) -> Result<Biquad<C>, Error>
+    where
+        Biquad<C>: From<[[T; 3]; 2]>,
+    {
+        Ok(self.try_build()?.into())
+    }
+
+    /// Build a default-clamped [`BiquadClamp`].
+    pub fn build_clamped<C, Y>(&self) -> BiquadClamp<C, Y>
+    where
+        BiquadClamp<C, Y>: From<[[T; 3]; 2]>,
+    {
+        self.build().into()
+    }
+
+    /// Build a default-clamped [`BiquadClamp`] after validation.
+    pub fn try_build_clamped<C, Y>(&self) -> Result<BiquadClamp<C, Y>, Error>
+    where
+        BiquadClamp<C, Y>: From<[[T; 3]; 2]>,
+    {
+        Ok(self.try_build()?.into())
+    }
 }
 
 // TODO
@@ -398,11 +623,9 @@ where
 mod test {
     use super::*;
 
+    use crate::iir::{Biquad, DirectForm1Dither, response::ba_frequency_response};
     use dsp_fixedpoint::Q32;
     use dsp_process::SplitProcess;
-    use num_complex::Complex64;
-
-    use crate::iir::{Biquad, DirectForm1Dither};
 
     #[test]
     #[ignore]
@@ -423,27 +646,13 @@ mod test {
         }
     }
 
-    fn polyval(p: &[f64], x: Complex64) -> Complex64 {
-        p.iter()
-            .fold(
-                (Complex64::default(), Complex64::new(1.0, 0.0)),
-                |(a, xi), pi| (a + xi * *pi, xi * x),
-            )
-            .0
-    }
-
-    fn freqz(b: &[f64], a: &[f64], f: f64) -> Complex64 {
-        let z = Complex64::new(0.0, -core::f64::consts::TAU * f).exp();
-        polyval(b, z) / polyval(a, z)
-    }
-
     #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
     enum Tol {
         GainDb(f64, f64),
         GainBelowDb(f64),
     }
     impl Tol {
-        fn check(&self, h: Complex64) -> bool {
+        fn check(&self, h: num_complex::Complex64) -> bool {
             let g = 10.0 * h.norm_sqr().log10();
             match self {
                 Self::GainDb(want, tol) => (g - want).abs() <= *tol,
@@ -453,7 +662,7 @@ mod test {
     }
 
     fn check_freqz(f: f64, g: Tol, ba: &[[f64; 3]; 2]) {
-        let h = freqz(&ba[0], &ba[1], f);
+        let h = ba_frequency_response(&ba[0], &ba[1], f);
         let hp = h.to_polar();
         assert!(
             g.check(h),
