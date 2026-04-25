@@ -6,18 +6,17 @@
 //! - tuple composition plus `Minor` to expose the graph as `polyphase bank -> DFT`
 //! - a framewise polyphase FIR kernel with one shared circular head across all phases
 //! - real prototype taps applied to I/Q lanes separately, because the FIR is linear
-//! - `idsp::Complex::<f32>::from_angle_rad()` only in the fixture, for readable tones
+//! - `idsp::Complex::<f32>::from_angle()` only in the fixture, for readable tones
 //!
 //! This intentionally does not use `Lanes`/`ByLane` in the hot kernel. The good
 //! implementation updates all phases together once per frame, so the natural
 //! state is one shared delay bank rather than four independent lane processors.
 
-use bytemuck;
 use dsp_process::{Split, SplitProcess, View, ViewMut};
 use idsp::Complex;
 use std::f32::consts::TAU;
 
-const M: usize = 4; // DFT4
+const M: usize = 4; // DFT4 channels and decimation.
 const TAPS: usize = 8;
 
 type Iq = [f32; 2];

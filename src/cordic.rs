@@ -109,7 +109,6 @@ pub fn sqrt_atanh2(x: i32, y: i32, z: i32) -> (i32, i32) {
 #[cfg(test)]
 mod test {
     use core::f64::consts::PI;
-    use log;
     use quickcheck_macros::quickcheck;
     use rand::{prelude::*, rngs::StdRng};
 

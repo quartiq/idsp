@@ -59,7 +59,9 @@ impl<X: Copy> Inplace<X> for Sub where Self: Process<X> {}
 /// Sum and difference of a two-element input.
 ///
 /// This is the classic butterfly primitive used in lattice, complementary, and
-/// polyphase-style constructions.
+/// polyphase-style constructions. It is also the unnormalized 2-point
+/// Hadamard/Haar transform; apply any desired normalization outside the
+/// primitive.
 ///
 /// # Examples
 ///

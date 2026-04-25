@@ -133,7 +133,7 @@ mod test {
         fn run(&mut self, n: usize) -> (Vec<f32>, Vec<f32>) {
             assert!(self.period >= 1 << self.rpll_config.dt2);
             assert!(self.period < 1 << self.rpll_config.shift_frequency);
-            assert!(self.period < 1 << self.rpll_config.shift_phase + 1);
+            assert!(self.period < 1 << (self.rpll_config.shift_phase + 1));
 
             let mut y = Vec::<f32>::new();
             let mut f = Vec::<f32>::new();
@@ -157,7 +157,7 @@ mod test {
                 // phase error
                 y.push((yi - y_ref).0 as f32 / 2f32.powi(32));
 
-                let p_ref = 1 << 32 + self.rpll_config.dt2;
+                let p_ref = 1 << (32 + self.rpll_config.dt2);
                 let p_sig = fi.0 as u64 * self.period as u64;
                 // relative frequency error
                 f.push(
@@ -172,8 +172,8 @@ mod test {
         }
 
         fn measure(&mut self, n: usize, limits: [f32; 4]) {
-            let t_settle = (1 << self.rpll_config.shift_frequency - self.rpll_config.dt2 + 4)
-                + (1 << self.rpll_config.shift_phase - self.rpll_config.dt2 + 4);
+            let t_settle = (1 << (self.rpll_config.shift_frequency - self.rpll_config.dt2 + 4))
+                + (1 << (self.rpll_config.shift_phase - self.rpll_config.dt2 + 4));
             self.run(t_settle);
 
             let (y, f) = self.run(n);

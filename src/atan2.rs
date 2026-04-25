@@ -113,15 +113,14 @@ mod tests {
     #[test]
     fn atan2_absolute_error() {
         const N: usize = 321;
-        let mut test_vals = [0i32; N + 2];
         let scale = (1i64 << 31) as f64;
-        for i in 0..N {
-            test_vals[i] = (scale * (-1. + 2. * i as f64 / N as f64)) as i32;
-        }
+        let mut test_vals: Vec<_> = (0..N)
+            .map(|i| (scale * (-1. + 2. * i as f64 / N as f64)) as i32)
+            .collect();
 
         assert!(test_vals.contains(&i32::MIN));
-        test_vals[N] = i32::MAX;
-        test_vals[N + 1] = 0;
+        test_vals.push(i32::MAX);
+        test_vals.push(0);
 
         let mut rms_err = 0f64;
         let mut abs_err = 0f64;
