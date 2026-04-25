@@ -623,7 +623,7 @@ where
 mod test {
     use super::*;
 
-    use crate::iir::{Biquad, DirectForm1Dither, response::ba_frequency_response};
+    use crate::iir::{Biquad, DirectForm1Dither, response::freqz};
     use dsp_fixedpoint::Q32;
     use dsp_process::SplitProcess;
     use rustfft::num_complex::Complex64;
@@ -663,7 +663,7 @@ mod test {
     }
 
     fn check_freqz(f: f64, g: Tol, ba: &[[f64; 3]; 2]) {
-        let h = ba_frequency_response(&ba[0], &ba[1], f);
+        let h = freqz(&ba[0], &ba[1], f);
         let h = Complex64::new(h.re(), h.im());
         let hp = h.to_polar();
         assert!(

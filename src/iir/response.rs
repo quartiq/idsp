@@ -16,10 +16,10 @@ fn polyval<T: Float>(p: &[T], z: Complex<T>) -> Complex<T> {
         })
 }
 
-/// Evaluate a normalized `[b, a]` transfer function on the unit circle.
+/// Evaluate a `[b, a]` transfer function on the unit circle.
 ///
 /// `frequency` is relative to the sample rate.
-pub fn ba_frequency_response<T: Float + FloatConst>(b: &[T], a: &[T], frequency: T) -> Complex<T> {
+pub fn freqz<T: Float + FloatConst>(b: &[T], a: &[T], frequency: T) -> Complex<T> {
     let (i, r) = (-T::TAU() * frequency).sin_cos();
     let z = Complex::new(r, i);
     let q = polyval(a, z);
@@ -30,11 +30,11 @@ impl<C> Biquad<C> {
     /// Evaluate the transfer function on the unit circle.
     ///
     /// `frequency` is relative to the sample rate.
-    pub fn frequency_response<T: 'static + Float + FloatConst>(&self, frequency: T) -> Complex<T>
+    pub fn freqz<T: 'static + Float + FloatConst>(&self, frequency: T) -> Complex<T>
     where
         C: Copy + AsPrimitive<T>,
     {
         let [b0, b1, b2, a1, a2] = self.ba.map(AsPrimitive::as_);
-        ba_frequency_response(&[b0, b1, b2], &[T::one(), -a1, -a2], frequency)
+        freqz(&[b0, b1, b2], &[T::one(), -a1, -a2], frequency)
     }
 }
