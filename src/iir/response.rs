@@ -18,8 +18,15 @@ fn polyval<T: Float>(p: &[T], z: Complex<T>) -> Complex<T> {
 
 /// Evaluate a `[b, a]` transfer function on the unit circle.
 ///
+/// Evaluates
+/// `H(z) = (sum_k b[k] z^-k) / (sum_k a[k] z^-k)` at `z = exp(-j 2 pi frequency)`.
+///
 /// `frequency` is relative to the sample rate.
+///
+/// `a` and `b` use the literature/cookbook sign convention, not the internal
+/// [`Biquad`] storage convention. `a` must be non-empty.
 pub fn freqz<T: Float + FloatConst>(b: &[T], a: &[T], frequency: T) -> Complex<T> {
+    assert!(!a.is_empty(), "freqz requires a non-empty denominator");
     let (i, r) = (-T::TAU() * frequency).sin_cos();
     let z = Complex::new(r, i);
     let q = polyval(a, z);
