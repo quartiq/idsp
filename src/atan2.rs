@@ -1,31 +1,47 @@
-fn divi(mut y: u32, mut x: u32) -> u32 {
-    debug_assert!(y <= x);
-    let z = y.leading_zeros().min(15);
-    y <<= z;
-    x += (1 << (15 - z)) - 1;
-    x >>= 16 - z;
-    if x == 0 {
-        0 // x == y == 0
-    } else {
-        ((y / x) << 15) + (1 << 14)
-    }
+use dsp_fixedpoint::Q32;
+
+include!(concat!(env!("OUT_DIR"), "/atan2_divi_table.rs"));
+
+/// Fixed point unsigned multiplication without roudning bias
+#[inline(always)]
+fn mul_q31(x: u32, y: u32) -> u32 {
+    ((x as u64 * y as u64) >> 31) as u32
 }
 
+/// Divide y/x with y <= x
+fn divi(y: u32, x: u32) -> u32 {
+    debug_assert!(y <= x);
+    if x == 0 {
+        return 0;
+    }
+    // Normalize `x` to Q1.31 on [1, 2), interpolate a reciprocal seed from a
+    // small LUT, and refine it with one Newton step.
+    let shift = x.leading_zeros();
+    let y = y << shift;
+    let x = x << shift;
+    const FRAC_BITS: u32 = 31 - ATAN2_DIVI_DEPTH as u32;
+    let rem = x & ((1 << FRAC_BITS) - 1);
+    let idx = ((x << 1) >> (1 + FRAC_BITS)) as usize;
+    let (base, slope) = ATAN2_DIVI_RECIP[idx];
+    let step = ((slope as i64 * rem as i64) >> FRAC_BITS) as u32;
+    let r0 = base.wrapping_add(step);
+    mul_q31(y, mul_q31(r0, mul_q31(x, r0).wrapping_neg()))
+}
+
+/// Polynomial approximation to atan(x) to 11th order
 fn atani(x: u32) -> u32 {
-    const A: [i32; 6] = [
-        0x0517c2cd,
-        -0x06c6496b,
-        0x0fbdb021,
-        -0x25b32e0a,
-        0x43b34c81,
-        -0x3bc823dd,
+    const ATANI: [Q32<32>; 6] = [
+        Q32::new(0x0517c2cd),
+        Q32::new(-0x06c6496b),
+        Q32::new(0x0fbdb021),
+        Q32::new(-0x25b32e0a),
+        Q32::new(0x43b34c81),
+        Q32::new(-0x3bc823dd),
     ];
-    let x2 = ((x as i64 * x as i64) >> 32) as i32;
-    let r = A
-        .iter()
-        .rev()
-        .fold(0, |r, a| ((r as i64 * x2 as i64) >> 32) as i32 + a);
-    ((r as i64 * x as i64) >> 28) as _
+    // Evaluate the odd polynomial in x * P(x^2/4).
+    let x2 = Q32::new(((x as i64 * x as i64) >> 32) as _);
+    let r = ATANI.iter().rev().fold(Q32::new(0), |r, &a| (r * x2) + a);
+    (((r.inner as i64) * (x as i64)) >> 28) as u32
 }
 
 /// 2-argument arctangent function.
@@ -97,15 +113,14 @@ mod tests {
     #[test]
     fn atan2_absolute_error() {
         const N: usize = 321;
-        let mut test_vals = [0i32; N + 2];
         let scale = (1i64 << 31) as f64;
-        for i in 0..N {
-            test_vals[i] = (scale * (-1. + 2. * i as f64 / N as f64)) as i32;
-        }
+        let mut test_vals: Vec<_> = (0..N)
+            .map(|i| (scale * (-1. + 2. * i as f64 / N as f64)) as i32)
+            .collect();
 
         assert!(test_vals.contains(&i32::MIN));
-        test_vals[N] = i32::MAX;
-        test_vals[N + 1] = 0;
+        test_vals.push(i32::MAX);
+        test_vals.push(0);
 
         let mut rms_err = 0f64;
         let mut abs_err = 0f64;
@@ -129,8 +144,40 @@ mod tests {
         println!("max abs err: {:.2e}", abs_err);
         println!("rms abs err: {:.2e}", rms_err);
         println!("max rel err: {:.2e}", rel_err);
-        assert!(abs_err < 1.2e-5);
-        assert!(rms_err < 4.2e-6);
-        assert!(rel_err < 1e-12);
+        assert!(abs_err < 2.3e-6);
+        assert!(rms_err < 1.3e-6);
+        assert!(rel_err < 1e-15);
+    }
+
+    #[test]
+    fn atan2_small_equal_inputs() {
+        let scale = PI / (1i64 << 31) as f64;
+        for v in 1..1024 {
+            let have = atan2(v, v) as f64 * scale;
+            let want = PI / 4.0;
+            assert!((have - want).abs() < 2.3e-6, "{v}: {have} vs {want}");
+        }
+    }
+
+    #[test]
+    fn atan2_small_vectors_do_not_break_near_origin() {
+        let scale = PI / (1i64 << 31) as f64;
+        let mut max_err = 0.0f64;
+        for x in 1..512 {
+            for y in 0..=x {
+                let have = atan2(y, x) as f64 * scale;
+                let want = (y as f64).atan2(x as f64);
+                max_err = max_err.max((have - want).abs());
+            }
+        }
+        assert!(max_err < 2.3e-6, "{max_err}");
+    }
+
+    #[test]
+    fn atan2_zero_axis_is_exact() {
+        assert_eq!(atan2(0, 1), 0);
+        assert_eq!(atan2(0, i32::MAX), 0);
+        assert_eq!(atan2(1, 0), 0x3fff_ffff);
+        assert_eq!(atan2(i32::MAX, 0), 0x3fff_ffff);
     }
 }

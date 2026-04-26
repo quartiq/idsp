@@ -36,19 +36,16 @@ documentation = "https://docs.rs/idsp"
 workspace = true
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"], default-features = false }
-num-complex = { version = "0.4.0", features = [
-    "serde",
-], default-features = false }
-num-traits.workspace = true
-thiserror = { version = "2.0.9", default-features = false }
-miniconf = "0.20.0"
-strum = { version = "0.27.1", default-features = false, features = ["derive"] }
-pyo3 = { version = "0.27.1", features = ["extension-module"], optional = true }
-numpy = { version = "0.27", optional = true }
 dsp-process.workspace = true
 dsp-fixedpoint.workspace = true
+num-traits.workspace = true
 bytemuck = { version = "1.24.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"], default-features = false }
+thiserror = { version = "2.0.9", default-features = false }
+strum = { version = "0.27.1", default-features = false, features = ["derive"] }
+miniconf = "0.20.0"
+pyo3 = { version = "0.27.1", features = ["extension-module"], optional = true }
+numpy = { version = "0.27", optional = true }
 
 [dev-dependencies]
 quickcheck = "1.0.3"

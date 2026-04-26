@@ -121,7 +121,7 @@ fn main() -> ! {
         Pair::new((
             (
                 (),
-                Parallel((
+                Parallel::new((
                     [
                         unwrap!(Wdf::<_, 0xad>::quantize(&[-0.9, 0.9])),
                         unwrap!(Wdf::<_, 0xad>::quantize(&[-0.6, 0.7])),

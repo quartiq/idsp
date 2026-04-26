@@ -204,6 +204,7 @@ mod test {
     use core::cmp::Ordering;
 
     use super::*;
+
     use quickcheck_macros::quickcheck;
 
     #[quickcheck]
@@ -295,7 +296,187 @@ mod test {
             let y: Option<_> = cic.process(0 as _);
             assert_eq!(y, Some(cic.get_decimate()));
             println!("{:11}", y.unwrap());
-            println!("");
+            println!();
+        }
+    }
+}
+
+#[cfg(test)]
+mod modular_tests {
+    use super::*;
+    use dsp_process::{Comb, Downsample, Hold, Integrator, Process, Rate, Split};
+
+    fn modular_decimator<const N: usize, const R: usize, const M: usize>()
+    -> impl Process<[i64; R], i64> {
+        let ints = Split::stateful(Integrator(0)).repeat::<N>();
+        let rate = Split::new(Downsample(R as u32 - 1), 0);
+        let combs = Split::stateful(Comb([0; M])).repeat::<N>().map();
+        ((ints * rate).minor() * combs).minor().decimate()
+    }
+
+    fn modular_decimator_chunked_prefix<const N: usize, const R: usize, const M: usize>()
+    -> impl Process<[i64; R], i64> {
+        let ints = Split::stateful(Integrator(0)).repeat::<N>().chunk();
+        let rate = Split::stateful(Rate::<0>);
+        let combs = Split::stateful(Comb([0; M])).repeat::<N>();
+        (ints * rate).minor() * combs
+    }
+
+    fn modular_interpolator<const N: usize, const R: usize, const M: usize>()
+    -> impl Process<i64, [i64; R]> {
+        let combs = Split::stateful(Comb([0; M])).repeat::<N>().map();
+        let rate = Split::stateful(Hold(0));
+        let ints = Split::stateful(Integrator(0)).repeat::<N>();
+        ((combs * rate).minor() * ints).interpolate()
+    }
+
+    fn modular_interpolator_chunked_suffix<const N: usize, const R: usize, const M: usize>()
+    -> impl Process<i64, [i64; R]> {
+        let combs = Split::stateful(Comb([0; M])).repeat::<N>().map();
+        let rate = Split::stateful(Hold(0));
+        let ints = Split::stateful(Integrator(0)).repeat::<N>().chunk();
+        (combs * rate).minor().interpolate() * ints
+    }
+
+    fn reference_decimator<const N: usize, const R: usize, const M: usize>()
+    -> impl Process<[i64; R], i64> {
+        Split::stateful(Cic::<_, N, M>::new(R as u32 - 1)).decimate()
+    }
+
+    fn reference_interpolator<const N: usize, const R: usize, const M: usize>()
+    -> impl Process<i64, [i64; R]> {
+        Split::stateful(Cic::<_, N, M>::new(R as u32 - 1)).interpolate()
+    }
+
+    #[test]
+    fn modular_decimator_matches_reference() {
+        fn verify<const N: usize, const R: usize, const M: usize>(x: &[i64]) {
+            let mut m = modular_decimator::<N, R, M>();
+            let mut c = modular_decimator_chunked_prefix::<N, R, M>();
+            let mut r = reference_decimator::<N, R, M>();
+            for chunk in x.as_chunks::<R>().0 {
+                let y = r.process(*chunk);
+                assert_eq!(m.process(*chunk), y);
+                assert_eq!(c.process(*chunk), y);
+            }
+        }
+
+        let x: Vec<_> = (-31..65).map(|x| x * 3 - 7).collect();
+        verify::<3, 4, 1>(&x);
+        verify::<2, 2, 1>(&x);
+        verify::<3, 1, 3>(&x);
+    }
+
+    #[test]
+    fn modular_interpolator_matches_reference() {
+        fn verify<const N: usize, const R: usize, const M: usize>(x: &[i64]) {
+            let mut m = modular_interpolator::<N, R, M>();
+            let mut c = modular_interpolator_chunked_suffix::<N, R, M>();
+            let mut r = reference_interpolator::<N, R, M>();
+            for &x in x {
+                let y = r.process(x);
+                assert_eq!(m.process(x), y);
+                assert_eq!(c.process(x), y);
+            }
+        }
+
+        let x: Vec<_> = (-12..20).map(|x| x * x - 3 * x + 2).collect();
+        verify::<3, 4, 1>(&x);
+        verify::<2, 2, 1>(&x);
+        verify::<3, 1, 3>(&x);
+    }
+
+    use core::hint::black_box;
+
+    /// CIC order (cubic)
+    const PERF_N: usize = 3;
+    /// Rate change
+    const PERF_R: usize = 16;
+    /// Differential delay
+    const PERF_D: usize = 1;
+    /// Number of low-rate output samples
+    const PERF_ITERS: usize = 1 << 27;
+
+    /*
+    Performance measurements on the pinned-core host run.
+
+    Copy-paste to rebuild and run all six measurements:
+    bin=$(cargo test -p idsp --release --no-run --lib --message-format=json | \
+        jq -r 'select(.reason == "compiler-artifact") | .executable' | tail -n1) && \
+        printf '| test | cycles/sample|\n|---|---:|\n' && \
+        for test in insn_dec_ref insn_dec_mod insn_dec_mod_chunked_prefix \
+            insn_int_ref insn_int_mod insn_int_mod_chunked_suffix; do \
+            taskset -c 1 perf stat -d "$bin" "cic::modular_tests::$test" --ignored --exact 2>&1 | \
+                awk -v test="$test" -v samples="$(((1 << 27) * 16))" \
+                    '/cpu_core\/cpu-cycles\// { gsub(/,/, "", $1); printf "| %s | %.2f |\n", test, $1 / samples }'; \
+        done
+
+    Current output:
+    |---|---:|
+    | insn_dec_ref | 2.84 |
+    | insn_dec_mod | 3.02 |
+    | insn_dec_mod_chunked_prefix | 1.70 |
+    | insn_int_ref | 1.22 |
+    | insn_int_mod | 1.22 |
+    | insn_int_mod_chunked_suffix | 2.69 |
+    */
+    #[test]
+    #[ignore]
+    fn insn_dec_ref() {
+        let mut proc = reference_decimator::<PERF_N, PERF_R, PERF_D>();
+        let x = [9; PERF_R];
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn insn_dec_mod() {
+        let mut proc = modular_decimator::<PERF_N, PERF_R, PERF_D>();
+        let x = [9; PERF_R];
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn insn_dec_mod_chunked_prefix() {
+        let mut proc = modular_decimator_chunked_prefix::<PERF_N, PERF_R, PERF_D>();
+        let x = [9; PERF_R];
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn insn_int_ref() {
+        let mut proc = reference_interpolator::<PERF_N, PERF_R, PERF_D>();
+        let x = 9;
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn insn_int_mod() {
+        let mut proc = modular_interpolator::<PERF_N, PERF_R, PERF_D>();
+        let x = 9;
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn insn_int_mod_chunked_suffix() {
+        let mut proc = modular_interpolator_chunked_suffix::<PERF_N, PERF_R, PERF_D>();
+        let x = 9;
+        for _ in 0..PERF_ITERS {
+            black_box(proc.process(black_box(x)));
         }
     }
 }

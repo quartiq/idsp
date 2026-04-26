@@ -1,12 +1,30 @@
 use core::array::{from_fn, repeat};
 
 use crate::{
-    Channels, Inplace, Major, Minor, Parallel, Process, SplitInplace, SplitProcess, Transpose,
+    ByLane, Chunk, Decimator, Inplace, Interpolator, Lanes, Major, Map, Minor, Parallel, PerFrame,
+    Process, SplitInplace, SplitProcess, TryDecimator,
 };
 
 //////////// SPLIT ////////////
 
-/// A stateful processor with split state
+/// A stateful processor assembled from split configuration and state.
+///
+/// [`Split`] is the bridge between [`SplitProcess`] and [`Process`]: it stores
+/// the immutable configuration and mutable runtime state together so the pair can
+/// be passed around as a conventional stateful processor.
+///
+/// Reach for this when a split-state filter needs to be owned as one value, and
+/// use [`lanes()`](Self::lanes), [`minor()`](Self::minor), or
+/// [`major()`](Self::major) when changing how that owned processor is composed.
+///
+/// # Examples
+///
+/// ```rust
+/// use dsp_process::{Offset, Process, Split};
+///
+/// let mut p = Split::stateless(Offset(3));
+/// assert_eq!(p.process(5), 8);
+/// ```
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Split<C, S> {
     /// Processor configuration
@@ -32,7 +50,8 @@ impl<X: Copy, S, C: SplitInplace<X, S>> Inplace<X> for Split<C, S> {
 }
 
 impl<C, S> Split<C, S> {
-    /// Create a new Split
+    /// Create a new [`Split`] from explicit configuration and state values.
+    #[must_use]
     pub const fn new(config: C, state: S) -> Self {
         Self { config, state }
     }
@@ -45,23 +64,28 @@ impl<C, S> Split<C, S> {
     }
 }
 
-/// Stateless/stateful marker
+/// Marker for values that should live in the opposite half of a [`Split`].
 ///
 /// To be used in `Split<Unsplit<P>, ()>` and `Split<(), Unsplit<P>>`
 /// to mark processors requiring no state and no configuration respectively.
+///
+/// Most users will not construct this directly and should prefer
+/// [`Split::stateless`] and [`Split::stateful`].
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(transparent)]
 pub struct Unsplit<P>(pub P);
 
 impl<C> Split<C, ()> {
-    /// Create a stateless processor
+    /// Create a [`Split`] with configuration only and unit state.
+    #[must_use]
     pub fn stateless(config: C) -> Self {
         Self::new(config, ())
     }
 }
 
 impl<S> Split<(), Unsplit<S>> {
-    /// Create a state-only processor
+    /// Create a [`Split`] with state only and unit configuration.
+    #[must_use]
     pub fn stateful(state: S) -> Self {
         Self::new((), Unsplit(state))
     }
@@ -108,22 +132,117 @@ impl<C, S, const N: usize> From<[Split<C, S>; N]> for Split<[C; N], [S; N]> {
 }
 
 impl<C, S> Split<C, S> {
-    /// Convert to a configuration-minor split
+    /// Convert to [`Minor`] composition.
+    ///
+    /// This keeps the same logical processor but requests sample-by-sample
+    /// `block()`/`inplace()` execution of the wrapped serial composition.
+    ///
+    /// Use this for small fine-grained stages, or when tuple composition must
+    /// cross an intermediate type and the downstream stage is not
+    /// [`SplitInplace`] for that intermediate. Avoid it when preserving
+    /// stage-major slice processing is important for cache behavior or SIMD.
+    #[must_use]
     pub fn minor<U>(self) -> Split<Minor<C, U>, S> {
         Split::new(Minor::new(self.config), self.state)
     }
 
-    /// Convert to intermediate buffered processor-major
+    /// Convert to [`Major`] composition with an explicit intermediate buffer.
+    ///
+    /// Use this when preserving stage-major slice processing is more important
+    /// than avoiding an intermediate scratch buffer, especially for larger
+    /// stages or stages with meaningful `block()` specializations.
+    #[must_use]
     pub fn major<U>(self) -> Split<Major<C, U>, S> {
         Split::new(Major::new(self.config), self.state)
     }
 
-    /// Convert to parallel (MIMO)
+    /// Convert to [`Parallel`] composition.
+    ///
+    /// This expresses structural branching: each input lane is routed to the
+    /// matching branch and outputs stay separate unless reduced explicitly.
+    #[must_use]
     pub fn parallel(self) -> Split<Parallel<C>, S> {
-        Split::new(Parallel(self.config), self.state)
+        Split::new(Parallel::new(self.config), self.state)
     }
 
-    /// Repeat by cloning configuration and current (!) state
+    /// Map `Option` and `Result` around this processor.
+    ///
+    /// This lifts the processor through outer `Option`/`Result` control flow
+    /// while preserving the current state unchanged.
+    #[must_use]
+    pub fn map(self) -> Split<Map<C>, S> {
+        Split::new(Map(self.config), self.state)
+    }
+
+    /// Convert to elementwise fixed-size chunk processing.
+    ///
+    /// This is the basic array-lifting adapter. Use the more specific chunk or
+    /// rate adapters when samples must be regrouped rather than processed
+    /// elementwise.
+    #[must_use]
+    pub fn chunk(self) -> Split<Chunk<C>, S> {
+        Split::new(Chunk(self.config), self.state)
+    }
+
+    /// Convert a scalar optional-input stage into chunk output mode.
+    ///
+    /// This preserves stream phase across one input sample expanded into one
+    /// output chunk. Prefer this over structural chunk regrouping when the
+    /// inner stage is naturally `Option<X> -> Y`.
+    #[must_use]
+    pub fn interpolate(self) -> Split<Interpolator<C>, S> {
+        Split::new(Interpolator(self.config), self.state)
+    }
+
+    /// Convert a scalar optional-output stage into unchecked chunk input mode.
+    ///
+    /// This preserves stream phase across one input chunk collapsed into one
+    /// output sample. Prefer this over structural chunk regrouping when the
+    /// inner stage is naturally `X -> Option<Y>`.
+    #[must_use]
+    pub fn decimate(self) -> Split<Decimator<C>, S> {
+        Split::new(Decimator(self.config), self.state)
+    }
+
+    /// Convert a scalar optional-output stage into checked chunk input mode.
+    ///
+    /// This is the checked form of [`decimate()`](Self::decimate), returning an
+    /// error when the inner stage does not tick exactly once per input chunk.
+    #[must_use]
+    pub fn try_decimate(self) -> Split<TryDecimator<C>, S> {
+        Split::new(TryDecimator(self.config), self.state)
+    }
+
+    /// Treat each frame of a frame-major view as one chunk sample.
+    ///
+    /// This bridges chunk-style processors such as [`crate::Chunk`],
+    /// [`crate::ChunkIn`], [`crate::ChunkOut`], and [`crate::ChunkInOut`] into
+    /// the typed view API without changing the backing layout.
+    ///
+    /// ```rust
+    /// use dsp_process::{ChunkInOut, FnSplitProcess, Split, View, ViewMut};
+    ///
+    /// let mut p = Split::stateless(ChunkInOut::<_, 2, 1>(FnSplitProcess(
+    ///     |_: &mut (), [x0, x1]: [i32; 2]| [x0 + x1],
+    /// )))
+    /// .per_frame();
+    /// let x = View::from_frames(&[[1, 2], [3, 4]]);
+    /// let mut y = [[0; 1]; 2];
+    /// let yv = ViewMut::from_frames(&mut y);
+    /// p.process_frames(x, yv);
+    /// assert_eq!(y, [[3], [7]]);
+    /// ```
+    #[must_use]
+    pub fn per_frame(self) -> Split<PerFrame<C>, S> {
+        Split::new(PerFrame(self.config), self.state)
+    }
+
+    /// Duplicate the processor by cloning both configuration and current state.
+    ///
+    /// The current state is copied as-is. Use this only when duplicating the
+    /// existing state is intentional, for example when seeding several identical
+    /// branches from a known starting point.
+    #[must_use]
     pub fn repeat<const N: usize>(self) -> Split<[C; N], [S; N]>
     where
         C: Clone,
@@ -132,50 +251,84 @@ impl<C, S> Split<C, S> {
         Split::new(repeat(self.config), repeat(self.state))
     }
 
-    /// Apply to multiple states by cloning the current (!) state
-    pub fn channels<const N: usize>(self) -> Split<Channels<C>, [S; N]>
+    /// Share one configuration across multiple cloned states via [`Lanes`].
+    ///
+    /// This is usually preferable to [`repeat()`](Self::repeat) when the
+    /// configuration should be shared but each lane needs its own mutable
+    /// runtime state. For lane-major view processing, pair this with
+    /// [`crate::View`] using [`crate::LaneMajor`].
+    ///
+    /// ```rust
+    /// use dsp_process::{LaneMajor, Offset, Split, View, ViewMut, ViewProcess};
+    ///
+    /// let mut p = Split::stateless(Offset(3)).lanes::<2>();
+    /// let x = View::<_, LaneMajor, 2>::from_flat(&[1, 2, 3, 10, 20, 30], 3);
+    /// let mut y = [0; 6];
+    /// let yv = ViewMut::<_, LaneMajor, 2>::from_flat(&mut y, 3);
+    /// ViewProcess::process_view(&mut p, x, yv);
+    /// assert_eq!(y, [4, 5, 6, 13, 23, 33]);
+    /// ```
+    #[must_use]
+    pub fn lanes<const N: usize>(self) -> Split<Lanes<C>, [S; N]>
     where
         S: Clone,
     {
-        Split::new(Channels(self.config), repeat(self.state))
+        Split::new(Lanes::new(self.config), repeat(self.state))
     }
 
-    /// Convert to parallel transpose operation on blocks/inplace of `[[x]; N]` instead of `[[x; N]]`
-    pub fn transpose(self) -> Split<Transpose<C>, S> {
-        Split::new(Transpose(self.config), self.state)
+    /// Convert to [`ByLane`] view semantics.
+    ///
+    /// Scalar `process()` is unchanged. Use this when parallel branches should
+    /// process lane-major views as long contiguous per-lane slices.
+    #[must_use]
+    pub fn by_lane(self) -> Split<ByLane<C>, S> {
+        Split::new(ByLane::new(self.config), self.state)
     }
 }
 
 impl<C, S, U> Split<Minor<C, U>, S> {
     /// Strip minor
+    #[must_use]
     pub fn inter(self) -> Split<C, S> {
-        Split::new(self.config.inner, self.state)
+        Split::new(self.config.into_inner(), self.state)
     }
 }
 
 impl<C, S> Split<Parallel<C>, S> {
     /// Convert to serial
+    #[must_use]
+    pub fn inter(self) -> Split<C, S> {
+        Split::new(self.config.into_inner(), self.state)
+    }
+}
+
+impl<C, S> Split<PerFrame<C>, S> {
+    /// Remove per-frame view adaptation.
+    #[must_use]
     pub fn inter(self) -> Split<C, S> {
         Split::new(self.config.0, self.state)
     }
 }
 
-impl<C, S> Split<Transpose<C>, S> {
-    /// Convert to non-transposing
+impl<C, S> Split<ByLane<C>, S> {
+    /// Convert to ordinary view semantics.
+    #[must_use]
     pub fn inter(self) -> Split<C, S> {
-        Split::new(self.config.0, self.state)
+        Split::new(self.config.into_inner(), self.state)
     }
 }
 
 impl<C, S, B> Split<Major<C, B>, S> {
     /// Remove major intermediate buffering
+    #[must_use]
     pub fn inter(self) -> Split<C, S> {
-        Split::new(self.config.inner, self.state)
+        Split::new(self.config.into_inner(), self.state)
     }
 }
 
 impl<C0, C1, S0, S1> Split<(C0, C1), (S0, S1)> {
     /// Zip up a split
+    #[must_use]
     pub fn zip(self) -> (Split<C0, S0>, Split<C1, S1>) {
         (
             Split::new(self.config.0, self.state.0),
@@ -186,6 +339,7 @@ impl<C0, C1, S0, S1> Split<(C0, C1), (S0, S1)> {
 
 impl<C, S, const N: usize> Split<[C; N], [S; N]> {
     /// Zip up a split
+    #[must_use]
     pub fn zip(self) -> [Split<C, S>; N] {
         let mut it = self.config.into_iter().zip(self.state);
         from_fn(|_| {

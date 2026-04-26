@@ -67,6 +67,21 @@ let _ = Q8::<-1>::one();
 With the default `serde` feature, `Q` serializes transparently as its raw
 representation.
 
+## Ecosystem Traits
+
+`Q` implements a small set of generic numeric traits where the semantics stay
+clear:
+
+- `Bounded` forwards to the raw storage bounds.
+- `ToPrimitive`, `FromPrimitive`, and `NumCast` convert numeric values rather
+  than raw bits.
+- `Signed` is implemented for signed `Q`/`W` families.
+- `Hash` follows the raw representation.
+
+`Signed` inherits `One`, so the existing representability restriction still
+applies: operations that need an exact `1`, such as `signum()`, are only usable
+when `F >= 0`.
+
 ## Formatting
 
 Display shows decimal notation. `Binary/Octal/UpperHex/LowerHex` show dot
@@ -85,3 +100,10 @@ With `feature = "defmt"`, `Q` implements `defmt::Format` and logs as a decimal
 value using `f32`. This keeps the target-side implementation compact for
 embedded use. Exact radix-dot formatting remains available through the standard
 `Binary`, `Octal`, and hex format traits.
+
+## `bytemuck`
+
+With `feature = "bytemuck"`, `Q` derives `Pod`, `Zeroable`, and
+`TransparentWrapper`. That makes zero-copy buffer casts and wrapper conversions
+available when the underlying storage and accumulator types also satisfy the
+corresponding `bytemuck` bounds.
