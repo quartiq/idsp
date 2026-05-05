@@ -3,13 +3,13 @@
 use core::any::Any;
 use miniconf::Tree;
 use num_traits::{AsPrimitive, Float, FloatConst};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     Build,
     iir::{
         BiquadClamp,
-        coefficients::Shape,
+        coefficients::{Shape, Type},
         pid::{Pid, Units},
     },
 };
@@ -40,29 +40,8 @@ impl<T: Float> Default for Ba<T> {
     }
 }
 
-/// Filter type
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default, PartialEq, PartialOrd)]
-pub enum Typ {
-    /// A lowpass
-    #[default]
-    Lowpass,
-    /// A highpass
-    Highpass,
-    /// A bandpass
-    Bandpass,
-    /// An allpass
-    Allpass,
-    /// A notch
-    Notch,
-    /// A peaking filter
-    Peaking,
-    /// A low shelf
-    Lowshelf,
-    /// A high shelf
-    Highshelf,
-    /// Integrator over harmonic oscillator
-    IHo,
-}
+/// Filter type.
+pub type Typ = Type;
 
 /// Standard biquad parametrizations
 #[derive(Clone, Debug, Tree)]
@@ -71,14 +50,12 @@ pub struct FilterRepr<T> {
     /// Filter style
     #[tree(with=miniconf::leaf)]
     pub typ: Typ,
-    /// Angular critical frequency (in units of sampling frequency)
-    /// Corner frequency, or 3dB cutoff frequency,
+    /// Relative critical frequency in units of the sample rate.
     pub frequency: T,
-    /// Passband gain
-    pub gain: T,
-    /// Shelf gain (only for peaking, lowshelf, highshelf)
-    /// Relative to passband gain
-    pub shelf: T,
+    /// Passband gain in dB.
+    pub gain_db: T,
+    /// Shelf gain in dB (only for peaking, lowshelf, highshelf).
+    pub shelf_db: T,
     /// Q/Bandwidth/Slope
     #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: DeserializeOwned", any="T: Any"))]
     pub shape: Shape<T>,
@@ -95,8 +72,8 @@ impl<T: Float + FloatConst> Default for FilterRepr<T> {
         Self {
             typ: Typ::default(),
             frequency: T::zero(),
-            gain: T::one(),
-            shelf: T::one(),
+            gain_db: T::zero(),
+            shelf_db: T::zero(),
             shape: Shape::default(),
             offset: T::zero(),
             min: T::neg_infinity(),
@@ -191,21 +168,11 @@ where
             Self::Pid(pid) => pid.build(units),
             Self::Filter(filter) => {
                 let mut f = crate::iir::coefficients::Filter::default();
-                f.gain_db(filter.gain);
+                f.gain_db(filter.gain_db);
                 f.critical_frequency(filter.frequency * units.t);
-                f.shelf_db(filter.shelf);
+                f.shelf_db(filter.shelf_db);
                 f.set_shape(filter.shape);
-                let mut ba = match filter.typ {
-                    Typ::Lowpass => f.lowpass(),
-                    Typ::Highpass => f.highpass(),
-                    Typ::Allpass => f.allpass(),
-                    Typ::Bandpass => f.bandpass(),
-                    Typ::Highshelf => f.highshelf(),
-                    Typ::Lowshelf => f.lowshelf(),
-                    Typ::IHo => f.iho(),
-                    Typ::Notch => f.notch(),
-                    Typ::Peaking => f.peaking(),
-                };
+                let mut ba = f.build(filter.typ);
                 ba[0] = ba[0].map(|b| b * yx);
                 let mut b: BiquadClamp<C, Y> = ba.into();
                 b.u = (filter.offset * yu).as_();

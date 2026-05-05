@@ -1,6 +1,6 @@
 use core::{fmt, fmt::Write, num::Wrapping};
 
-use crate::{FloatValue, Q};
+use crate::{AsFloat, Q};
 
 /// ```
 /// # use dsp_fixedpoint::Q8;
@@ -11,10 +11,10 @@ macro_rules! impl_fmt {
     ($tr:path) => {
         impl<T, A, const F: i8> $tr for Q<T, A, F>
         where
-            T: FloatValue,
+            T: AsFloat,
         {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                <f64 as $tr>::fmt(&(self.inner.as_f64() * Self::DELTA as f64), f)
+                <f64 as $tr>::fmt(&self.as_f64(), f)
             }
         }
     };
@@ -26,13 +26,16 @@ impl_fmt!(fmt::LowerExp);
 #[cfg(feature = "defmt")]
 impl<T, A, const F: i8> defmt::Format for Q<T, A, F>
 where
-    T: FloatValue,
+    T: AsFloat,
 {
     fn format(&self, fmt: defmt::Formatter<'_>) {
-        defmt::write!(fmt, "{=f32}", self.inner.as_f32() * Self::DELTA);
+        defmt::write!(fmt, "{=f32}", self.as_f32());
     }
 }
 
+/// Binary, octal, and hexadecimal formatting always include the fixed-point radix point.
+/// Even whole-valued cases keep a trailing `.` to distinguish them from raw integer formatting.
+///
 /// ```
 /// # use dsp_fixedpoint::Q8;
 /// assert_eq!(format!("{:?}", Q8::<4>::new(0x14)), "20");
@@ -40,49 +43,12 @@ where
 /// assert_eq!(format!("{:x}", Q8::<-2>::new(3)), "c.");
 /// assert_eq!(format!("{:x}", Q8::<4>::new(-0x14)), "-1.4");
 /// ```
-impl<T: fmt::Debug, A, const F: i8> fmt::Debug for Q<T, A, F> {
+impl<T, A, const F: i8> fmt::Debug for Q<T, A, F>
+where
+    T: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.fmt(f)
-    }
-}
-
-#[derive(Copy, Clone)]
-struct Radix {
-    bits: u8,
-    prefix: &'static str,
-    digits: &'static [u8],
-}
-
-impl Radix {
-    const BINARY: Self = Self {
-        bits: 1,
-        prefix: "0b",
-        digits: b"01",
-    };
-    const OCTAL: Self = Self {
-        bits: 3,
-        prefix: "0o",
-        digits: b"01234567",
-    };
-    const LOWER_HEX: Self = Self {
-        bits: 4,
-        prefix: "0x",
-        digits: b"0123456789abcdef",
-    };
-    const UPPER_HEX: Self = Self {
-        bits: 4,
-        prefix: "0X",
-        digits: b"0123456789ABCDEF",
-    };
-
-    #[inline]
-    fn mask(self) -> u8 {
-        (1u8 << self.bits) - 1
-    }
-
-    #[inline]
-    fn digit(self, value: u8) -> u8 {
-        self.digits[value as usize]
     }
 }
 
@@ -102,7 +68,7 @@ macro_rules! impl_unsigned_radix_value {
 
                 #[inline]
                 fn magnitude(self) -> u64 {
-                    self.into()
+                    self as _
                 }
             }
         )*
@@ -115,12 +81,12 @@ macro_rules! impl_signed_radix_value {
             impl RadixValue for $ty {
                 #[inline]
                 fn is_negative(self) -> bool {
-                    self < 0
+                    self.is_negative()
                 }
 
                 #[inline]
                 fn magnitude(self) -> u64 {
-                    self.unsigned_abs().into()
+                    self.unsigned_abs() as _
                 }
             }
         )*
@@ -138,7 +104,7 @@ macro_rules! impl_wrapping_unsigned_radix_value {
 
                 #[inline]
                 fn magnitude(self) -> u64 {
-                    self.0.into()
+                    self.0 as _
                 }
             }
         )*
@@ -151,12 +117,12 @@ macro_rules! impl_wrapping_signed_radix_value {
             impl RadixValue for Wrapping<$ty> {
                 #[inline]
                 fn is_negative(self) -> bool {
-                    self.0 < 0
+                    self.0.is_negative()
                 }
 
                 #[inline]
                 fn magnitude(self) -> u64 {
-                    self.0.unsigned_abs().into()
+                    self.0.unsigned_abs() as _
                 }
             }
         )*
@@ -168,147 +134,146 @@ impl_signed_radix_value!(i8, i16, i32, i64);
 impl_wrapping_unsigned_radix_value!(u8, u16, u32, u64);
 impl_wrapping_signed_radix_value!(i8, i16, i32, i64);
 
-#[inline]
-const fn ceil_digits(bits: usize, group: u8) -> usize {
-    match group {
-        1 => bits,
-        3 => bits.div_ceil(3),
-        4 => bits.div_ceil(4),
-        _ => unreachable!(),
-    }
+#[derive(Copy, Clone)]
+struct Radix {
+    bits: u8,
+    table: &'static str,
 }
 
-#[inline]
-const fn split_bits(bits: u8, group: u8) -> (usize, u8) {
-    match group {
-        1 => (bits as usize, 0),
-        3 => ((bits / 3) as usize, bits % 3),
-        4 => ((bits / 4) as usize, bits % 4),
-        _ => unreachable!(),
+impl Radix {
+    #[inline]
+    const fn mask(self) -> u8 {
+        (1u8 << self.bits) - 1
     }
-}
 
-#[inline]
-fn shifted_digit(magnitude: u64, shift: u8, radix: Radix, index: usize) -> u8 {
-    let mask = u64::from(radix.mask());
-    let offset = index * radix.bits as usize;
-    if offset >= shift as usize {
-        let right = offset - shift as usize;
-        if right >= u64::BITS as usize {
-            0
+    #[inline]
+    const fn ceil_digits(self, bits: usize) -> usize {
+        bits.div_ceil(self.bits as _)
+    }
+
+    #[inline]
+    const fn div_mod(self, bits: i8) -> (usize, u8) {
+        let bits = bits.unsigned_abs();
+        ((bits / self.bits) as usize, bits % self.bits)
+    }
+
+    #[inline]
+    const fn shifted_digit(self, magnitude: u64, shift: u8, index: usize) -> char {
+        let mask = self.mask();
+        let offset = index * self.bits as usize;
+        let value = if let Some(right) = offset.checked_sub(shift as usize) {
+            if right >= u64::BITS as usize {
+                0
+            } else {
+                ((magnitude >> right) & mask as u64) as u8
+            }
         } else {
-            ((magnitude >> right) & mask) as u8
-        }
-    } else {
-        ((magnitude << (shift as usize - offset)) & mask) as u8
-    }
-}
-
-fn pad(f: &mut fmt::Formatter<'_>, fill: char, count: usize) -> fmt::Result {
-    for _ in 0..count {
-        f.write_char(fill)?;
-    }
-    Ok(())
-}
-
-fn format_fixed(
-    negative: bool,
-    magnitude: u64,
-    frac_bits: i8,
-    f: &mut fmt::Formatter<'_>,
-    radix: Radix,
-) -> fmt::Result {
-    let magnitude_bits = (u64::BITS - magnitude.leading_zeros()) as usize;
-    let body_len = if frac_bits > 0 {
-        let frac_bits = frac_bits as usize;
-        let frac_digits = ceil_digits(frac_bits, radix.bits);
-        let effective_digits = if magnitude == 0 {
-            0
-        } else {
-            ceil_digits(
-                magnitude_bits + (frac_digits * radix.bits as usize - frac_bits),
-                radix.bits,
-            )
+            ((magnitude << (shift as usize - offset)) & mask as u64) as u8
         };
-        effective_digits.saturating_sub(frac_digits).max(1) + 1 + frac_digits
-    } else {
-        let (zero_digits, shift) = split_bits(frac_bits.unsigned_abs(), radix.bits);
-        if magnitude == 0 {
-            2
-        } else {
-            ceil_digits(magnitude_bits + shift as usize, radix.bits) + zero_digits + 1
-        }
-    };
-    let sign = if negative {
-        "-"
-    } else if f.sign_plus() {
-        "+"
-    } else {
-        ""
-    };
-    let prefix = if f.alternate() { radix.prefix } else { "" };
-    let total_len = sign.len() + prefix.len() + body_len;
-    let pad_len = f.width().map_or(0, |width| width.saturating_sub(total_len));
-    let align = f.align();
-    let fill = f.fill();
-    let zero_pad = if f.sign_aware_zero_pad() && align.is_none() {
-        pad_len
-    } else {
-        0
-    };
-    let align = align.unwrap_or(fmt::Alignment::Right);
-    let (left_pad, right_pad) = if zero_pad != 0 {
-        (0, 0)
-    } else {
-        match align {
-            fmt::Alignment::Left => (0, pad_len),
-            fmt::Alignment::Center => (pad_len / 2, pad_len - pad_len / 2),
-            fmt::Alignment::Right => (pad_len, 0),
-        }
-    };
-
-    pad(f, fill, left_pad)?;
-    f.write_str(sign)?;
-    f.write_str(prefix)?;
-    pad(f, '0', zero_pad)?;
-
-    if frac_bits > 0 {
-        let frac_bits = frac_bits as usize;
-        let frac_digits = ceil_digits(frac_bits, radix.bits);
-        let shift = (frac_digits * radix.bits as usize - frac_bits) as u8;
-        let effective_digits = if magnitude == 0 {
-            0
-        } else {
-            ceil_digits(magnitude_bits + shift as usize, radix.bits)
-        };
-        if effective_digits <= frac_digits {
-            f.write_char('0')?;
-        } else {
-            for index in (frac_digits..effective_digits).rev() {
-                f.write_char(radix.digit(shifted_digit(magnitude, shift, radix, index)) as char)?;
-            }
-        }
-        f.write_char('.')?;
-        for index in (0..frac_digits).rev() {
-            f.write_char(radix.digit(shifted_digit(magnitude, shift, radix, index)) as char)?;
-        }
-    } else {
-        let (zero_digits, shift) = split_bits(frac_bits.unsigned_abs(), radix.bits);
-        if magnitude == 0 {
-            f.write_char('0')?;
-        } else {
-            let digits = ceil_digits(magnitude_bits + shift as usize, radix.bits);
-            for index in (0..digits).rev() {
-                f.write_char(radix.digit(shifted_digit(magnitude, shift, radix, index)) as char)?;
-            }
-            for _ in 0..zero_digits {
-                f.write_char(radix.digit(0) as char)?;
-            }
-        }
-        f.write_char('.')?;
+        self.table.as_bytes()[2 + value as usize] as char
     }
 
-    pad(f, fill, right_pad)
+    fn format_fixed(
+        self,
+        negative: bool,
+        magnitude: u64,
+        frac_bits: i8,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let magnitude_bits = (u64::BITS - magnitude.leading_zeros()) as usize;
+        let body_len = if frac_bits > 0 {
+            let frac_bits = frac_bits as usize;
+            let frac_digits = self.ceil_digits(frac_bits);
+            let effective_digits = if magnitude == 0 {
+                0
+            } else {
+                self.ceil_digits(magnitude_bits + frac_digits * (self.bits - 1) as usize)
+            };
+            effective_digits.saturating_sub(frac_digits).max(1) + 1 + frac_digits
+        } else {
+            let (zero_digits, shift) = self.div_mod(frac_bits);
+            if magnitude == 0 {
+                2
+            } else {
+                self.ceil_digits(magnitude_bits + shift as usize) + zero_digits + 1
+            }
+        };
+        let sign = if negative {
+            "-"
+        } else if f.sign_plus() {
+            "+"
+        } else {
+            ""
+        };
+        let prefix = if f.alternate() { &self.table[..2] } else { "" };
+        let total_len = sign.len() + prefix.len() + body_len;
+        let pad_len = f.width().unwrap_or_default().saturating_sub(total_len);
+        let zero_pad = if f.sign_aware_zero_pad() && f.align().is_none() {
+            pad_len
+        } else {
+            0
+        };
+        let align = f.align().unwrap_or(fmt::Alignment::Right);
+        let (left_pad, right_pad) = if zero_pad != 0 {
+            (0, 0)
+        } else {
+            match align {
+                fmt::Alignment::Left => (0, pad_len),
+                fmt::Alignment::Center => (pad_len / 2, pad_len - pad_len / 2),
+                fmt::Alignment::Right => (pad_len, 0),
+            }
+        };
+
+        for _ in 0..left_pad {
+            f.write_char(f.fill())?;
+        }
+        f.write_str(sign)?;
+        f.write_str(prefix)?;
+        for _ in 0..zero_pad {
+            f.write_char('0')?;
+        }
+
+        if frac_bits > 0 {
+            let frac_bits = frac_bits as usize;
+            let frac_digits = self.ceil_digits(frac_bits);
+            let shift = (frac_digits * self.bits as usize - frac_bits) as u8;
+            let effective_digits = if magnitude == 0 {
+                0
+            } else {
+                self.ceil_digits(magnitude_bits + shift as usize)
+            };
+            if effective_digits <= frac_digits {
+                f.write_char('0')?;
+            } else {
+                for index in (frac_digits..effective_digits).rev() {
+                    f.write_char(self.shifted_digit(magnitude, shift, index))?;
+                }
+            }
+            f.write_char('.')?;
+            for index in (0..frac_digits).rev() {
+                f.write_char(self.shifted_digit(magnitude, shift, index))?;
+            }
+        } else {
+            let (zero_digits, shift) = self.div_mod(frac_bits);
+            if magnitude == 0 {
+                f.write_char('0')?;
+            } else {
+                let digits = self.ceil_digits(magnitude_bits + shift as usize);
+                for index in (0..digits).rev() {
+                    f.write_char(self.shifted_digit(magnitude, shift, index))?;
+                }
+                for _ in 0..zero_digits {
+                    f.write_char('0')?;
+                }
+            }
+            f.write_char('.')?;
+        }
+
+        for _ in 0..right_pad {
+            f.write_char(f.fill())?;
+        }
+        Ok(())
+    }
 }
 
 macro_rules! impl_radix_fmt {
@@ -321,22 +286,33 @@ macro_rules! impl_radix_fmt {
                         "fractional bit count must not be i8::MIN for formatting"
                     );
                 }
-                format_fixed(
-                    self.inner.is_negative(),
-                    self.inner.magnitude(),
-                    F,
-                    f,
-                    $radix,
-                )
+                $radix.format_fixed(self.inner.is_negative(), self.inner.magnitude(), F, f)
             }
         }
     };
 }
 
-impl_radix_fmt!(fmt::Binary, Radix::BINARY);
-impl_radix_fmt!(fmt::Octal, Radix::OCTAL);
-impl_radix_fmt!(fmt::LowerHex, Radix::LOWER_HEX);
-impl_radix_fmt!(fmt::UpperHex, Radix::UPPER_HEX);
+const BINARY: Radix = Radix {
+    bits: 1,
+    table: "0b01",
+};
+const OCTAL: Radix = Radix {
+    bits: 3,
+    table: "0o01234567",
+};
+const LOWER_HEX: Radix = Radix {
+    bits: 4,
+    table: "0x0123456789abcdef",
+};
+const UPPER_HEX: Radix = Radix {
+    bits: 4,
+    table: "0X0123456789ABCDEF",
+};
+
+impl_radix_fmt!(fmt::Binary, BINARY);
+impl_radix_fmt!(fmt::Octal, OCTAL);
+impl_radix_fmt!(fmt::LowerHex, LOWER_HEX);
+impl_radix_fmt!(fmt::UpperHex, UPPER_HEX);
 
 #[cfg(test)]
 mod test {

@@ -34,7 +34,7 @@ fn main() -> ! {
 
     bench_process(
         &mut (Split::new(
-            hbf::HBF_INT_CASCADE.inner.0.inner.0,
+            hbf::HBF_INT_CASCADE.inner().0.inner().0,
             hbf::HbfInt8::default(),
         ) * Split::stateful(FnProcess(|x: [f32; 8]| {
             black_box(x);
@@ -44,11 +44,11 @@ fn main() -> ! {
     .show("hbf int8");
 
     bench_process(
-        &mut (Split::stateful(FnProcess(|_: ()| black_box([0.0; 8])))
+        &mut ((Split::stateful(FnProcess(|_: ()| black_box([0.0; 8])))
             * Split::new(
-                hbf::HBF_DEC_CASCADE.inner.1.inner.1,
+                hbf::HBF_DEC_CASCADE.inner().1.inner().1,
                 hbf::HbfDec8::default(),
-            ))
+            )))
         .major::<[_; 32]>(),
     )
     .show("hbf dec8");

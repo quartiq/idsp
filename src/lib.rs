@@ -21,6 +21,8 @@ mod unwrap;
 pub use unwrap::*;
 mod dsm;
 pub use dsm::*;
+mod dither;
+pub use dither::*;
 pub mod hbf;
 pub mod iir;
 mod sweptsine;

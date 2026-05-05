@@ -2,42 +2,28 @@
 #![doc = include_str!("../README.md")]
 
 mod format;
+mod num_traits_impl;
+mod ops;
 
-#[cfg(not(feature = "std"))]
-#[allow(unused_imports)]
-use num_traits::float::FloatCore;
-use num_traits::{AsPrimitive, ConstOne, ConstZero, One, Zero};
+use num_traits::{AsPrimitive, ConstOne};
 
 use core::{
-    iter,
+    hash::{Hash, Hasher},
     marker::PhantomData,
     num::Wrapping,
-    ops::{Add, Div, Mul, Neg, Rem, Shl, Shr, Sub},
-    ops::{AddAssign, DivAssign, MulAssign, RemAssign, ShlAssign, ShrAssign, SubAssign},
-    ops::{BitAnd, BitOr, BitXor, Not},
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign},
+    ops::{Div, Mul, Shl, Shr},
 };
 
-const fn frac_shift(from: i8, to: i8) -> i8 {
-    let shift = to as i16 - from as i16;
-    assert!(
-        shift >= i8::MIN as i16 && shift <= i8::MAX as i16,
-        "fractional bit delta must fit in i8"
-    );
-    shift as i8
-}
-
-pub(crate) trait FloatValue: Copy {
-    #[cfg(feature = "defmt")]
+/// Helper trait to unify over missing impl AsPrimitive<f*> for Wrapping<T>
+pub(crate) trait AsFloat: Copy {
     fn as_f32(self) -> f32;
     fn as_f64(self) -> f64;
 }
 
-macro_rules! impl_float_value {
+macro_rules! impl_as_float {
     ($($ty:ty),* $(,)?) => {
         $(
-            impl FloatValue for $ty {
-                #[cfg(feature = "defmt")]
+            impl AsFloat for $ty {
                 #[inline]
                 fn as_f32(self) -> f32 {
                     self as f32
@@ -49,8 +35,7 @@ macro_rules! impl_float_value {
                 }
             }
 
-            impl FloatValue for Wrapping<$ty> {
-                #[cfg(feature = "defmt")]
+            impl AsFloat for Wrapping<$ty> {
                 #[inline]
                 fn as_f32(self) -> f32 {
                     self.0 as f32
@@ -65,25 +50,7 @@ macro_rules! impl_float_value {
     };
 }
 
-impl_float_value!(i8, i16, i32, i64, u8, u16, u32, u64);
-
-const fn neg_shift(frac: i8) -> i8 {
-    let shift = -(frac as i16);
-    assert!(
-        shift >= i8::MIN as i16 && shift <= i8::MAX as i16,
-        "fractional bit count must be negatable"
-    );
-    shift as i8
-}
-
-const fn shift_magnitude(frac: i8) -> u32 {
-    assert!(frac != i8::MIN, "fractional bit count must not be i8::MIN");
-    if frac >= 0 {
-        frac as u32
-    } else {
-        (-(frac as i16)) as u32
-    }
-}
+impl_as_float!(i8, i16, i32, i64, u8, u16, u32, u64);
 
 /// Shift summary trait
 ///
@@ -99,15 +66,23 @@ pub trait Shift: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
     /// assert_eq!(4i32.shs(-1), 2);
     /// ```
     fn shs(self, f: i8) -> Self;
+
+    /// Const signed shift
+    #[inline(always)]
+    fn shsc<const F: i8>(self) -> Self {
+        const { assert!(F > i8::MIN, "shift must not be i8::MIN") }
+        self.shs(F)
+    }
 }
 
 impl<T: Copy + Shl<usize, Output = T> + Shr<usize, Output = T>> Shift for T {
     #[inline(always)]
     fn shs(self, f: i8) -> Self {
+        debug_assert!(f > i8::MIN, "shift must not be i8::MIN");
         if f >= 0 {
             self << (f as _)
         } else {
-            self >> (-(f as i16) as usize)
+            self >> (-f as _)
         }
     }
 }
@@ -168,7 +143,12 @@ pub trait Accu<A> {
 #[derive(Default)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", serde(transparent))]
-#[must_use = "fixed-point values are immutable and have no effect unless used"]
+#[cfg_attr(
+    feature = "bytemuck",
+    derive(bytemuck::Pod, bytemuck::TransparentWrapper, bytemuck::Zeroable),
+    transparent(T)
+)]
+#[must_use]
 pub struct Q<T, A, const F: i8> {
     /// The accumulator type
     _accu: PhantomData<A>,
@@ -197,6 +177,13 @@ impl<T: PartialEq, A, const F: i8> PartialEq for Q<T, A, F> {
 
 impl<T: Eq, A, const F: i8> Eq for Q<T, A, F> where Self: PartialEq {}
 
+impl<T: Hash, A, const F: i8> Hash for Q<T, A, F> {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inner.hash(state)
+    }
+}
+
 impl<T: PartialOrd, A, const F: i8> PartialOrd for Q<T, A, F> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
@@ -214,38 +201,6 @@ where
     }
 }
 
-impl<T: One + Shift, A, const F: i8> One for Q<T, A, F>
-where
-    Self: Mul<Output = Self>,
-{
-    fn one() -> Self {
-        const {
-            assert!(
-                F >= 0,
-                "`Q::one()` is only available when 1 is exactly representable"
-            );
-        }
-        Self::new(T::one().shs(F))
-    }
-}
-
-impl<T: Zero, A, const F: i8> Zero for Q<T, A, F>
-where
-    Self: Add<Output = Self>,
-{
-    fn zero() -> Self {
-        Self::new(T::zero())
-    }
-
-    fn is_zero(&self) -> bool {
-        self.inner.is_zero()
-    }
-}
-
-impl<T: ConstZero, A, const F: i8> ConstZero for Q<T, A, F> {
-    const ZERO: Self = Self::new(T::ZERO);
-}
-
 impl<T, A, const F: i8> Q<T, A, F> {
     /// Step between distinct numbers
     ///
@@ -260,9 +215,9 @@ impl<T, A, const F: i8> Q<T, A, F> {
     /// let _ = Q32::<-128>::DELTA;
     /// ```
     pub const DELTA: f32 = if F > 0 {
-        1.0 / (1u128 << shift_magnitude(F)) as f32
+        1.0 / (1u128 << F) as f32
     } else {
-        (1u128 << shift_magnitude(F)) as f32
+        (1u128 << -F) as f32
     };
 
     /// Create a new fixed point number from a raw representation.
@@ -307,8 +262,7 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     /// ```
     #[inline]
     pub fn scale<const F1: i8>(self) -> Q<T, A, F1> {
-        let shift = const { frac_shift(F, F1) };
-        Q::new(self.inner.shs(shift))
+        Q::new(self.inner.shs(const { F1 - F }))
     }
 
     /// Return the integer part
@@ -320,8 +274,7 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     #[inline]
     #[must_use]
     pub fn trunc(self) -> T {
-        let shift = const { neg_shift(F) };
-        self.inner.shs(shift)
+        self.inner.shs(const { -F })
     }
 
     /// Scale from integer base type
@@ -332,13 +285,7 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     /// ```
     #[inline]
     pub fn from_int(value: T) -> Self {
-        const {
-            assert!(
-                F != i8::MIN,
-                "fractional bit count must not be i8::MIN for scaled construction"
-            );
-        }
-        Self::new(value.shs(F))
+        Self::new(value.shsc::<F>())
     }
 }
 
@@ -366,7 +313,7 @@ impl<A: Shift, T: Accu<A>, const F: i8> Q<A, T, F> {
 /// ```
 impl<T: Accu<A> + Shift, A, const F: i8> From<(T, i8)> for Q<T, A, F> {
     fn from(value: (T, i8)) -> Self {
-        Self::new(value.0.shs(frac_shift(value.1, F)))
+        Self::new(value.0.shs(F - value.1))
     }
 }
 
@@ -382,42 +329,6 @@ impl<T, A, const F: i8> From<Q<T, A, F>> for (T, i8) {
         (value.inner, F)
     }
 }
-
-/// Lossy conversion to and from float
-///
-/// ```
-/// # use dsp_fixedpoint::Q8;
-/// assert_eq!(8 * Q8::<4>::from_f32(0.25), 2);
-/// assert_eq!(8 * Q8::<4>::from_f64(0.25), 2);
-/// assert_eq!(Q8::<4>::new(4).as_f32(), 0.25);
-/// assert_eq!(Q8::<4>::new(4).as_f64(), 0.25);
-/// ```
-macro_rules! impl_as_float {
-    ($ty:ident) => {
-        impl<T: 'static + Copy, A: 'static, const F: i8> AsPrimitive<Q<T, A, F>> for $ty
-        where
-            $ty: AsPrimitive<T>,
-        {
-            #[inline]
-            fn as_(self) -> Q<T, A, F> {
-                Q::new(
-                    (self * const { 1.0 / Q::<T, A, F>::DELTA as $ty })
-                        .round()
-                        .as_(),
-                )
-            }
-        }
-
-        impl<T: AsPrimitive<$ty>, A: 'static, const F: i8> AsPrimitive<$ty> for Q<T, A, F> {
-            #[inline]
-            fn as_(self) -> $ty {
-                self.inner.as_() * Self::DELTA as $ty
-            }
-        }
-    };
-}
-impl_as_float!(f32);
-impl_as_float!(f64);
 
 impl<T, A, const F: i8> Q<T, A, F>
 where
@@ -443,280 +354,20 @@ where
     }
 }
 
-macro_rules! impl_q_as_float {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            impl<A, const F: i8> Q<$ty, A, F> {
-                /// Convert lossy to f32
-                #[inline]
-                #[must_use]
-                pub fn as_f32(self) -> f32 {
-                    self.inner as f32 * Self::DELTA
-                }
-
-                /// Convert lossy to f64
-                #[inline]
-                #[must_use]
-                pub fn as_f64(self) -> f64 {
-                    self.inner as f64 * Self::DELTA as f64
-                }
-            }
-        )*
-    };
-}
-
-macro_rules! impl_newtype_q_as_float {
-    ($wrap:ident<$($ty:ty),* $(,)?>) => {
-        $(
-            impl<A, const F: i8> Q<$wrap<$ty>, A, F> {
-                /// Convert lossy to f32
-                #[inline]
-                #[must_use]
-                pub fn as_f32(self) -> f32 {
-                    self.inner.0 as f32 * Self::DELTA
-                }
-
-                /// Convert lossy to f64
-                #[inline]
-                #[must_use]
-                pub fn as_f64(self) -> f64 {
-                    self.inner.0 as f64 * Self::DELTA as f64
-                }
-            }
-        )*
-    };
-}
-
-impl_q_as_float!(i8, i16, i32, i64, u8, u16, u32, u64);
-impl_newtype_q_as_float!(Wrapping<i8, i16, i32, i64, u8, u16, u32, u64>);
-
-impl<T, A, const F: i8> AsPrimitive<Self> for Q<T, A, F>
-where
-    Self: Copy + 'static,
-{
-    fn as_(self) -> Self {
-        self
-    }
-}
-
-macro_rules! forward_unop {
-    ($tr:ident::$m:ident) => {
-        impl<T: $tr<Output = T>, A, const F: i8> $tr for Q<T, A, F> {
-            type Output = Self;
-            #[inline]
-            fn $m(self) -> Self::Output {
-                Self::new(<T as $tr>::$m(self.inner))
-            }
-        }
-    };
-}
-forward_unop!(Neg::neg);
-forward_unop!(Not::not);
-
-macro_rules! forward_sh_op {
-    ($tr:ident::$m:ident) => {
-        impl<U, T: $tr<U, Output = T>, A, const F: i8> $tr<U> for Q<T, A, F> {
-            type Output = Self;
-            #[inline]
-            fn $m(self, rhs: U) -> Self::Output {
-                Self::new(<T as $tr<U>>::$m(self.inner, rhs))
-            }
-        }
-    };
-}
-forward_sh_op!(Shr::shr);
-forward_sh_op!(Shl::shl);
-
-macro_rules! forward_sh_assign_op {
-    ($tr:ident::$m:ident) => {
-        impl<T: $tr<U>, U, A, const F: i8> $tr<U> for Q<T, A, F> {
-            #[inline]
-            fn $m(&mut self, rhs: U) {
-                <T as $tr<U>>::$m(&mut self.inner, rhs)
-            }
-        }
-    };
-}
-forward_sh_assign_op!(ShrAssign::shr_assign);
-forward_sh_assign_op!(ShlAssign::shl_assign);
-
-/// ```
-/// # use dsp_fixedpoint::Q8;
-/// assert_eq!(
-///     Q8::<3>::from_f32(3.5) + Q8::from_f32(5.2),
-///     Q8::from_f32(8.7)
-/// );
-/// assert_eq!(
-///     Q8::<3>::from_f32(4.0) - Q8::from_f32(3.2),
-///     Q8::from_f32(0.8)
-/// );
-/// assert_eq!(Q8::<3>::from_f32(3.5) % Q8::from_int(1), Q8::from_f32(0.5));
-/// ```
-macro_rules! forward_binop {
-    ($tr:ident::$m:ident) => {
-        impl<T: $tr<T, Output = T>, A, const F: i8> $tr for Q<T, A, F> {
-            type Output = Self;
-            #[inline]
-            fn $m(self, rhs: Self) -> Self::Output {
-                Self::new(<T as $tr>::$m(self.inner, rhs.inner))
-            }
-        }
-    };
-}
-forward_binop!(Rem::rem);
-forward_binop!(Add::add);
-forward_binop!(Sub::sub);
-forward_binop!(BitAnd::bitand);
-forward_binop!(BitOr::bitor);
-forward_binop!(BitXor::bitxor);
-
-// The notable exception to standard rules
-// (https://github.com/rust-lang/rust/pull/93208#issuecomment-1019310634)
-// This is for performance reasons
-//
-// Q*T -> A, Q/T -> Q
-// See also the T*Q -> T and T/Q -> T in impl_q!()
-//
-
-/// Wide multiplication to accumulator
-///
-/// ```
-/// # use dsp_fixedpoint::{Q8, Q};
-/// assert_eq!(Q8::<3>::new(4) * 2, Q::new(8));
-/// assert_eq!(Q8::<3>::new(4) / 2, Q8::new(2));
-/// ```
-impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Mul<T> for Q<T, A, F> {
-    type Output = Q<A, T, F>;
+#[allow(private_bounds)]
+impl<T: AsFloat, A, const F: i8> Q<T, A, F> {
+    /// Convert lossy to f32
     #[inline]
-    fn mul(self, rhs: T) -> Q<A, T, F> {
-        Q::new(self.inner.up() * rhs.up())
+    #[must_use]
+    pub fn as_f32(self) -> f32 {
+        self.inner.as_f32() * Self::DELTA
     }
-}
 
-impl<T: Div<Output = T>, A, const F: i8> Div<T> for Q<T, A, F> {
-    type Output = Self;
+    /// Convert lossy to f64
     #[inline]
-    fn div(self, rhs: T) -> Self {
-        Q::new(self.inner / rhs)
-    }
-}
-
-macro_rules! forward_assign_op_foreign {
-    ($tr:ident::$m:ident) => {
-        impl<T: $tr<T>, A, const F: i8> $tr<T> for Q<T, A, F> {
-            #[inline]
-            fn $m(&mut self, rhs: T) {
-                <T as $tr>::$m(&mut self.inner, rhs)
-            }
-        }
-    };
-}
-forward_assign_op_foreign!(MulAssign::mul_assign);
-forward_assign_op_foreign!(DivAssign::div_assign);
-
-macro_rules! forward_assign_op {
-    ($tr:ident::$m:ident) => {
-        impl<T: $tr<T>, A, const F: i8> $tr for Q<T, A, F> {
-            #[inline]
-            fn $m(&mut self, rhs: Self) {
-                <T as $tr>::$m(&mut self.inner, rhs.inner)
-            }
-        }
-    };
-}
-forward_assign_op!(RemAssign::rem_assign);
-forward_assign_op!(AddAssign::add_assign);
-forward_assign_op!(SubAssign::sub_assign);
-forward_assign_op!(BitAndAssign::bitand_assign);
-forward_assign_op!(BitOrAssign::bitor_assign);
-forward_assign_op!(BitXorAssign::bitxor_assign);
-
-/// Q *= Q'
-///
-/// ```
-/// # use dsp_fixedpoint::Q8;
-/// let mut q = Q8::<4>::from_f32(0.25);
-/// q *= Q8::<3>::from_int(3);
-/// assert_eq!(q, Q8::from_f32(0.75));
-/// ```
-impl<T: Copy + Accu<A>, A: Shift + Mul<A, Output = A>, const F: i8, const F1: i8>
-    MulAssign<Q<T, A, F1>> for Q<T, A, F>
-{
-    #[inline]
-    fn mul_assign(&mut self, rhs: Q<T, A, F1>) {
-        let shift = const { neg_shift(F1) };
-        self.inner = T::down((self.inner.up() * rhs.inner.up()).shs(shift));
-    }
-}
-
-/// Q /= Q'
-///
-/// ```
-/// # use dsp_fixedpoint::Q8;
-/// let mut q = Q8::<4>::from_f32(0.75);
-/// q /= Q8::<3>::from_int(3);
-/// assert_eq!(q, Q8::from_f32(0.25));
-/// ```
-impl<
-    T: Copy + Shift + Accu<A> + Div<T, Output = T>,
-    A: Shift + Div<A, Output = A>,
-    const F: i8,
-    const F1: i8,
-> DivAssign<Q<T, A, F1>> for Q<T, A, F>
-{
-    #[inline]
-    fn div_assign(&mut self, rhs: Q<T, A, F1>) {
-        self.inner = if F1 > 0 {
-            T::down(self.inner.up().shs(F1) / rhs.inner.up())
-        } else {
-            self.inner.shs(F1) / rhs.inner
-        };
-    }
-}
-
-/// Q*Q -> Q
-///
-/// ```
-/// # use dsp_fixedpoint::Q8;
-/// assert_eq!(
-///     Q8::<4>::from_f32(0.75) * Q8::from_int(3),
-///     Q8::from_f32(2.25)
-/// );
-/// ```
-impl<T, A, const F: i8> Mul for Q<T, A, F>
-where
-    Self: MulAssign,
-{
-    type Output = Self;
-    #[inline]
-    fn mul(mut self, rhs: Self) -> Self::Output {
-        self *= rhs;
-        self
-    }
-}
-
-/// Q/Q -> Q
-///
-/// ```
-/// # use dsp_fixedpoint::Q8;
-/// assert_eq!(Q8::<4>::from_int(3) / Q8::from_int(2), Q8::from_f32(1.5));
-/// ```
-impl<T, A, const F: i8> Div for Q<T, A, F>
-where
-    Self: DivAssign,
-{
-    type Output = Self;
-    #[inline]
-    fn div(mut self, rhs: Self) -> Self::Output {
-        self /= rhs;
-        self
-    }
-}
-
-impl<T: iter::Sum, A, const F: i8> iter::Sum for Q<T, A, F> {
-    #[inline]
-    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        Self::new(iter.map(|i| i.inner).sum())
+    #[must_use]
+    pub fn as_f64(self) -> f64 {
+        self.inner.as_f64() * Self::DELTA as f64
     }
 }
 
@@ -747,20 +398,8 @@ macro_rules! impl_q {
 
         impl<const F: i8> ConstOne for Q<$t, $a, F> {
             const ONE: Self = {
-                assert!(
-                    F >= 0,
-                    "`Q::ONE` is only available when 1 is exactly representable"
-                );
                 Self::new($wrap(1 << F as usize))
             };
-        }
-
-        impl<const F: i8> AsPrimitive<$t> for Q<$a, $t, F> {
-            /// Scale from integer accu type
-            #[inline]
-            fn as_(self) -> $t {
-                self.quantize()
-            }
         }
 
         /// T*Q -> T
@@ -779,16 +418,10 @@ macro_rules! impl_q {
 
             #[inline]
             fn div(self, rhs: Q<$t, $a, F>) -> Self::Output {
-                const {
-                    assert!(
-                        F != i8::MIN,
-                        "fractional bit count must not be i8::MIN for division"
-                    );
-                }
                 if F > 0 {
                     <$t>::down(self.up().shs(F) / rhs.inner.up())
                 } else {
-                    self.shs(F) / rhs.inner
+                    self.shsc::<F>() / rhs.inner
                 }
             }
         }
@@ -820,6 +453,7 @@ impl_q!(V64<u64, u128>, Wrapping);
 #[cfg(test)]
 mod test {
     use super::*;
+    use num_traits::{Bounded, FromPrimitive, Signed, ToPrimitive};
 
     #[test]
     fn simple() {
@@ -832,5 +466,28 @@ mod test {
             Q32::from_int(2)
         );
         assert_eq!(7 * Q32::<4>::new(0x33), 7 * 3 + ((3 * 7) >> 4));
+    }
+
+    #[test]
+    fn numeric_traits() {
+        assert_eq!(Q8::<4>::min_value().inner, i8::MIN);
+        assert_eq!(Q8::<4>::max_value().inner, i8::MAX);
+        assert_eq!(Q8::<4>::from_f32(1.5).to_i32(), Some(1));
+        assert_eq!(Q8::<4>::from_f32(1.5).to_f64(), Some(1.5));
+        assert_eq!(Q8::<4>::from_i32(3), Some(Q8::<4>::from_int(3)));
+        assert_eq!(Q8::<4>::from_f32(-1.5).abs(), Q8::<4>::from_f32(1.5));
+        assert_eq!(Q8::<4>::from_f32(-1.5).signum(), Q8::<4>::from_int(-1));
+        assert!(Q8::<4>::from_f32(-1.5).is_negative());
+    }
+
+    #[cfg(feature = "bytemuck")]
+    #[test]
+    fn bytemuck_traits() {
+        use bytemuck::TransparentWrapper;
+
+        let q = Q8::<4>::from_int(3);
+        assert_eq!(q.into_inner(), 48);
+        assert_eq!(Q8::<4>::wrap(48i8), q);
+        assert_eq!(*Q8::<4>::wrap_ref(&48i8), q);
     }
 }

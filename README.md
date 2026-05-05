@@ -11,15 +11,24 @@ Many of the algorithms are implemented on integer (fixed point) datatypes.
 
 One comprehensive user for these algorithms is [Stabilizer](https://github.com/quartiq/stabilizer).
 
+## Showcase examples
+
+The repository examples are small composite DSP graphs built from `idsp` and
+`dsp-process` primitives:
+
+* `cargo run --example ddc_lockin --features std`: real-input DDC / lock-in with shared biquad state
+* `cargo run --example fm_disc --features std`: FM discriminator receiver core using `cossin()`/`atan2()`
+* `cargo run --example polyphase_channelizer --features std`: static 4-channel polyphase analysis bank
+
 ## Fixed point
 
 ### Cosine/Sine
 
-[`cossin()`] uses a small (128 element or 512 byte) LUT, smart octant (un)mapping, linear interpolation and comprehensive analysis of corner cases to achieve a very clean signal (4e-6 RMS error, 9e-6 max error, 108 dB SNR typ), low spurs, and no bias with about 40 cortex-m instructions per call (23.5 cycles on Cortex-M7, see `tests/embedded`). It computes both cosine and sine (i.e. the complex signal) at once given a phase input.
+[`cossin()`] uses a small (128 element or 512 byte) midpoint LUT, smart octant (un)mapping, and first-order interpolation to compute both cosine and sine (i.e. the complex signal) at once given a phase input. The pointwise quadrature error is about 4e-6 RMS and 9e-6 max. As a coherent DDS driven by an [`Accu`], the midpoint interpolation gives a predictable dominant complex spur pair at `±(8*2^7)f = ±1024f` from the carrier at about -120.4 dBc. The implementation remains small and fast with about 40 Cortex-M instructions per call (23.5 cycles on Cortex-M7, see `tests/embedded`).
 
 ### Two-argument arcus-tangens
 
-[`atan2()`] returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine). The RMS phase error is less than 5e-6 rad, max error is less than 1.2e-5 rad, i.e. 20.5 bit RMS, 19.1 bit max accuracy. The bias is minimal. It takes about 60 cycles on Cortex-M7 (see `tests/embedded`).
+[`atan2()`] returns a phase given a complex signal (a pair of in-phase/`x`/cosine and quadrature/`y`/sine). It uses a small reciprocal LUT with one Newton step followed by a fixed-point odd polynomial. The measured phase error is about 1.3e-6 rad RMS and 2.3e-6 rad max on the repository test grid, i.e. about 22.5 bit RMS and 21.4 bit max accuracy. The bias is minimal. It takes about 52 cycles on Cortex-M7 (see `tests/embedded`).
 
 ### CORDIC
 
@@ -29,9 +38,9 @@ One comprehensive user for these algorithms is [Stabilizer](https://github.com/q
 
 [`PLL`], [`RPLL`]: High accuracy, zero-assumption, fully robust, forward and reciprocal PLLs with dynamically adjustable time constant and arbitrary (in the Nyquist sampling sense) capture range, and noise shaping.
 
-## `Unwrapper`, `Accu`, `saturating_scale()`
+## `Unwrapper`, `Accu`, `Uniform`, `Triangular`, `saturating_scale()`
 
-[`Unwrapper`], [`Accu`], [`saturating_scale()`]:
+[`Unwrapper`], [`Accu`], [`Uniform`], [`Triangular`], [`saturating_scale()`]:
 Tools to handle, track, and unwrap phase signals or generate them.
 
 ## Float and Fixed point
@@ -42,7 +51,7 @@ Tools to handle, track, and unwrap phase signals or generate them.
 Robust and clean clipping and offset (anti-windup, no derivative kick, dynamically adjustable gains and gain limits) suitable for PID controller applications.
 Four kinds of filter action are supported for each Biquad: Direct Form 1, Direct Form 2 Transposed, Direct Form 1 with noise shaping,
 and Direct Form 1 with wide output.
-Coefficient sharing for multiple channels is implemented through [`dsp_process::SplitProcess`], [`dsp_process::Channels`].
+Coefficient sharing for multiple lanes/channels is implemented through [`dsp_process::SplitProcess`], [`dsp_process::Lanes`].
 
 ### Comparison
 

@@ -175,7 +175,7 @@ impl<
             }
             // compute output
             let odd = get::<_, _, _, false, true>(&self.0, &state.odd);
-            for (y, (odd, even)) in y.iter_mut().zip(odd.zip(state.even.iter().copied())) {
+            for (y, (odd, &even)) in y.iter_mut().zip(odd.zip(state.even.iter())) {
                 *y = odd + even;
             }
             // keep state
@@ -220,7 +220,7 @@ impl<
             state.x[Self::LEN..][..x.len()].copy_from_slice(x);
             // compute output
             let odd = get::<_, _, _, false, true>(&self.0, &state.x);
-            for (y, (even, odd)) in y.iter_mut().zip(odd.zip(state.x[M..].iter().copied())) {
+            for (y, (even, &odd)) in y.iter_mut().zip(odd.zip(state.x[M..].iter())) {
                 *y = [even, odd]; // interpolated, center tap: identity
             }
             // keep state
@@ -567,7 +567,7 @@ mod test {
         let mut y = vec![0.0; 2];
         let x: Vec<_> = (0..y.len() * R).map(|i| i as f32).collect();
         HBF_DEC_CASCADE
-            .inner
+            .inner()
             .1
             .block(&mut h, x.as_chunks::<R>().0, &mut y);
         println!("{:?}", y);
@@ -580,11 +580,11 @@ mod test {
         let mut y = [0.0; 100];
         let x: Vec<f32> = (0..y.len() << R).map(|_| rand::random()).collect();
         HBF_DEC_CASCADE
-            .inner
+            .inner()
             .1
             .block(&mut h, x.as_chunks::<{ 1 << R }>().0, &mut y);
         let x = vec![0.0; 1 << 10];
-        HBF_DEC_CASCADE.inner.1.block(
+        HBF_DEC_CASCADE.inner().1.block(
             &mut h,
             x.as_chunks::<{ 1 << R }>().0,
             &mut y[..x.len() >> R],
@@ -602,7 +602,7 @@ mod test {
         let mut x = vec![0.0; (r >> R) + 1];
         x[0] = 1.0;
         let mut y = vec![[0.0; 1 << R]; x.len()];
-        HBF_INT_CASCADE.inner.0.block(&mut h, &x, &mut y);
+        HBF_INT_CASCADE.inner().0.block(&mut h, &x, &mut y);
         println!("{:?}", y); // interpolator impulse response
         let y = y.as_flattened();
         assert_ne!(y[r], 0.0);
@@ -677,7 +677,7 @@ mod test {
         let mut x = [[9.0; 1 << R]; 1 << 6];
         let mut y = [0.0; 1 << 6];
         for _ in 0..1 << 20 {
-            HBF_DEC_CASCADE.inner.1.block(&mut h, &x, &mut y);
+            HBF_DEC_CASCADE.inner().1.block(&mut h, &x, &mut y);
             x[33][1] = y[11]; // prevent the entire loop from being optimized away
         }
     }

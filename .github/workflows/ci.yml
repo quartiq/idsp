@@ -33,6 +33,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - run: cargo check --features "${{ matrix.features }}"
       - run: cargo test --features "${{ matrix.features }}"
+      - run: cargo test --examples --features "${{ matrix.features }}"
       - run: cargo bench --features "${{ matrix.features }}"
       - run: cargo build --release --features "${{ matrix.features }}"
 

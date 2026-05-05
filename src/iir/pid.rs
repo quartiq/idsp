@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Build,
-    iir::{Biquad, BiquadClamp},
+    iir::{Biquad, BiquadClamp, Error},
 };
 
 /// Feedback term order
@@ -114,6 +114,31 @@ impl<T: Float> Builder<T> {
         self
     }
 
+    /// Set the proportional gain.
+    pub fn kp(self, gain: T) -> Self {
+        self.gain(Action::P, gain)
+    }
+
+    /// Set the integral gain.
+    pub fn ki(self, gain: T) -> Self {
+        self.gain(Action::I, gain)
+    }
+
+    /// Set the double-integral gain.
+    pub fn ki2(self, gain: T) -> Self {
+        self.gain(Action::I2, gain)
+    }
+
+    /// Set the derivative gain.
+    pub fn kd(self, gain: T) -> Self {
+        self.gain(Action::D, gain)
+    }
+
+    /// Set the double-derivative gain.
+    pub fn kd2(self, gain: T) -> Self {
+        self.gain(Action::D2, gain)
+    }
+
     /// Gain limit for a given action
     ///
     /// Gain limit units are `output/input`. See also [`Builder::gain()`].
@@ -145,6 +170,65 @@ impl<T: Float> Builder<T> {
     pub fn limit(mut self, action: Action, limit: T) -> Self {
         self.limit[action as usize] = limit;
         self
+    }
+
+    /// Set the integral gain limit.
+    pub fn limit_i(self, limit: T) -> Self {
+        self.limit(Action::I, limit)
+    }
+
+    /// Set the double-integral gain limit.
+    pub fn limit_i2(self, limit: T) -> Self {
+        self.limit(Action::I2, limit)
+    }
+
+    /// Set the derivative gain limit.
+    pub fn limit_d(self, limit: T) -> Self {
+        self.limit(Action::D, limit)
+    }
+
+    /// Set the double-derivative gain limit.
+    pub fn limit_d2(self, limit: T) -> Self {
+        self.limit(Action::D2, limit)
+    }
+
+    /// Check whether the parametrization is valid.
+    pub fn validate(&self, period: &T) -> Result<(), Error> {
+        if !period.is_finite() {
+            return Err(Error::NonFinite("period"));
+        }
+        if *period <= T::zero() {
+            return Err(Error::NonPositive("period"));
+        }
+        for (name, values) in [("gain", &self.gain), ("limit", &self.limit)] {
+            for value in values {
+                if !value.is_finite() && !value.is_infinite() {
+                    return Err(Error::NonFinite(name));
+                }
+            }
+        }
+        for action in [Action::I2, Action::I, Action::D, Action::D2] {
+            let gain = self.gain[action as usize];
+            let limit = self.limit[action as usize];
+            if limit.is_finite() {
+                if limit == T::zero() {
+                    return Err(Error::NonPositive("limit"));
+                }
+                if gain != T::zero() && gain.signum() != limit.signum() {
+                    return Err(Error::SignMismatch("gain/limit"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Build after validation.
+    pub fn try_build<C>(&self, period: &T) -> Result<C, Error>
+    where
+        Self: Build<C, Context = T>,
+    {
+        self.validate(period)?;
+        Ok(Build::build(self, period))
     }
 }
 
@@ -312,6 +396,13 @@ impl<T: Float> Default for Units<T> {
     }
 }
 
+impl<T> Units<T> {
+    /// Create units explicitly.
+    pub const fn new(t: T, x: T, y: T) -> Self {
+        Self { t, x, y }
+    }
+}
+
 /// PID Controller parameters
 #[derive(Clone, Debug, Tree)]
 #[tree(meta(doc, typename))]
@@ -361,6 +452,105 @@ impl<T: Float + Default> Default for Pid<T> {
             min: T::neg_infinity(),
             max: T::infinity(),
         }
+    }
+}
+
+impl<T: Float> Pid<T> {
+    /// Set the proportional gain.
+    pub fn kp(mut self, gain: T) -> Self {
+        self.gain.value[Action::P as usize] = gain;
+        self
+    }
+
+    /// Set the integral gain.
+    pub fn ki(mut self, gain: T) -> Self {
+        self.gain.value[Action::I as usize] = gain;
+        self
+    }
+
+    /// Set the double-integral gain.
+    pub fn ki2(mut self, gain: T) -> Self {
+        self.gain.value[Action::I2 as usize] = gain;
+        self
+    }
+
+    /// Set the derivative gain.
+    pub fn kd(mut self, gain: T) -> Self {
+        self.gain.value[Action::D as usize] = gain;
+        self
+    }
+
+    /// Set the double-derivative gain.
+    pub fn kd2(mut self, gain: T) -> Self {
+        self.gain.value[Action::D2 as usize] = gain;
+        self
+    }
+
+    /// Set the setpoint.
+    pub fn setpoint(mut self, setpoint: T) -> Self {
+        self.setpoint = setpoint;
+        self
+    }
+
+    /// Set output limits.
+    pub fn output_limits(mut self, min: T, max: T) -> Self {
+        self.min = min;
+        self.max = max;
+        self
+    }
+
+    /// Set the integral gain limit.
+    pub fn limit_i(mut self, limit: T) -> Self {
+        self.limit.value[Action::I as usize] = limit;
+        self
+    }
+
+    /// Set the double-integral gain limit.
+    pub fn limit_i2(mut self, limit: T) -> Self {
+        self.limit.value[Action::I2 as usize] = limit;
+        self
+    }
+
+    /// Set the derivative gain limit.
+    pub fn limit_d(mut self, limit: T) -> Self {
+        self.limit.value[Action::D as usize] = limit;
+        self
+    }
+
+    /// Set the double-derivative gain limit.
+    pub fn limit_d2(mut self, limit: T) -> Self {
+        self.limit.value[Action::D2 as usize] = limit;
+        self
+    }
+
+    /// Check whether the parametrization is valid.
+    pub fn validate(&self, units: &Units<T>) -> Result<(), Error> {
+        if self.min > self.max {
+            return Err(Error::InvertedRange("output_limits"));
+        }
+        for (name, value) in [("t", units.t), ("x", units.x), ("y", units.y)] {
+            if !value.is_finite() {
+                return Err(Error::NonFinite(name));
+            }
+            if value <= T::zero() {
+                return Err(Error::NonPositive(name));
+            }
+        }
+        Builder {
+            order: self.order,
+            gain: self.gain.value,
+            limit: self.limit.value,
+        }
+        .validate(&units.t)
+    }
+
+    /// Build after validation.
+    pub fn try_build<C>(&self, units: &Units<T>) -> Result<C, Error>
+    where
+        Self: Build<C, Context = Units<T>>,
+    {
+        self.validate(units)?;
+        Ok(Build::build(self, units))
     }
 }
 
@@ -415,13 +605,7 @@ mod test {
             .limit(pid::Action::I, 1e3)
             .limit(pid::Action::D, 1e1)
             .build(&1.0);
-        let want = [
-            9.18190826,
-            -18.27272561,
-            9.09090826,
-            1.90909074,
-            -0.90909083,
-        ];
+        let want = [9.181_909, -18.272_726, 9.090_908, 1.909_090_8, -0.909_090_8];
         for (ba_have, ba_want) in b.ba.iter().zip(want.iter()) {
             assert!(
                 (ba_have / ba_want - 1.0).abs() < 2.0 * f32::EPSILON,
