@@ -2,6 +2,8 @@
 
 mod biquad;
 pub use biquad::*;
+#[cfg(feature = "miniconf")]
+pub mod config;
 mod error;
 pub use error::*;
 

@@ -1,8 +1,12 @@
-//! Control-plane configuration types for `idsp`.
+//! Control-plane configuration types.
 
 use core::any::Any;
 
-use idsp::{
+use miniconf::Tree;
+use num_traits::{AsPrimitive, Float, FloatConst};
+use serde::{Serialize, de::DeserializeOwned};
+
+use crate::{
     Build,
     iir::{
         BiquadClamp,
@@ -10,9 +14,6 @@ use idsp::{
         pid::{Gains, Order, Pid, Units},
     },
 };
-use miniconf::Tree;
-use num_traits::{AsPrimitive, Float, FloatConst};
-use serde::{Serialize, de::DeserializeOwned};
 
 /// Floating point BA coefficients before quantization.
 #[derive(Debug, Clone, Tree)]
@@ -189,7 +190,7 @@ impl<T: Copy> From<&PidConfig<T>> for Pid<T> {
 /// struct Foo {
 ///     #[tree(typ="&str", with=str_leaf, defer=self.config)]
 ///     typ: (),
-///     config: idsp_config::BiquadConfig<f32>,
+///     config: idsp::iir::config::BiquadConfig<f32>,
 /// }
 /// ```
 #[derive(
