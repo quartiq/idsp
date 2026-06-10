@@ -97,7 +97,7 @@ impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Mul<T> for Q<T, A, F> {
     type Output = Q<A, T, F>;
     #[inline]
     fn mul(self, rhs: T) -> Q<A, T, F> {
-        Q::new(self.inner.up() * rhs.up())
+        self.mul_wide(rhs)
     }
 }
 

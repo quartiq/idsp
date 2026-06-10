@@ -1,29 +1,14 @@
 use core::num::Wrapping;
-use core::ops::{Add, Mul};
+use core::ops::Add;
 use num_traits::{
     AsPrimitive, Bounded, ConstZero, FromPrimitive, Num, One, Signed, ToPrimitive, Zero,
 };
 
-#[cfg(not(any(feature = "std")))]
+#[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
-use num_traits::Float; // .round()
+use num_traits::float::FloatCore; // .round()
 
 use crate::{Accu, AsFloat, Q, Shift};
-
-impl<T: One + Shift, A, const F: i8> One for Q<T, A, F>
-where
-    Self: Mul<Output = Self>,
-{
-    fn one() -> Self {
-        const {
-            assert!(
-                F >= 0,
-                "`Q::one()` is only available when 1 is exactly representable"
-            );
-        }
-        Self::new(T::one().shsc::<F>())
-    }
-}
 
 impl<T: Zero, A, const F: i8> Zero for Q<T, A, F>
 where

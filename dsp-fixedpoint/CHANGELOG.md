@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED](https://github.com/quartiq/idsp/compare/dsp-fixedpoint-v0.1.1...HEAD) - DATE
 
+### Added
+
+* Optional `bytemuck` support for transparent fixed-point wrappers.
+* Optional `defmt::Format` support.
+* Fixed-point binary, octal, and hexadecimal dot formatting.
+* `num-traits` support for bounds, primitive conversion, signed values, and parsing.
+* `mul_wide()` and `apply()` to spell widened multiplication and quantized gain application explicitly.
+
+### Changed
+
+* `serde` is no longer enabled by default.
+* Default builds no longer pull `libm`.
+* `Q::one()` and `Q::ONE` are only available when `1` is exactly representable.
+* Add explicit raw-bit accessors: `from_bits()` and `into_inner()`.
+
 ## [0.1.1](https://github.com/quartiq/idsp/compare/dsp-fixedpoint-v0.1.0...dsp-fixedpoint-v0.1.1) - 2026-04-06
 
 ## [0.1.0](https://github.com/quartiq/idsp/compare/v0.19.0...dsp-fixedpoint-v0.1.0) - 2026-01-13

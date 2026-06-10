@@ -5,7 +5,7 @@ mod format;
 mod num_traits_impl;
 mod ops;
 
-use num_traits::{AsPrimitive, ConstOne};
+use num_traits::{AsPrimitive, ConstOne, One};
 
 use core::{
     hash::{Hash, Hasher},
@@ -137,6 +137,7 @@ pub trait Accu<A> {
 /// # use dsp_fixedpoint::Q8;
 /// assert_eq!(Q8::<4>::from_int(3), Q8::new(3 << 4));
 /// assert_eq!(7 * Q8::<4>::from_f32(1.5), 10);
+/// assert_eq!(Q8::<4>::from_f32(1.5).apply(7), 10);
 /// assert_eq!(7 / Q8::<4>::from_f32(1.5), 4);
 /// ```
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -305,6 +306,33 @@ impl<A: Shift, T: Accu<A>, const F: i8> Q<A, T, F> {
     }
 }
 
+impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Q<T, A, F> {
+    /// Multiply by a raw integer and keep the widened accumulator result.
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::{Q, Q8};
+    /// assert_eq!(Q8::<3>::new(4).mul_wide(2), Q::new(8));
+    /// ```
+    #[inline]
+    pub fn mul_wide(self, rhs: T) -> Q<A, T, F> {
+        Q::new(self.inner.up() * rhs.up())
+    }
+}
+
+impl<T: Accu<A>, A: Shift + Mul<Output = A>, const F: i8> Q<T, A, F> {
+    /// Apply this fixed-point value as a gain to a raw integer and quantize.
+    ///
+    /// ```
+    /// # use dsp_fixedpoint::Q8;
+    /// assert_eq!(Q8::<4>::from_f32(0.25).apply(7), 1);
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn apply(self, rhs: T) -> T {
+        self.mul_wide(rhs).quantize()
+    }
+}
+
 /// Lossy conversion from a dynamically scaled integer
 ///
 /// ```
@@ -398,8 +426,30 @@ macro_rules! impl_q {
 
         impl<const F: i8> ConstOne for Q<$t, $a, F> {
             const ONE: Self = {
+                const {
+                    const MAX_ONE_F: i8 =
+                        <$inner>::BITS as i8 - if <$inner>::MIN == 0 { 0 } else { 1 };
+                    assert!(
+                        F >= 0 && F < MAX_ONE_F,
+                        "`Q::ONE` is only available when 1 is exactly representable"
+                    );
+                }
                 Self::new($wrap(1 << F as usize))
             };
+        }
+
+        impl<const F: i8> One for Q<$t, $a, F> {
+            fn one() -> Self {
+                const {
+                    const MAX_ONE_F: i8 =
+                        <$inner>::BITS as i8 - if <$inner>::MIN == 0 { 0 } else { 1 };
+                    assert!(
+                        F >= 0 && F < MAX_ONE_F,
+                        "`Q::one()` is only available when 1 is exactly representable"
+                    );
+                }
+                Self::ONE
+            }
         }
 
         /// T*Q -> T
@@ -408,7 +458,7 @@ macro_rules! impl_q {
 
             #[inline]
             fn mul(self, rhs: Q<$t, $a, F>) -> Self::Output {
-                (rhs * self).quantize()
+                rhs.apply(self)
             }
         }
 
@@ -466,6 +516,11 @@ mod test {
             Q32::from_int(2)
         );
         assert_eq!(7 * Q32::<4>::new(0x33), 7 * 3 + ((3 * 7) >> 4));
+        assert_eq!(Q32::<4>::new(0x33).apply(7), 7 * 3 + ((3 * 7) >> 4));
+        assert_eq!(
+            Q32::<4>::new(0x33).mul_wide(7).quantize(),
+            7 * Q32::<4>::new(0x33)
+        );
     }
 
     #[test]

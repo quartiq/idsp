@@ -44,7 +44,8 @@ operators efficient:
 - `Q / T -> Q`, while `T / Q -> T`.
 
 That asymmetry is intentional: operand order chooses whether the result remains
-wide or is quantized immediately.
+wide or is quantized immediately. Use `mul_wide()` and `apply()` when spelling
+that choice explicitly is clearer than relying on operand order.
 
 ## Scale restrictions
 
@@ -52,20 +53,19 @@ wide or is quantized immediately.
 
 - `Q::<_, _, -128>::DELTA` is rejected at compile time.
 - `Q::<_, _, F>::one()` and `Q::<_, _, F>::ONE` are rejected at compile time
-  when `F < 0`, because the mathematical value `1` is not exactly representable
-  for those types.
+  when the mathematical value `1` is not exactly representable by the storage
+  type and scale.
 
 ```compile_fail
 use dsp_fixedpoint::Q8;
 use num_traits::One;
 
-let _ = Q8::<-1>::one();
+let _ = Q8::<7>::one();
 ```
 
 ## Serialization
 
-With the default `serde` feature, `Q` serializes transparently as its raw
-representation.
+With `feature = "serde"`, `Q` serializes transparently as its raw representation.
 
 ## Ecosystem Traits
 
