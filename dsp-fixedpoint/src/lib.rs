@@ -4,6 +4,8 @@
 mod format;
 mod num_traits_impl;
 mod ops;
+#[cfg(feature = "serde")]
+pub mod serde;
 
 use num_traits::{AsPrimitive, ConstOne, One};
 
@@ -140,7 +142,7 @@ pub trait Accu<A> {
 /// assert_eq!(Q8::<4>::from_f32(1.5).apply(7), 10);
 /// assert_eq!(7 / Q8::<4>::from_f32(1.5), 4);
 /// ```
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 #[derive(Default)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", serde(transparent))]

@@ -66,6 +66,19 @@ let _ = Q8::<7>::one();
 ## Serialization
 
 With `feature = "serde"`, `Q` serializes transparently as its raw representation.
+For lossy scaled values, use `dsp_fixedpoint::serde::as_f32` or
+`dsp_fixedpoint::serde::as_f64`.
+
+```rust,ignore
+# use serde::{Deserialize, Serialize};
+use dsp_fixedpoint::Q32;
+
+#[derive(Deserialize, Serialize)]
+struct Config {
+    #[serde(with = "dsp_fixedpoint::serde::as_f64")]
+    gain: Q32<3>,
+}
+```
 
 ## Ecosystem Traits
 

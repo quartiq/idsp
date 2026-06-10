@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed-point binary, octal, and hexadecimal dot formatting.
 * `num-traits` support for bounds, primitive conversion, signed values, and parsing.
 * `mul_wide()` and `apply()` to spell widened multiplication and quantized gain application explicitly.
+* Serde adapters `serde::as_f32` and `serde::as_f64` for lossy scaled values.
 
 ### Changed
 

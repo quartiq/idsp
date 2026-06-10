@@ -27,6 +27,9 @@ serde = { version = "1.0.228", default-features = false, features = [
     "derive",
 ], optional = true }
 
+[dev-dependencies]
+serde-json-core = "0.6.0"
+
 [lints]
 workspace = true
 
