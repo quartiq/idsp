@@ -8,13 +8,13 @@ use num_traits::{
     identities::Zero,
     ops::wrapping::{WrappingAdd, WrappingSub},
 };
-use serde::{Deserialize, Serialize};
 
 use dsp_process::{Inplace, Process};
 
 /// Wrap classification
 #[repr(i8)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub enum Wrap {
     /// A wrap occured in the negative direction
     Negative = -1,
@@ -104,7 +104,8 @@ pub fn saturating_scale(lo: i32, hi: i32, shift: u32) -> i32 {
 ///
 /// This is unwrapping as in the phase and overflow unwrapping context, not
 /// unwrapping as in the `Result`/`Option` context.
-#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct Unwrapper<Q> {
     /// current output
     pub y: Q,
@@ -160,7 +161,8 @@ impl<P: Copy, Q> Inplace<P> for Unwrapper<Q> where Self: Process<P> {}
 ///
 /// Clamps output to the value range on wraps and only un-clamps on
 /// (one corresponding) un-wrap.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct ClampWrap<Q> {
     /// Last input value
     pub x0: Q,

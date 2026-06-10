@@ -23,7 +23,8 @@ use super::DirectForm1;
 ///
 /// The `y0`/`y1` fields of [`DirectForm1`] hold the in-phase and quadrature
 /// components of the current output.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct Normal<C> {
     /// Feed forward coefficients
     pub b: [C; 3],

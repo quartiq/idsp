@@ -16,6 +16,17 @@ See also:
 
 * `PLL`: rewritten in a different formalism. Steeper transition band, more stopband attenuation,
   support for very narrow bandwidth reduced somewhat.
+* `serde` and `bytemuck` support are now optional features.
+* `iir::Pid` no longer depends on `miniconf`; named gain-tree configuration moved to `idsp-config`.
+
+### Added
+
+* `idsp-config` crate with miniconf-backed `BiquadConfig`, `BaConfig`, `FilterConfig`, and `PidConfig`.
+
+### Removed
+
+* Remove default dependencies on `serde`, `bytemuck`, `thiserror`, `miniconf`, and `strum`.
+* Remove `iir::repr`; use `idsp_config::BiquadConfig` for control-plane biquad configuration.
 
 ## [v0.21.0](https://github.com/quartiq/idsp/compare/v0.20.0..v0.21.0) - 2026-02-11
 

@@ -2,9 +2,7 @@
 
 use core::ops::{Add, AddAssign, Div, Mul, SubAssign};
 
-use miniconf::Tree;
 use num_traits::{AsPrimitive, Float};
-use serde::{Deserialize, Serialize};
 
 use crate::{
     Build,
@@ -12,7 +10,8 @@ use crate::{
 };
 
 /// Feedback term order
-#[derive(Clone, Debug, Copy, Serialize, Deserialize, Default, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Copy, Default, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub enum Order {
     /// Proportional
     P = 2,
@@ -37,7 +36,8 @@ pub enum Order {
 ///     .limit(pid::Action::D, 1e1)
 ///     .build(&1e-3);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct Builder<T> {
     order: Order,
     gain: [T; 5],
@@ -57,7 +57,8 @@ impl<T: Float> Default for Builder<T> {
 /// PID action
 ///
 /// This enumerates the five possible PID style actions of a Biquad/second-order-section.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub enum Action {
     /// Double integrating, -40 dB per decade
     I2 = 0,
@@ -328,42 +329,19 @@ where
 }
 
 /// Named gains
-#[derive(Clone, Debug, Tree, Default)]
-#[allow(unused)]
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct Gains<T> {
     /// Gain values
     ///
     /// See [`Action`] for indices.
-    #[tree(skip)]
     pub value: [T; 5],
-    /// Double integral
-    #[tree(defer = "self.value[Action::I2 as usize]", typ = "T")]
-    i2: (),
-    /// Integral
-    #[tree(defer = "self.value[Action::I as usize]", typ = "T")]
-    i: (),
-    /// Proportional
-    #[tree(defer = "self.value[Action::P as usize]", typ = "T")]
-    p: (),
-    /// Derivative
-    #[tree(defer = "self.value[Action::D as usize]", typ = "T")]
-    d: (),
-    /// Double derivative
-    #[tree(defer = "self.value[Action::D2 as usize]", typ = "T")]
-    d2: (),
 }
 
 impl<T> Gains<T> {
     /// Create a new `Gains` given values.
     pub fn new(value: [T; 5]) -> Self {
-        Self {
-            value,
-            i2: (),
-            i: (),
-            p: (),
-            d: (),
-            d2: (),
-        }
+        Self { value }
     }
 }
 
@@ -404,11 +382,10 @@ impl<T> Units<T> {
 }
 
 /// PID Controller parameters
-#[derive(Clone, Debug, Tree)]
-#[tree(meta(doc, typename))]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct Pid<T> {
     /// Feedback term order
-    #[tree(with=miniconf::leaf)]
     pub order: Order,
     /// Gain
     ///
@@ -444,10 +421,7 @@ impl<T: Float + Default> Default for Pid<T> {
         Self {
             order: Order::default(),
             gain: Gains::default(),
-            limit: Gains {
-                value: [T::infinity(); 5],
-                ..Default::default()
-            },
+            limit: Gains::new([T::infinity(); 5]),
             setpoint: T::zero(),
             min: T::neg_infinity(),
             max: T::infinity(),

@@ -52,6 +52,7 @@ Robust and clean clipping and offset (anti-windup, no derivative kick, dynamical
 Four kinds of filter action are supported for each Biquad: Direct Form 1, Direct Form 2 Transposed, Direct Form 1 with noise shaping,
 and Direct Form 1 with wide output.
 Coefficient sharing for multiple lanes/channels is implemented through [`dsp_process::SplitProcess`], [`dsp_process::Lanes`].
+Miniconf-backed control-plane configuration is provided by the `idsp-config` crate.
 
 ### Comparison
 

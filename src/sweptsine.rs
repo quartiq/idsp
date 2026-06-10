@@ -119,15 +119,24 @@ impl Sweep {
 }
 
 /// Sweep parameter error
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, thiserror::Error)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum SweepError {
     /// Start out of bounds
-    #[error("Start out of bounds")]
     Start,
     /// Stop out of bounds
-    #[error("Stop out of bounds")]
     Stop,
 }
+
+impl core::fmt::Display for SweepError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Start => f.write_str("Start out of bounds"),
+            Self::Stop => f.write_str("Stop out of bounds"),
+        }
+    }
+}
+
+impl core::error::Error for SweepError {}
 
 /// Phase to IQ conversion
 #[derive(Clone, Debug, PartialEq, PartialOrd, Default)]

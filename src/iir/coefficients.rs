@@ -1,11 +1,11 @@
 //! Standard biquad filter coefficients
 use num_traits::{AsPrimitive, Float, FloatConst};
-use serde::{Deserialize, Serialize};
 
 use crate::iir::{Biquad, BiquadClamp, Error};
 
 /// Transition/corner shape
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub enum Shape<T> {
     /// Q, 1/sqrt(2) for critical
     Q(T),
@@ -24,7 +24,8 @@ impl<T: Float + FloatConst> Default for Shape<T> {
 /// Standard audio biquad filter builder
 ///
 /// <https://www.w3.org/TR/audio-eq-cookbook/>
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct Filter<T> {
     /// Angular critical frequency (in units of sampling frequency),
     /// Corner frequency, or 3dB cutoff frequency. `frequency=π` is Nyquist.
@@ -39,7 +40,8 @@ pub struct Filter<T> {
 }
 
 /// Standard audio/WebAudio biquad type.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub enum Type {
     /// A lowpass
     #[default]
@@ -63,7 +65,8 @@ pub enum Type {
 }
 
 /// WebAudio-style biquad builder.
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct WebAudio<T> {
     /// Filter type.
     pub typ: Type,

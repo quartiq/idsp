@@ -17,7 +17,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - run: cargo fmt --all --check
-      - run: cargo clippy --all-features
+      - run: cargo clippy --workspace --all-targets --all-features
 
   compile:
     runs-on: ubuntu-latest
@@ -31,18 +31,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-      - run: cargo check --features "${{ matrix.features }}"
-      - run: cargo test --features "${{ matrix.features }}"
-      - run: cargo test --examples --features "${{ matrix.features }}"
-      - run: cargo bench --features "${{ matrix.features }}"
-      - run: cargo build --release --features "${{ matrix.features }}"
+      - run: cargo check --workspace --features "${{ matrix.features }}"
+      - run: cargo test --workspace --features "${{ matrix.features }}"
+      - run: cargo test --workspace --examples --features "${{ matrix.features }}"
+      - run: cargo bench --workspace --features "${{ matrix.features }}"
+      - run: cargo build --workspace --release --features "${{ matrix.features }}"
 
   doc:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo doc --no-deps
+      - run: cargo doc --workspace --no-deps
       - run: cargo install cargo-deadlinks
       - run: cargo deadlinks --ignore-fragments --check-intra-doc-links
 

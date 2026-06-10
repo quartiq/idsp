@@ -6,7 +6,8 @@ use dsp_process::SplitProcess;
 /// Lockin filter
 ///
 /// Combines two [`SplitProcess`] filters and an NCO to perform demodulation
-#[derive(Copy, Clone, Default, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, Default, Debug)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct Lockin<C>(
     // Lowpass configuration
     pub C,

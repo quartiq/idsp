@@ -1,5 +1,5 @@
 [workspace]
-members = ["dsp-fixedpoint", "dsp-process", "."]
+members = ["dsp-fixedpoint", "dsp-process", "idsp-config", "."]
 default-members = ["dsp-fixedpoint", "dsp-process", "."]
 
 [workspace.package]
@@ -39,11 +39,8 @@ workspace = true
 dsp-process.workspace = true
 dsp-fixedpoint.workspace = true
 num-traits.workspace = true
-bytemuck = { version = "1.24.0", features = ["derive"] }
-serde = { version = "1.0", features = ["derive"], default-features = false }
-thiserror = { version = "2.0.9", default-features = false }
-strum = { version = "0.27.1", default-features = false, features = ["derive"] }
-miniconf = "0.21.0"
+bytemuck = { version = "1.24.0", features = ["derive"], optional = true }
+serde = { version = "1.0", features = ["derive"], default-features = false, optional = true }
 pyo3 = { version = "0.27.1", features = ["extension-module"], optional = true }
 numpy = { version = "0.27", optional = true }
 
@@ -55,8 +52,11 @@ rustfft = "6.1.0"
 # futuredsp = "0.0.6"
 # sdr = "0.7.0"
 log = "0.4"
+bytemuck = "1.24.0"
 
 [features]
+serde = ["dep:serde", "dsp-fixedpoint/serde"]
+bytemuck = ["dep:bytemuck"]
 std = []
 py = ["dep:pyo3", "dep:numpy", "std"]
 

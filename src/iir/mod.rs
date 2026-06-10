@@ -8,7 +8,6 @@ pub use error::*;
 pub mod coefficients;
 pub mod normal;
 pub mod pid;
-pub mod repr;
 pub mod response;
 pub mod svf;
 pub mod wdf;

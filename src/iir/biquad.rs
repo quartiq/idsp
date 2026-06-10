@@ -91,7 +91,8 @@ use num_traits::{AsPrimitive, Float, clamp};
 ///   coefficients/offset sets.
 /// * Cascading multiple IIR filters allows stable and robust
 ///   implementation of transfer functions beyond biquadratic terms.
-#[derive(Clone, Debug, Default, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct Biquad<C> {
     /// Coefficients
     ///
@@ -115,7 +116,8 @@ pub struct Biquad<C> {
 }
 
 /// Second-order-section with offset and clamp
-#[derive(Clone, Debug, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct BiquadClamp<C, T = C> {
     /// Coefficients
     pub coeff: Biquad<C>,
@@ -317,7 +319,8 @@ impl<T: Copy + Add<Output = T>, const N: usize> Process<T> for DirectForm<T, N, 
 pub type DirectForm1<T, const M: usize = 2> = DirectForm<T, 1, M>;
 
 /// A cascade of `Biquad`s
-#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct Cascade<C>(pub C);
 
 /// ```
@@ -437,7 +440,8 @@ impl<T: Copy + Add<Output = T> + Mul<Output = T> + PartialOrd>
 }
 
 /// SOS state with wide Y
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
 pub struct DirectForm1Wide {
     /// X state
     ///
