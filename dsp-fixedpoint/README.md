@@ -19,7 +19,7 @@ Type aliases cover the common signed, unsigned, and wrapping pairs:
 There are two construction modes:
 
 - `from_int`, `from_f32`, and `from_f64` scale into the fixed-point domain.
-- `new` and `from_bits` are raw-representation constructors.
+- `from_bits` is the raw-representation constructor.
 
 ```rust
 use dsp_fixedpoint::Q8;
@@ -28,7 +28,7 @@ let scaled = Q8::<4>::from_int(3);
 let raw = Q8::<4>::from_bits(3 << 4);
 
 assert_eq!(scaled, raw);
-assert_eq!(raw.into_inner(), 48);
+assert_eq!(raw.into_bits(), 48);
 ```
 
 ## Operator semantics
@@ -108,8 +108,11 @@ notation.
 ```rust
 use dsp_fixedpoint::Q8;
 
-assert_eq!(format!("{:#b}", Q8::<3>::new(0b01101001)), "0b1101.001");
-assert_eq!(format!("{:x}", Q8::<4>::new(-0x14)), "-1.4");
+assert_eq!(
+    format!("{:#b}", Q8::<3>::from_bits(0b01101001)),
+    "0b1101.001"
+);
+assert_eq!(format!("{:x}", Q8::<4>::from_bits(-0x14)), "-1.4");
 ```
 
 ## `defmt`

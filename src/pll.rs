@@ -97,8 +97,9 @@ impl SplitProcess<W<i32>, W<i32>, PLLState> for PLL {
         state.z0 = z0;
         // lead lag, wide state
         state.f0 +=
-            (self.ba[0] * y0 + self.ba[1] * state.y0 + self.ba[2] * (state.f0 >> 32) as i32).inner
-                + ((self.ba[2].inner as i64 * state.f0 as u32 as i64) >> 32);
+            (self.ba[0] * y0 + self.ba[1] * state.y0 + self.ba[2] * (state.f0 >> 32) as i32)
+                .into_bits()
+                + ((self.ba[2].into_bits() as i64 * state.f0 as u32 as i64) >> 32);
         state.y0 = y0;
         // DC pole, frequency, wide state
         state.f += W(state.f0);

@@ -65,7 +65,7 @@ where
     /// # use num_traits::AsPrimitive;
     /// assert_eq!(Q8::<4>::MIN, (-16f32).as_());
     /// ```
-    const MIN: Self = Self::new(T::MIN);
+    const MIN: Self = Self::from_bits(T::MIN);
 
     /// Highest value
     ///
@@ -75,5 +75,5 @@ where
     /// # use num_traits::AsPrimitive;
     /// assert_eq!(Q8::<4>::MAX, (16.0f32 - 1.0 / 16.0).as_());
     /// ```
-    const MAX: Self = Self::new(T::MAX);
+    const MAX: Self = Self::from_bits(T::MAX);
 }

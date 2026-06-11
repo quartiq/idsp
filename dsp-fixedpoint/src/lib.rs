@@ -137,7 +137,7 @@ pub trait Accu<A> {
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// assert_eq!(Q8::<4>::from_int(3), Q8::new(3 << 4));
+/// assert_eq!(Q8::<4>::from_int(3), Q8::from_bits(3 << 4));
 /// assert_eq!(7 * Q8::<4>::from_f32(1.5), 10);
 /// assert_eq!(Q8::<4>::from_f32(1.5).apply(7), 10);
 /// assert_eq!(7 / Q8::<4>::from_f32(1.5), 4);
@@ -156,7 +156,7 @@ pub struct Q<T, A, const F: i8> {
     /// The accumulator type
     _accu: PhantomData<A>,
     /// The inner value representation
-    pub inner: T,
+    inner: T,
 }
 
 impl<T: Clone, A, const F: i8> Clone for Q<T, A, F> {
@@ -223,17 +223,8 @@ impl<T, A, const F: i8> Q<T, A, F> {
         (1u128 << -F) as f32
     };
 
-    /// Create a new fixed point number from a raw representation.
-    ///
-    /// This is equivalent to [`Q::from_bits`]. Prefer [`Q::from_int`],
-    /// [`Q::from_f32`], or [`Q::from_f64`] when constructing from numeric values.
-    ///
-    /// ```
-    /// # use dsp_fixedpoint::P8;
-    /// assert_eq!(P8::<9>::new(3).inner, 3);
-    /// ```
     #[inline]
-    pub const fn new(inner: T) -> Self {
+    const fn new(inner: T) -> Self {
         Self {
             _accu: PhantomData,
             inner,
@@ -249,7 +240,7 @@ impl<T, A, const F: i8> Q<T, A, F> {
     /// Return the raw representation.
     #[inline]
     #[must_use]
-    pub fn into_inner(self) -> T {
+    pub fn into_bits(self) -> T {
         self.inner
     }
 }
@@ -261,7 +252,7 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     ///
     /// ```
     /// # use dsp_fixedpoint::Q8;
-    /// assert_eq!(Q8::<4>::new(32).scale::<0>(), Q8::new(2));
+    /// assert_eq!(Q8::<4>::from_bits(32).scale::<0>(), Q8::from_bits(2));
     /// ```
     #[inline]
     pub fn scale<const F1: i8>(self) -> Q<T, A, F1> {
@@ -272,7 +263,7 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     ///
     /// ```
     /// # use dsp_fixedpoint::Q8;
-    /// assert_eq!(Q8::<4>::new(0x35).trunc(), 0x3);
+    /// assert_eq!(Q8::<4>::from_bits(0x35).trunc(), 0x3);
     /// ```
     #[inline]
     #[must_use]
@@ -284,7 +275,7 @@ impl<T: Shift, A, const F: i8> Q<T, A, F> {
     ///
     /// ```
     /// # use dsp_fixedpoint::Q8;
-    /// assert_eq!(Q8::<4>::from_int(7).inner, 7 << 4);
+    /// assert_eq!(Q8::<4>::from_int(7).into_bits(), 7 << 4);
     /// ```
     #[inline]
     pub fn from_int(value: T) -> Self {
@@ -313,7 +304,7 @@ impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Q<T, A, F> {
     ///
     /// ```
     /// # use dsp_fixedpoint::{Q, Q8};
-    /// assert_eq!(Q8::<3>::new(4).mul_wide(2), Q::new(8));
+    /// assert_eq!(Q8::<3>::from_bits(4).mul_wide(2), Q::from_bits(8));
     /// ```
     #[inline]
     pub fn mul_wide(self, rhs: T) -> Q<A, T, F> {
@@ -339,7 +330,7 @@ impl<T: Accu<A>, A: Shift + Mul<Output = A>, const F: i8> Q<T, A, F> {
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// assert_eq!(Q8::<8>::from((1, 3)).inner, 1 << 5);
+/// assert_eq!(Q8::<8>::from((1, 3)).into_bits(), 1 << 5);
 /// ```
 impl<T: Accu<A> + Shift, A, const F: i8> From<(T, i8)> for Q<T, A, F> {
     fn from(value: (T, i8)) -> Self {
@@ -351,7 +342,7 @@ impl<T: Accu<A> + Shift, A, const F: i8> From<(T, i8)> for Q<T, A, F> {
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// let q: (i8, i8) = Q8::<8>::new(9).into();
+/// let q: (i8, i8) = Q8::<8>::from_bits(9).into();
 /// assert_eq!(q, (9, 8));
 /// ```
 impl<T, A, const F: i8> From<Q<T, A, F>> for (T, i8) {
@@ -517,18 +508,18 @@ mod test {
             Q32::<5>::from_int(12) / Q32::<5>::from_int(6),
             Q32::from_int(2)
         );
-        assert_eq!(7 * Q32::<4>::new(0x33), 7 * 3 + ((3 * 7) >> 4));
-        assert_eq!(Q32::<4>::new(0x33).apply(7), 7 * 3 + ((3 * 7) >> 4));
+        assert_eq!(7 * Q32::<4>::from_bits(0x33), 7 * 3 + ((3 * 7) >> 4));
+        assert_eq!(Q32::<4>::from_bits(0x33).apply(7), 7 * 3 + ((3 * 7) >> 4));
         assert_eq!(
-            Q32::<4>::new(0x33).mul_wide(7).quantize(),
-            7 * Q32::<4>::new(0x33)
+            Q32::<4>::from_bits(0x33).mul_wide(7).quantize(),
+            7 * Q32::<4>::from_bits(0x33)
         );
     }
 
     #[test]
     fn numeric_traits() {
-        assert_eq!(Q8::<4>::min_value().inner, i8::MIN);
-        assert_eq!(Q8::<4>::max_value().inner, i8::MAX);
+        assert_eq!(Q8::<4>::min_value().into_bits(), i8::MIN);
+        assert_eq!(Q8::<4>::max_value().into_bits(), i8::MAX);
         assert_eq!(Q8::<4>::from_f32(1.5).to_i32(), Some(1));
         assert_eq!(Q8::<4>::from_f32(1.5).to_f64(), Some(1.5));
         assert_eq!(Q8::<4>::from_i32(3), Some(Q8::<4>::from_int(3)));
@@ -543,7 +534,7 @@ mod test {
         use bytemuck::TransparentWrapper;
 
         let q = Q8::<4>::from_int(3);
-        assert_eq!(q.into_inner(), 48);
+        assert_eq!(q.into_bits(), 48);
         assert_eq!(Q8::<4>::wrap(48i8), q);
         assert_eq!(*Q8::<4>::wrap_ref(&48i8), q);
     }

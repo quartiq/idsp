@@ -75,7 +75,10 @@ mod test {
     fn basic() {
         assert_eq!(3, Identity.process(3));
         assert_eq!([7, 1], Butterfly.process([4, 3]));
-        assert_eq!(Split::stateless(Gain(Q32::<3>::new(32))).process(9), 9 * 4);
+        assert_eq!(
+            Split::stateless(Gain(Q32::<3>::from_bits(32))).process(9),
+            9 * 4
+        );
         assert_eq!(Split::stateless(Offset(7)).process(9), 7 + 9);
     }
 
@@ -101,7 +104,7 @@ mod test {
 
     #[test]
     fn pair() {
-        let g = Gain(Q32::<1>::new(4));
+        let g = Gain(Q32::<1>::from_bits(4));
         let mut f = Split::new(
             Pair::<_, _, _>::new((((), Parallel::new((Offset(3), g))), ())),
             ((Unsplit(Identity), Default::default()), Unsplit(Add)),

@@ -85,8 +85,8 @@ forward_binop!(BitXor::bitxor);
 ///
 /// ```
 /// # use dsp_fixedpoint::{Q, Q8};
-/// assert_eq!(Q8::<3>::new(4) * 2, Q::new(8));
-/// assert_eq!(Q8::<3>::new(4) / 2, Q8::new(2));
+/// assert_eq!(Q8::<3>::from_bits(4) * 2, Q::from_bits(8));
+/// assert_eq!(Q8::<3>::from_bits(4) / 2, Q8::from_bits(2));
 /// ```
 impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Mul<T> for Q<T, A, F> {
     type Output = Q<A, T, F>;

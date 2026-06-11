@@ -11,7 +11,7 @@ use crate::Q;
 
 /// Serialize and lossy-deserialize `Q` through serde's `f32` data model.
 ///
-/// This maps `Q::<i32, i64, 3>::new(1)` to the JSON number `0.125` and back.
+/// This maps `Q::<i32, i64, 3>::from_bits(1)` to the JSON number `0.125` and back.
 pub mod as_f32 {
     use super::*;
 
@@ -40,7 +40,7 @@ pub mod as_f32 {
 
 /// Serialize and lossy-deserialize `Q` through serde's `f64` data model.
 ///
-/// This maps `Q::<i32, i64, 3>::new(1)` to the JSON number `0.125` and back.
+/// This maps `Q::<i32, i64, 3>::from_bits(1)` to the JSON number `0.125` and back.
 pub mod as_f64 {
     use super::*;
 

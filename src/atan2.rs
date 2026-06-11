@@ -31,17 +31,20 @@ fn divi(y: u32, x: u32) -> u32 {
 /// Polynomial approximation to atan(x) to 11th order
 fn atani(x: u32) -> u32 {
     const ATANI: [Q32<32>; 6] = [
-        Q32::new(0x0517c2cd),
-        Q32::new(-0x06c6496b),
-        Q32::new(0x0fbdb021),
-        Q32::new(-0x25b32e0a),
-        Q32::new(0x43b34c81),
-        Q32::new(-0x3bc823dd),
+        Q32::from_bits(0x0517c2cd),
+        Q32::from_bits(-0x06c6496b),
+        Q32::from_bits(0x0fbdb021),
+        Q32::from_bits(-0x25b32e0a),
+        Q32::from_bits(0x43b34c81),
+        Q32::from_bits(-0x3bc823dd),
     ];
     // Evaluate the odd polynomial in x * P(x^2/4).
-    let x2 = Q32::new(((x as i64 * x as i64) >> 32) as _);
-    let r = ATANI.iter().rev().fold(Q32::new(0), |r, &a| (r * x2) + a);
-    (((r.inner as i64) * (x as i64)) >> 28) as u32
+    let x2 = Q32::from_bits(((x as i64 * x as i64) >> 32) as _);
+    let r = ATANI
+        .iter()
+        .rev()
+        .fold(Q32::from_bits(0), |r, &a| (r * x2) + a);
+    (((r.into_bits() as i64) * (x as i64)) >> 28) as u32
 }
 
 /// 2-argument arctangent function.

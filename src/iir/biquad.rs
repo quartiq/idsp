@@ -458,12 +458,13 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Wide> for Biquad<Q<i32, i64,
         const {
             assert!(F >= 0 && F < 32);
         }
-        let mut acc = (self.ba[0] * x0 + self.ba[1] * state.x[0] + self.ba[2] * state.x[1]).inner;
+        let mut acc =
+            (self.ba[0] * x0 + self.ba[1] * state.x[0] + self.ba[2] * state.x[1]).into_bits();
         state.x = [x0, state.x[0]];
-        acc += (state.y[0] as u32 as i64 * self.ba[3].inner as i64) >> 32;
-        acc += (state.y[0] >> 32) as i32 as i64 * self.ba[3].inner as i64;
-        acc += (state.y[1] as u32 as i64 * self.ba[4].inner as i64) >> 32;
-        acc += (state.y[1] >> 32) as i32 as i64 * self.ba[4].inner as i64;
+        acc += (state.y[0] as u32 as i64 * self.ba[3].into_bits() as i64) >> 32;
+        acc += (state.y[0] >> 32) as i32 as i64 * self.ba[3].into_bits() as i64;
+        acc += (state.y[1] as u32 as i64 * self.ba[4].into_bits() as i64) >> 32;
+        acc += (state.y[1] >> 32) as i32 as i64 * self.ba[4].into_bits() as i64;
         acc <<= 32 - F;
         state.y = [acc, state.y[0]];
         (acc >> 32) as _
@@ -518,7 +519,7 @@ impl<const F: i8> SplitProcess<i32, i32, DirectForm1Dither> for Biquad<Q<i32, i6
                 + self.ba[2] * state.xy.x[1]
                 + self.ba[3] * state.xy.y[0][0]
                 + self.ba[4] * state.xy.y[0][1])
-                .inner;
+                .into_bits();
         acc <<= 32 - F;
         state.e = (acc as u32) >> (32 - F);
         let y0 = (acc >> 32) as _;

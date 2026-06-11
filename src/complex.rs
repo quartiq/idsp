@@ -266,12 +266,12 @@ impl<A: Shift, T: Accu<A> + Copy, const F: i8> Complex<Q<A, T, F>> {
 impl<T: Copy, A, const F: i8> Complex<Q<T, A, F>> {
     /// Return the raw fixed-point representation lane-wise.
     pub fn into_bits(self) -> Complex<T> {
-        Complex::new(self.re().into_inner(), self.im().into_inner())
+        Complex::new(self.re().into_bits(), self.im().into_bits())
     }
 
     /// Convert from raw to fixedpoint
     pub fn from_bits(value: Complex<T>) -> Self {
-        Self::new(Q::new(value.re()), Q::new(value.im()))
+        Self::new(Q::from_bits(value.re()), Q::from_bits(value.im()))
     }
 }
 
@@ -282,15 +282,18 @@ mod test {
 
     #[test]
     fn fixedpoint_into_bits_exposes_raw_representation() {
-        let x = Complex::new(Q32::<32>::new(0x1234_5678), Q32::<32>::new(-0x2345_6789));
+        let x = Complex::new(
+            Q32::<32>::from_bits(0x1234_5678),
+            Q32::<32>::from_bits(-0x2345_6789),
+        );
         assert_eq!(x.into_bits(), Complex::new(0x1234_5678, -0x2345_6789));
     }
 
     #[test]
     fn fixedpoint_arg_matches_i32_arg() {
         let z = Complex::new(
-            Q::<i64, i32, 32>::new(1 << 34),
-            Q::<i64, i32, 32>::new(1 << 34),
+            Q::<i64, i32, 32>::from_bits(1 << 34),
+            Q::<i64, i32, 32>::from_bits(1 << 34),
         );
         assert_eq!(z.quantize().arg(), Complex::new(4, 4).arg());
     }

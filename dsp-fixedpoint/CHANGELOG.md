@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `serde` is no longer enabled by default.
 * Default builds no longer pull `libm`.
 * `Q::one()` and `Q::ONE` are only available when `1` is exactly representable.
-* Add explicit raw-bit accessors: `from_bits()` and `into_inner()`.
+* Make `Q` raw storage private; use `from_bits()` and `into_bits()` for raw representation access.
 
 ## [0.1.1](https://github.com/quartiq/idsp/compare/dsp-fixedpoint-v0.1.0...dsp-fixedpoint-v0.1.1) - 2026-04-06
 

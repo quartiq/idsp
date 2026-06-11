@@ -67,7 +67,7 @@ fn fm_signal(
         let msg = (TAU * message_freq * i as f32).sin();
         phase += W(carrier as i32 + (deviation as f32 * msg) as i32);
         let (re, im) = cossin(phase.0);
-        x.push(Complex::new(Q32::new(re), Q32::new(im)));
+        x.push(Complex::new(Q32::from_bits(re), Q32::from_bits(im)));
         m.push(msg);
     }
     (x, m)

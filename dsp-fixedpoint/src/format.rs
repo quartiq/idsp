@@ -4,7 +4,7 @@ use crate::{AsFloat, Q};
 
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// let q = Q8::<4>::new(7);
+/// let q = Q8::<4>::from_bits(7);
 /// assert_eq!(format!("{q} {q:e} {q:E}"), "0.4375 4.375e-1 4.375E-1");
 /// ```
 macro_rules! impl_fmt {
@@ -38,10 +38,10 @@ where
 ///
 /// ```
 /// # use dsp_fixedpoint::Q8;
-/// assert_eq!(format!("{:?}", Q8::<4>::new(0x14)), "20");
-/// assert_eq!(format!("{:#b}", Q8::<3>::new(0b01101001)), "0b1101.001");
-/// assert_eq!(format!("{:x}", Q8::<-2>::new(3)), "c.");
-/// assert_eq!(format!("{:x}", Q8::<4>::new(-0x14)), "-1.4");
+/// assert_eq!(format!("{:?}", Q8::<4>::from_bits(0x14)), "20");
+/// assert_eq!(format!("{:#b}", Q8::<3>::from_bits(0b01101001)), "0b1101.001");
+/// assert_eq!(format!("{:x}", Q8::<-2>::from_bits(3)), "c.");
+/// assert_eq!(format!("{:x}", Q8::<4>::from_bits(-0x14)), "-1.4");
 /// ```
 impl<T, A, const F: i8> fmt::Debug for Q<T, A, F>
 where
