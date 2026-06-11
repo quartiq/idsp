@@ -9,7 +9,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::{
     Build,
     iir::{
-        BiquadClamp,
+        BiquadClamp, Error,
         coefficients::{Filter, Shape, Type},
         pid::{Gains, Order, Pid, Units},
     },
@@ -166,6 +166,45 @@ impl<T: Float + Default> Default for PidConfig<T> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn biquad_config_tag_conversion() {
+        let config = BiquadConfig::<f32>::try_from("Filter").unwrap();
+        assert_eq!(config.as_ref(), "Filter");
+        assert!(BiquadConfig::<f32>::try_from("Unknown").is_err());
+    }
+
+    #[test]
+    fn biquad_config_try_build_rejects_invalid_ba_config() {
+        let ba = BaConfig {
+            min: 1.0,
+            max: 0.0,
+            ..Default::default()
+        };
+        let config = BiquadConfig::<f32>::Ba(ba);
+
+        assert_eq!(
+            config.try_build(&Units::default()),
+            Err(Error::InvertedRange("output_limits"))
+        );
+    }
+
+    #[test]
+    fn raw_biquad_config_try_build_does_not_validate_units() {
+        let config = BiquadConfig::<f32>::Raw(Default::default());
+        let units = Units {
+            t: 0.0,
+            x: 0.0,
+            y: 0.0,
+        };
+
+        assert!(config.try_build(&units).is_ok());
+    }
+}
+
 impl<T: Copy> From<&PidConfig<T>> for Pid<T> {
     fn from(config: &PidConfig<T>) -> Self {
         Self {
@@ -193,16 +232,7 @@ impl<T: Copy> From<&PidConfig<T>> for Pid<T> {
 ///     config: idsp::iir::config::BiquadConfig<f32>,
 /// }
 /// ```
-#[derive(
-    Debug,
-    Clone,
-    Tree,
-    strum::AsRefStr,
-    strum::EnumString,
-    strum::EnumDiscriminants,
-    strum::IntoStaticStr,
-)]
-#[strum_discriminants(derive(serde::Serialize, serde::Deserialize), allow(missing_docs))]
+#[derive(Debug, Clone, Tree)]
 #[tree(meta(doc = "Configurable representation of a biquad", typename))]
 pub enum BiquadConfig<T, C = T, Y = T>
 where
@@ -227,6 +257,43 @@ where
     Filter(FilterConfig<T>),
 }
 
+impl<T, C, Y> AsRef<str> for BiquadConfig<T, C, Y>
+where
+    BaConfig<T>: Default,
+    PidConfig<T>: Default,
+    BiquadClamp<C, Y>: Default,
+    FilterConfig<T>: Default,
+{
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Ba(_) => "Ba",
+            Self::Raw(_) => "Raw",
+            Self::Pid(_) => "Pid",
+            Self::Filter(_) => "Filter",
+        }
+    }
+}
+
+impl<'a, T, C, Y> TryFrom<&'a str> for BiquadConfig<T, C, Y>
+where
+    BaConfig<T>: Default,
+    PidConfig<T>: Default,
+    BiquadClamp<C, Y>: Default,
+    FilterConfig<T>: Default,
+{
+    type Error = ();
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        match value {
+            "Ba" => Ok(Self::Ba(Default::default())),
+            "Raw" => Ok(Self::Raw(Default::default())),
+            "Pid" => Ok(Self::Pid(Default::default())),
+            "Filter" => Ok(Self::Filter(Default::default())),
+            _ => Err(()),
+        }
+    }
+}
+
 impl<T, C, Y> Default for BiquadConfig<T, C, Y>
 where
     BaConfig<T>: Default,
@@ -237,6 +304,44 @@ where
     fn default() -> Self {
         Self::Ba(Default::default())
     }
+}
+
+fn check_offset_limits<T: Float>(
+    name: &'static str,
+    offset: T,
+    min: T,
+    max: T,
+) -> Result<(), Error> {
+    if !offset.is_finite() {
+        return Err(Error::NonFinite("offset"));
+    }
+    if min.is_nan() || max.is_nan() {
+        return Err(Error::NonFinite(name));
+    }
+    if min > max {
+        return Err(Error::InvertedRange(name));
+    }
+    Ok(())
+}
+
+fn check_units<T: Float>(units: &Units<T>, check_t: bool) -> Result<(), Error> {
+    for (name, value) in [("x", units.x), ("y", units.y)] {
+        if !value.is_finite() {
+            return Err(Error::NonFinite(name));
+        }
+        if value <= T::zero() {
+            return Err(Error::NonPositive(name));
+        }
+    }
+    if check_t {
+        if !units.t.is_finite() {
+            return Err(Error::NonFinite("t"));
+        }
+        if units.t <= T::zero() {
+            return Err(Error::NonPositive("t"));
+        }
+    }
+    Ok(())
 }
 
 impl<T, C, Y> BiquadConfig<T, C, Y>
@@ -277,6 +382,52 @@ where
                 b.min = (filter.min * yu).as_();
                 b.max = (filter.max * yu).as_();
                 b
+            }
+        }
+    }
+
+    /// Build a biquad from this configuration after validation.
+    pub fn try_build(&self, units: &Units<T>) -> Result<BiquadClamp<C, Y>, Error> {
+        match self {
+            Self::Ba(ba) => {
+                check_units(units, false)?;
+                check_offset_limits("output_limits", ba.offset, ba.min, ba.max)?;
+                let yu = units.y.recip();
+                let yx = units.x * yu;
+                for row in ba.ba {
+                    for coefficient in row {
+                        if !coefficient.is_finite() {
+                            return Err(Error::NonFinite("ba"));
+                        }
+                    }
+                }
+                let mut bba = ba.ba;
+                bba[0] = bba[0].map(|b| b * yx);
+                let mut b: BiquadClamp<C, Y> = bba.into();
+                b.u = (ba.offset * yu).as_();
+                b.min = (ba.min * yu).as_();
+                b.max = (ba.max * yu).as_();
+                Ok(b)
+            }
+            Self::Raw(raw) => Ok(raw.clone()),
+            Self::Pid(pid) => Pid::from(pid).try_build(units),
+            Self::Filter(filter) => {
+                check_units(units, true)?;
+                check_offset_limits("output_limits", filter.offset, filter.min, filter.max)?;
+                let yu = units.y.recip();
+                let yx = units.x * yu;
+                let mut f = Filter::default();
+                f.gain_db(filter.gain_db);
+                f.critical_frequency(filter.frequency * units.t);
+                f.shelf_db(filter.shelf_db);
+                f.set_shape(filter.shape);
+                let mut ba = f.try_build(filter.typ)?;
+                ba[0] = ba[0].map(|b| b * yx);
+                let mut b: BiquadClamp<C, Y> = ba.into();
+                b.u = (filter.offset * yu).as_();
+                b.min = (filter.min * yu).as_();
+                b.max = (filter.max * yu).as_();
+                Ok(b)
             }
         }
     }

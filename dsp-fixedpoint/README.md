@@ -34,18 +34,23 @@ assert_eq!(raw.into_inner(), 48);
 ## Operator semantics
 
 The crate keeps addition-like operators conservative and multiplication-like
-operators efficient:
+operators efficient. `Q` means `Q<T, A, F>` unless shown otherwise.
 
-- `Q<F> + Q<F>` and similar operators require the same `F`.
-- Use `.scale::<F1>()` explicitly before `Add`, `Sub`, or `Rem` when scales differ.
-- `Q * Q -> Q` and `Q / Q -> Q` preserve the left-hand scale.
-- `Q * T -> Q<A, T, F>` widens into the accumulator domain.
-- `T * Q -> T` quantizes back into the base integer domain.
-- `Q / T -> Q`, while `T / Q -> T`.
+| Operation | Result | Notes |
+| --- | --- | --- |
+| `Q<F> + Q<F>`, `Q<F> - Q<F>`, `Q<F> % Q<F>` | `Q<T, A, F>` | Requires the same `F`; use `.scale::<F1>()` explicitly when scales differ. |
+| `Q * Q`, `Q / Q` | `Q<T, A, F>` | Preserves the left-hand scale and quantizes the fixed-point result. |
+| `Q * T` | `Q<A, T, F>` | Widened raw-integer multiplication; same as `q.mul_wide(t)`. |
+| `T * Q` | `T` | Applies `Q` as a gain to `T` and quantizes; same as `q.apply(t)`. |
+| `Q / T` | `Q<T, A, F>` | Raw integer division of the stored representation. |
+| `T / Q` | `T` | Divides by `Q` as a fixed-point gain and quantizes. |
+| `Q *= Q`, `Q /= Q` | `Q<T, A, F>` | Assignment forms follow the left-hand scale. |
+| `Q *= T`, `Q /= T` | `Q<T, A, F>` | Assignment forms operate on the raw stored representation. |
 
-That asymmetry is intentional: operand order chooses whether the result remains
-wide or is quantized immediately. Use `mul_wide()` and `apply()` when spelling
-that choice explicitly is clearer than relying on operand order.
+The mixed multiplication and division asymmetry is intentional: operand order
+chooses whether the result remains wide or is quantized immediately. Use
+`mul_wide()` and `apply()` when spelling that choice explicitly is clearer than
+relying on operand order.
 
 ## Scale restrictions
 

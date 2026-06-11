@@ -78,13 +78,8 @@ forward_binop!(BitAnd::bitand);
 forward_binop!(BitOr::bitor);
 forward_binop!(BitXor::bitxor);
 
-// The notable exception to standard rules
-// (https://github.com/rust-lang/rust/pull/93208#issuecomment-1019310634)
-// This is for performance reasons
-//
-// Q*T -> A, Q/T -> Q
-// See also the T*Q -> T and T/Q -> T in impl_q!()
-//
+// Mixed Q/integer multiplication deliberately uses operand order to choose
+// between widened and quantized results. See the crate docs for the full table.
 
 /// Wide multiplication to accumulator
 ///
