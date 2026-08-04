@@ -24,6 +24,18 @@ use core::{
 pub trait FromRatio<T> {
     /// Return `numerator / denominator` in `Self`'s representation.
     fn from_ratio(numerator: T, denominator: T) -> Self;
+
+    /// Divide several numerators by one denominator.
+    ///
+    /// Implementations may prepare the denominator once; floating-point types
+    /// multiply every numerator by one reciprocal.
+    fn from_ratios<const N: usize>(numerators: [T; N], denominator: T) -> [Self; N]
+    where
+        T: Copy,
+        Self: Sized,
+    {
+        numerators.map(|numerator| Self::from_ratio(numerator, denominator))
+    }
 }
 
 impl FromRatio<f32> for f32 {
@@ -31,12 +43,24 @@ impl FromRatio<f32> for f32 {
     fn from_ratio(numerator: f32, denominator: f32) -> Self {
         numerator / denominator
     }
+
+    #[inline]
+    fn from_ratios<const N: usize>(numerators: [f32; N], denominator: f32) -> [Self; N] {
+        let reciprocal = denominator.recip();
+        numerators.map(|numerator| numerator * reciprocal)
+    }
 }
 
 impl FromRatio<f64> for f64 {
     #[inline]
     fn from_ratio(numerator: f64, denominator: f64) -> Self {
         numerator / denominator
+    }
+
+    #[inline]
+    fn from_ratios<const N: usize>(numerators: [f64; N], denominator: f64) -> [Self; N] {
+        let reciprocal = denominator.recip();
+        numerators.map(|numerator| numerator * reciprocal)
     }
 }
 
@@ -547,6 +571,16 @@ mod test {
         let third = Q32::<28>::from_ratio(1i32, 3);
         assert!((third.as_f64() - 1.0 / 3.0).abs() < Q32::<28>::DELTA as f64);
         assert_eq!(Q32::<8>::from_ratio(-3, 2), Q32::from_bits(-384));
+
+        let reciprocal = 3.0f32.recip();
+        assert_eq!(
+            f32::from_ratios([1.0, 2.0], 3.0),
+            [reciprocal, 2.0 * reciprocal]
+        );
+        assert_eq!(
+            Q32::<8>::from_ratios([-3, 3], 2),
+            [Q32::from_bits(-384), Q32::from_bits(384)]
+        );
     }
 
     #[test]

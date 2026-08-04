@@ -12,6 +12,10 @@ See also:
 
 ## [UNRELEASED](https://github.com/quartiq/idsp/compare/v0.22.0...HEAD) - DATE
 
+### Added
+
+* `kalman`: Scalar static Kalman filter and tooling
+
 ## [0.22.0](https://github.com/quartiq/idsp/compare/v0.21.0...v0.22.0) - 2026-06-11
 
 ### Changed
