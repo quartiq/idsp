@@ -16,6 +16,30 @@ use core::{
     ops::{Div, Mul, Shl, Shr},
 };
 
+/// Construct a value from the ratio of two raw values.
+///
+/// For positive `F`, `Q<T, A, F>` computes `(numerator << F) / denominator` in
+/// `A`, then narrows to `T`. The denominator must be nonzero and the result must
+/// fit `T`.
+pub trait FromRatio<T> {
+    /// Return `numerator / denominator` in `Self`'s representation.
+    fn from_ratio(numerator: T, denominator: T) -> Self;
+}
+
+impl FromRatio<f32> for f32 {
+    #[inline]
+    fn from_ratio(numerator: f32, denominator: f32) -> Self {
+        numerator / denominator
+    }
+}
+
+impl FromRatio<f64> for f64 {
+    #[inline]
+    fn from_ratio(numerator: f64, denominator: f64) -> Self {
+        numerator / denominator
+    }
+}
+
 /// Helper trait to unify over missing impl AsPrimitive<f*> for Wrapping<T>
 pub(crate) trait AsFloat: Copy {
     fn as_f32(self) -> f32;
@@ -121,7 +145,7 @@ pub trait Accu<A> {
     // fn f64_as(value: f64) -> Self;
 }
 
-/// Fixed point integer
+/// Fixed-point value with storage `T`, accumulator `A`, and `F` fractional bits.
 ///
 /// Generics:
 /// * `T`: Base integer
@@ -300,7 +324,10 @@ impl<A: Shift, T: Accu<A>, const F: i8> Q<A, T, F> {
 }
 
 impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Q<T, A, F> {
-    /// Multiply by a raw integer and keep the widened accumulator result.
+    /// Multiply a coefficient by a raw value without quantizing.
+    ///
+    /// Accumulate the returned `Q<A, T, F>` values, then call [`Q::quantize`]
+    /// once.
     ///
     /// ```
     /// # use dsp_fixedpoint::{Q, Q8};
@@ -309,6 +336,23 @@ impl<T: Accu<A>, A: Mul<Output = A>, const F: i8> Q<T, A, F> {
     #[inline]
     pub fn mul_wide(self, rhs: T) -> Q<A, T, F> {
         Q::new(self.inner.up() * rhs.up())
+    }
+}
+
+impl<T, A, const F: i8> FromRatio<T> for Q<T, A, F>
+where
+    T: Copy + Shift + Accu<A> + Div<Output = T>,
+    A: Shift + Div<Output = A>,
+{
+    #[inline]
+    fn from_ratio(numerator: T, denominator: T) -> Self {
+        const { assert!(F > i8::MIN, "fractional bits must not be i8::MIN") }
+        let inner = if F > 0 {
+            T::down(numerator.up().shs(F) / denominator.up())
+        } else {
+            numerator.shs(F) / denominator
+        };
+        Self::new(inner)
     }
 }
 
@@ -497,6 +541,13 @@ impl_q!(V64<u64, u128>, Wrapping);
 mod test {
     use super::*;
     use num_traits::{Bounded, FromPrimitive, Signed, ToPrimitive};
+
+    #[test]
+    fn ratio() {
+        let third = Q32::<28>::from_ratio(1i32, 3);
+        assert!((third.as_f64() - 1.0 / 3.0).abs() < Q32::<28>::DELTA as f64);
+        assert_eq!(Q32::<8>::from_ratio(-3, 2), Q32::from_bits(-384));
+    }
 
     #[test]
     fn simple() {
