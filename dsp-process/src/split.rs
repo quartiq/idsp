@@ -9,13 +9,9 @@ use crate::{
 
 /// A stateful processor assembled from split configuration and state.
 ///
-/// [`Split`] is the bridge between [`SplitProcess`] and [`Process`]: it stores
-/// the immutable configuration and mutable runtime state together so the pair can
-/// be passed around as a conventional stateful processor.
-///
-/// Reach for this when a split-state filter needs to be owned as one value, and
-/// use [`lanes()`](Self::lanes), [`minor()`](Self::minor), or
-/// [`major()`](Self::major) when changing how that owned processor is composed.
+/// This binds one [`SplitProcess`] configuration to one state and exposes the
+/// pair as [`Process`]. [`lanes()`](Self::lanes) instead shares the configuration
+/// across independent states.
 ///
 /// # Examples
 ///
