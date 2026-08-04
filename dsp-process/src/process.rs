@@ -67,47 +67,11 @@ pub trait Inplace<X: Copy>: Process<X> {
 
 /// Processing with split state
 ///
-/// Splitting configuration (the part of the filter that is unaffected
-/// by processing inputs, e.g. "coefficients"), from state (the part
-/// that is modified by processing) allows:
+/// Immutable configuration operating on explicit mutable state.
 ///
-/// * Separating mutable from immutable state guarantees consistency
-///   (configuration can not change state and processing can
-///   not change configuration)
-/// * Reduces memory traffic when swapping configuration
-/// * Allows the same filter to be applied to multiple states
-///   (e.g. IQ data, multiple lanes) guaranteeing consistency,
-///   reducing memory usage, and improving caching.
-///
-/// This is the central abstraction used throughout `dsp-process`. A typical DSP
-/// filter coefficient set becomes `Self`, while delay lines, accumulators, and
-/// history buffers become the separate `state` argument.
-///
-/// Use this when one configuration should drive many runtime states, or when it
-/// is beneficial to keep mutable state small and move immutable data out of hot
-/// loops.
-///
-/// [`Process`] is often easier when state and configuration naturally live
-/// together, while [`crate::Split`] turns a `SplitProcess` back into a stateful
-/// [`Process`] value.
-///
-/// # Examples
-///
-/// ```rust
-/// use dsp_process::SplitProcess;
-///
-/// #[derive(Copy, Clone)]
-/// struct Gain(i32);
-///
-/// impl SplitProcess<i32> for Gain {
-///     fn process(&self, _: &mut (), x: i32) -> i32 {
-///         self.0 * x
-///     }
-/// }
-///
-/// let mut state = ();
-/// assert_eq!(Gain(4).process(&mut state, 3), 12);
-/// ```
+/// One configuration may drive many states; several configurations may also
+/// implement distinct phases over the same `S`. [`crate::Split<C, S>`] binds
+/// one pair into an ordinary [`Process`].
 pub trait SplitProcess<X: Copy, Y = X, S: ?Sized = ()> {
     /// Process an input into an output
     ///

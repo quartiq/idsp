@@ -11,6 +11,7 @@ mod cossin;
 pub use cossin::*;
 mod lockin;
 pub use lockin::*;
+pub mod kalman;
 mod lowpass;
 pub use lowpass::*;
 mod pll;

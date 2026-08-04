@@ -7,6 +7,9 @@
 * Large slice, small chunk, single sample and inplace processing
 * `idsp` IIR biquads in various configurations
 * `idsp` compared with `biquad-rs`
+* Scalar-measurement Kalman filters: structural N=1 random walk, dense versus
+  structural N=2 constant velocity, and dense versus direct-measurement N=4
+  constant jerk, using floating- and fixed-point arithmetic
 * `hbf` FIRs
 * Tooling routines: `cossin`, `atan2`
 

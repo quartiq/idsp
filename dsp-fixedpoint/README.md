@@ -1,130 +1,82 @@
-# Fixed point primitives
+# `dsp-fixedpoint`
 
-`dsp-fixedpoint` provides small `no_std` fixed-point primitives with explicit
-integer storage and widening accumulators.
+`no_std` fixed-point arithmetic with explicit storage, accumulator, and
+quantization boundaries.
 
-## Model
+## Type shape
 
-`Q<T, A, F>` stores a raw integer `T` and interprets it as scaled by `2^F`.
+`Q<T, A, F>` stores raw `T` bits scaled by `2^-F`; products accumulate in `A`.
 
-- `T` is the storage type.
-- `A` is the widened accumulator type used for intermediate results.
-- `F` is the number of fractional bits.
+- `T`: stored and signal value
+- `A`: wide accumulator
+- `F`: fractional bits
 
-Type aliases cover the common signed, unsigned, and wrapping pairs:
-`Q8/Q16/Q32/Q64`, `P8/P16/P32/P64`, `W8/W16/W32/W64`, and `V8/V16/V32/V64`.
+Aliases include `Q32<F> = Q<i32, i64, F>` and wrapping/unsigned variants.
+
+## Wide MAC, late quantization
+
+Put the coefficient on the left and the raw signal on the right:
+
+```rust
+use dsp_fixedpoint::Q32;
+
+type C = Q32<28>;
+let a = [C::from_f32(0.25), C::from_f32(-0.5)];
+let x = [100_i32, 20];
+
+let mut acc = a[0] * x[0]; // Q<i64, i32, 28>
+acc += a[1] * x[1];        // still wide
+let y = acc.quantize();     // one shift and narrowing conversion
+
+assert_eq!(y, 15);
+```
+
+The shape is `Q<T, A, F> * T -> Q<A, T, F>`. Accumulate products of that type,
+then call `quantize()` once. Reversing the operands, `T * Q -> T`, quantizes each
+product immediately.
 
 ## Construction
 
-There are two construction modes:
-
-- `from_int`, `from_f32`, and `from_f64` scale into the fixed-point domain.
-- `from_bits` is the raw-representation constructor.
+`from_int` and `from_f32`/`from_f64` construct scaled values; `from_bits`
+preserves raw bits. `FromRatio` constructs a coefficient from two raw values:
 
 ```rust
-use dsp_fixedpoint::Q8;
+use dsp_fixedpoint::{FromRatio, Q32};
 
-let scaled = Q8::<4>::from_int(3);
-let raw = Q8::<4>::from_bits(3 << 4);
-
-assert_eq!(scaled, raw);
-assert_eq!(raw.into_bits(), 48);
+let gain = Q32::<28>::from_ratio(1, 3);
+assert!((gain.as_f64() - 1.0 / 3.0).abs() < Q32::<28>::DELTA as f64);
 ```
 
-## Operator semantics
+For positive `F`, `FromRatio` widens the numerator before scaling and division.
+The denominator must be nonzero and the result must fit `T`.
 
-The crate keeps addition-like operators conservative and multiplication-like
-operators efficient. `Q` means `Q<T, A, F>` unless shown otherwise.
+## Operators
 
-| Operation | Result | Notes |
+| Operation | Result | Quantization |
 | --- | --- | --- |
-| `Q<F> + Q<F>`, `Q<F> - Q<F>`, `Q<F> % Q<F>` | `Q<T, A, F>` | Requires the same `F`; use `.scale::<F1>()` explicitly when scales differ. |
-| `Q * Q`, `Q / Q` | `Q<T, A, F>` | Preserves the left-hand scale and quantizes the fixed-point result. |
-| `Q * T` | `Q<A, T, F>` | Widened raw-integer multiplication; same as `q.mul_wide(t)`. |
-| `T * Q` | `T` | Applies `Q` as a gain to `T` and quantizes; same as `q.apply(t)`. |
-| `Q / T` | `Q<T, A, F>` | Raw integer division of the stored representation. |
-| `T / Q` | `T` | Divides by `Q` as a fixed-point gain and quantizes. |
-| `Q *= Q`, `Q /= Q` | `Q<T, A, F>` | Assignment forms follow the left-hand scale. |
-| `Q *= T`, `Q /= T` | `Q<T, A, F>` | Assignment forms operate on the raw stored representation. |
+| `Q * T` | `Q<A, T, F>` | none; wide product |
+| `T * Q` | `T` | immediate |
+| `Q * Q`, `Q / Q` | `Q<T, A, F>` | immediate |
+| `Q + Q`, `Q - Q` | `Q<T, A, F>` | none; equal `F` required |
+| `T / Q` | `T` | immediate |
 
-The mixed multiplication and division asymmetry is intentional: operand order
-chooses whether the result remains wide or is quantized immediately. Use
-`mul_wide()` and `apply()` when spelling that choice explicitly is clearer than
-relying on operand order.
+`mul_wide()` and `apply()` spell `Q * T` and `T * Q` explicitly.
 
-## Scale restrictions
+## Scale and conversion
 
-`F` is an `i8`, but not every `i8` value is meaningful everywhere.
+Use `.scale::<F1>()` when changing fractional bits. Numeric traits convert the
+represented value; `from_bits`/`into_bits` access the representation.
 
-- `Q::<_, _, -128>::DELTA` is rejected at compile time.
-- `Q::<_, _, F>::one()` and `Q::<_, _, F>::ONE` are rejected at compile time
-  when the mathematical value `1` is not exactly representable by the storage
-  type and scale.
+`Q::<_, _, -128>::DELTA` is invalid. `One` is available only when `1` is exactly
+representable by `T` and `F`.
 
-```compile_fail
-use dsp_fixedpoint::Q8;
-use num_traits::One;
+## Optional integrations
 
-let _ = Q8::<7>::one();
-```
+- `serde`: transparent raw representation; `serde::as_f32`/`as_f64` for scaled
+  values.
+- `defmt`: compact decimal logging through `f32`.
+- `bytemuck`: `Pod`, `Zeroable`, and `TransparentWrapper` when the component
+  types permit them.
 
-## Serialization
-
-With `feature = "serde"`, `Q` serializes transparently as its raw representation.
-For lossy scaled values, use `dsp_fixedpoint::serde::as_f32` or
-`dsp_fixedpoint::serde::as_f64`.
-
-```rust,ignore
-# use serde::{Deserialize, Serialize};
-use dsp_fixedpoint::Q32;
-
-#[derive(Deserialize, Serialize)]
-struct Config {
-    #[serde(with = "dsp_fixedpoint::serde::as_f64")]
-    gain: Q32<3>,
-}
-```
-
-## Ecosystem Traits
-
-`Q` implements a small set of generic numeric traits where the semantics stay
-clear:
-
-- `Bounded` forwards to the raw storage bounds.
-- `ToPrimitive`, `FromPrimitive`, and `NumCast` convert numeric values rather
-  than raw bits.
-- `Signed` is implemented for signed `Q`/`W` families.
-- `Hash` follows the raw representation.
-
-`Signed` inherits `One`, so the existing representability restriction still
-applies: operations that need an exact `1`, such as `signum()`, are only usable
-when `F >= 0`.
-
-## Formatting
-
-Display shows decimal notation. `Binary/Octal/UpperHex/LowerHex` show dot
-notation.
-
-```rust
-use dsp_fixedpoint::Q8;
-
-assert_eq!(
-    format!("{:#b}", Q8::<3>::from_bits(0b01101001)),
-    "0b1101.001"
-);
-assert_eq!(format!("{:x}", Q8::<4>::from_bits(-0x14)), "-1.4");
-```
-
-## `defmt`
-
-With `feature = "defmt"`, `Q` implements `defmt::Format` and logs as a decimal
-value using `f32`. This keeps the target-side implementation compact for
-embedded use. Exact radix-dot formatting remains available through the standard
-`Binary`, `Octal`, and hex format traits.
-
-## `bytemuck`
-
-With `feature = "bytemuck"`, `Q` derives `Pod`, `Zeroable`, and
-`TransparentWrapper`. That makes zero-copy buffer casts and wrapper conversions
-available when the underlying storage and accumulator types also satisfy the
-corresponding `bytemuck` bounds.
+`Display` is decimal. Binary, octal, and hexadecimal formatting place the radix
+point according to `F`.
