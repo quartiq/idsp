@@ -59,14 +59,13 @@ impl<T: Float> Default for ClampConfig<T> {
 
 impl<T: Float> ClampConfig<T> {
     fn validate(&self) -> Result<(), Error> {
-        if self.0[0].is_nan()
-            || self.0[1].is_nan()
-            || self.0[0] == T::infinity()
-            || self.0[1] == T::neg_infinity()
+        let [min, max] = self.0;
+        if !(min.is_finite() || min == T::neg_infinity())
+            || !(max.is_finite() || max == T::infinity())
         {
             return Err(Error::NonFinite("output_clamp"));
         }
-        if self.0[0] > self.0[1] {
+        if min > max {
             return Err(Error::InvertedRange("output_clamp"));
         }
         Ok(())
@@ -210,6 +209,7 @@ pub struct PidConfig<T> {
     /// * P gain limit is ignored
     /// * Limits outside the range `order..order + 3` are ignored
     /// * P gain sign determines sign of all gain limits
+    /// * `null` selects an unbounded limit
     pub limit: GainsConfig<T>,
     /// Setpoint.
     ///
@@ -303,15 +303,36 @@ mod tests {
 
         assert!(config.try_build(&units).is_ok());
     }
+
+    #[test]
+    fn pid_null_gain_limit_is_unbounded() {
+        let mut pid = PidConfig::<f32>::default();
+        json_core::set(&mut pid, "/limit/i", b"null").unwrap();
+        let runtime = Pid::from(&pid);
+
+        let mut data = [0; 8];
+        let len = json_core::get(&pid, "/limit/i", &mut data).unwrap();
+        assert_eq!(&data[..len], b"null");
+        assert_eq!(
+            runtime.limit.value[crate::iir::pid::Action::I as usize],
+            f32::INFINITY
+        );
+        let config: BiquadConfig<f32> = BiquadConfig::Pid(pid);
+        assert!(config.try_build(&Units::default()).is_ok());
+    }
 }
 
 impl<T: Float> From<&PidConfig<T>> for Pid<T> {
     fn from(config: &PidConfig<T>) -> Self {
         let [min, max] = config.clamp.bounds();
+        let mut limit = Gains::from(&config.limit);
+        limit.value = limit
+            .value
+            .map(|value| if value.is_nan() { T::infinity() } else { value });
         Self {
             order: config.order,
             gain: Gains::from(&config.gain),
-            limit: Gains::from(&config.limit),
+            limit,
             setpoint: config.setpoint,
             min,
             max,

@@ -201,12 +201,11 @@ impl<T: Float> Builder<T> {
         if *period <= T::zero() {
             return Err(Error::NonPositive("period"));
         }
-        for (name, values) in [("gain", &self.gain), ("limit", &self.limit)] {
-            for value in values {
-                if !value.is_finite() && !value.is_infinite() {
-                    return Err(Error::NonFinite(name));
-                }
-            }
+        if self.gain.iter().any(|value| !value.is_finite()) {
+            return Err(Error::NonFinite("gain"));
+        }
+        if self.limit.iter().any(|value| value.is_nan()) {
+            return Err(Error::NonFinite("limit"));
         }
         for action in [Action::I2, Action::I, Action::D, Action::D2] {
             let gain = self.gain[action as usize];
@@ -546,13 +545,7 @@ where
         let p = self.gain.value[Action::P as usize];
         let mut biquad: BiquadClamp<C, Y> = Builder {
             gain: self.gain.value.map(|g| yx * g.copysign(p)),
-            limit: self.limit.value.map(|mut l| {
-                // infinite gain limit is meaningful but json can only do null/nan
-                if l.is_nan() {
-                    l = T::infinity()
-                }
-                yx * l.copysign(p)
-            }),
+            limit: self.limit.value.map(|l| yx * l.copysign(p)),
             order: self.order,
         }
         .build(&units.t)
@@ -616,5 +609,28 @@ mod test {
                 "{i}: have {y_have} != {y_want}"
             );
         }
+    }
+
+    #[test]
+    fn validation_distinguishes_gains_and_limits() {
+        let period = 1.0;
+        assert_eq!(
+            pid::Builder::default()
+                .gain(pid::Action::P, f32::INFINITY)
+                .validate(&period),
+            Err(Error::NonFinite("gain"))
+        );
+        assert!(
+            pid::Builder::default()
+                .limit(pid::Action::I, f32::INFINITY)
+                .validate(&period)
+                .is_ok()
+        );
+        assert_eq!(
+            pid::Builder::default()
+                .limit(pid::Action::I, f32::NAN)
+                .validate(&period),
+            Err(Error::NonFinite("limit"))
+        );
     }
 }
