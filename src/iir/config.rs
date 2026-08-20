@@ -2,9 +2,9 @@
 
 use core::any::Any;
 
-use miniconf::Tree;
+use miniconf::{Tree, leaf};
 use num_traits::{AsPrimitive, Float, FloatConst};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
 
 use crate::{
     Build,
@@ -15,19 +15,93 @@ use crate::{
     },
 };
 
+/// Output bounds `[min, max]`.
+///
+/// Serde maps an unbounded endpoint between `null` and the corresponding infinity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClampConfig<T>([T; 2]);
+
+impl<T> Serialize for ClampConfig<T>
+where
+    T: Serialize + Float,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        [
+            (self.0[0] != T::neg_infinity()).then_some(self.0[0]),
+            (self.0[1] != T::infinity()).then_some(self.0[1]),
+        ]
+        .serialize(serializer)
+    }
+}
+
+impl<T> ClampConfig<T> {
+    /// Create an output range from lower and upper bounds.
+    pub const fn new(min: T, max: T) -> Self {
+        Self([min, max])
+    }
+}
+
+impl<T: Copy> ClampConfig<T> {
+    /// Return `[min, max]`.
+    pub const fn bounds(&self) -> [T; 2] {
+        self.0
+    }
+}
+
+impl<T: Float> Default for ClampConfig<T> {
+    fn default() -> Self {
+        Self([T::neg_infinity(), T::infinity()])
+    }
+}
+
+impl<T: Float> ClampConfig<T> {
+    fn validate(&self) -> Result<(), Error> {
+        let [min, max] = self.0;
+        if !(min.is_finite() || min == T::neg_infinity())
+            || !(max.is_finite() || max == T::infinity())
+        {
+            return Err(Error::NonFinite("output_clamp"));
+        }
+        if min > max {
+            return Err(Error::InvertedRange("output_clamp"));
+        }
+        Ok(())
+    }
+}
+
+impl<'de, T> Deserialize<'de> for ClampConfig<T>
+where
+    T: Deserialize<'de> + Float,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bounds = <[Option<T>; 2]>::deserialize(deserializer)?;
+        let clamp = Self([
+            bounds[0].unwrap_or_else(T::neg_infinity),
+            bounds[1].unwrap_or_else(T::infinity),
+        ]);
+        clamp.validate().map_err(serde::de::Error::custom)?;
+        Ok(clamp)
+    }
+}
+
 /// Floating point BA coefficients before quantization.
 #[derive(Debug, Clone, Tree)]
 #[tree(meta(doc, typename))]
 pub struct BaConfig<T> {
     /// Coefficient array: [[b0, b1, b2], [a0, a1, a2]]
-    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: DeserializeOwned", any="T: Any"))]
+    #[tree(with=leaf, bounds(serialize="T: Serialize", deserialize="T: DeserializeOwned", any="T: Any"))]
     pub ba: [[T; 3]; 2],
     /// Summing junction offset.
     pub offset: T,
-    /// Output lower limit.
-    pub min: T,
-    /// Output upper limit.
-    pub max: T,
+    /// Output clamp.
+    #[tree(with=leaf, bounds(serialize="T: Serialize + Float", deserialize="T: DeserializeOwned + Float", any="T: Any"))]
+    pub clamp: ClampConfig<T>,
 }
 
 impl<T: Float> Default for BaConfig<T> {
@@ -35,8 +109,7 @@ impl<T: Float> Default for BaConfig<T> {
         Self {
             ba: [[T::zero(); 3], [T::one(), T::zero(), T::zero()]],
             offset: T::zero(),
-            min: T::neg_infinity(),
-            max: T::infinity(),
+            clamp: ClampConfig::default(),
         }
     }
 }
@@ -46,7 +119,7 @@ impl<T: Float> Default for BaConfig<T> {
 #[tree(meta(doc, typename))]
 pub struct FilterConfig<T> {
     /// Filter style.
-    #[tree(with=miniconf::leaf)]
+    #[tree(with=leaf)]
     pub typ: Type,
     /// Relative critical frequency in units of the sample rate.
     pub frequency: T,
@@ -57,14 +130,13 @@ pub struct FilterConfig<T> {
     /// Used for peaking, low shelf, and high shelf filters.
     pub shelf_db: T,
     /// Q, bandwidth, or slope.
-    #[tree(with=miniconf::leaf, bounds(serialize="T: Serialize", deserialize="T: DeserializeOwned", any="T: Any"))]
+    #[tree(with=leaf, bounds(serialize="T: Serialize", deserialize="T: DeserializeOwned", any="T: Any"))]
     pub shape: Shape<T>,
     /// Summing junction offset.
     pub offset: T,
-    /// Lower output limit.
-    pub min: T,
-    /// Upper output limit.
-    pub max: T,
+    /// Output clamp.
+    #[tree(with=leaf, bounds(serialize="T: Serialize + Float", deserialize="T: DeserializeOwned + Float", any="T: Any"))]
+    pub clamp: ClampConfig<T>,
 }
 
 impl<T: Float + FloatConst> Default for FilterConfig<T> {
@@ -76,8 +148,7 @@ impl<T: Float + FloatConst> Default for FilterConfig<T> {
             shelf_db: T::zero(),
             shape: Shape::default(),
             offset: T::zero(),
-            min: T::neg_infinity(),
-            max: T::infinity(),
+            clamp: ClampConfig::default(),
         }
     }
 }
@@ -122,7 +193,7 @@ impl<T: Copy> From<&GainsConfig<T>> for Gains<T> {
 #[tree(meta(doc, typename))]
 pub struct PidConfig<T> {
     /// Feedback term order.
-    #[tree(with=miniconf::leaf)]
+    #[tree(with=leaf)]
     pub order: Order,
     /// Gain.
     ///
@@ -138,19 +209,17 @@ pub struct PidConfig<T> {
     /// * P gain limit is ignored
     /// * Limits outside the range `order..order + 3` are ignored
     /// * P gain sign determines sign of all gain limits
+    /// * `null` selects an unbounded limit
     pub limit: GainsConfig<T>,
     /// Setpoint.
     ///
     /// Units: input.
     pub setpoint: T,
-    /// Output lower limit.
+    /// Output clamp.
     ///
     /// Units: output.
-    pub min: T,
-    /// Output upper limit.
-    ///
-    /// Units: output.
-    pub max: T,
+    #[tree(with=leaf, bounds(serialize="T: Serialize + Float", deserialize="T: DeserializeOwned + Float", any="T: Any"))]
+    pub clamp: ClampConfig<T>,
 }
 
 impl<T: Float + Default> Default for PidConfig<T> {
@@ -160,8 +229,7 @@ impl<T: Float + Default> Default for PidConfig<T> {
             gain: GainsConfig::default(),
             limit: GainsConfig::splat(T::infinity()),
             setpoint: T::zero(),
-            min: T::neg_infinity(),
-            max: T::infinity(),
+            clamp: ClampConfig::default(),
         }
     }
 }
@@ -169,6 +237,7 @@ impl<T: Float + Default> Default for PidConfig<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use miniconf::json_core;
 
     #[test]
     fn biquad_config_tag_conversion() {
@@ -180,16 +249,47 @@ mod tests {
     #[test]
     fn biquad_config_try_build_rejects_invalid_ba_config() {
         let ba = BaConfig {
-            min: 1.0,
-            max: 0.0,
+            clamp: ClampConfig::new(1.0, 0.0),
             ..Default::default()
         };
         let config = BiquadConfig::<f32>::Ba(ba);
 
         assert_eq!(
             config.try_build(&Units::default()),
-            Err(Error::InvertedRange("output_limits"))
+            Err(Error::InvertedRange("output_clamp"))
         );
+    }
+
+    #[test]
+    fn clamp_miniconf_leaf_requires_a_complete_valid_range() {
+        let mut config = BaConfig::<f32> {
+            clamp: ClampConfig::new(-1.0, 1.0),
+            ..Default::default()
+        };
+
+        json_core::set(&mut config, "/clamp", br#"[-2.0,2.0]"#).unwrap();
+        assert_eq!(config.clamp, ClampConfig::new(-2.0, 2.0));
+
+        for value in [
+            br#"[-3.0]"#.as_slice(),
+            br#"[-3.0,3.0,4.0]"#,
+            br#"[3.0,-3.0]"#,
+            br#"{"min":-3.0,"max":3.0}"#,
+        ] {
+            assert!(json_core::set(&mut config, "/clamp", value).is_err());
+            assert_eq!(config.clamp, ClampConfig::new(-2.0, 2.0));
+        }
+
+        json_core::set(&mut config, "/clamp", br#"[null,2.0]"#).unwrap();
+        assert_eq!(config.clamp, ClampConfig::new(f32::NEG_INFINITY, 2.0));
+
+        let mut data = [0; 64];
+        let len = json_core::get(&config, "/clamp", &mut data).unwrap();
+        assert_eq!(&data[..len], br#"[null,2.0]"#);
+        let mut copy = BaConfig::<f32>::default();
+        json_core::set(&mut copy, "/clamp", &data[..len]).unwrap();
+        assert_eq!(copy.clamp, config.clamp);
+        assert!(json_core::set(&mut copy, "/clamp/0", b"-1.0").is_err());
     }
 
     #[test]
@@ -203,17 +303,39 @@ mod tests {
 
         assert!(config.try_build(&units).is_ok());
     }
+
+    #[test]
+    fn pid_null_gain_limit_is_unbounded() {
+        let mut pid = PidConfig::<f32>::default();
+        json_core::set(&mut pid, "/limit/i", b"null").unwrap();
+        let runtime = Pid::from(&pid);
+
+        let mut data = [0; 8];
+        let len = json_core::get(&pid, "/limit/i", &mut data).unwrap();
+        assert_eq!(&data[..len], b"null");
+        assert_eq!(
+            runtime.limit.value[crate::iir::pid::Action::I as usize],
+            f32::INFINITY
+        );
+        let config: BiquadConfig<f32> = BiquadConfig::Pid(pid);
+        assert!(config.try_build(&Units::default()).is_ok());
+    }
 }
 
-impl<T: Copy> From<&PidConfig<T>> for Pid<T> {
+impl<T: Float> From<&PidConfig<T>> for Pid<T> {
     fn from(config: &PidConfig<T>) -> Self {
+        let [min, max] = config.clamp.bounds();
+        let mut limit = Gains::from(&config.limit);
+        limit.value = limit
+            .value
+            .map(|value| if value.is_nan() { T::infinity() } else { value });
         Self {
             order: config.order,
             gain: Gains::from(&config.gain),
-            limit: Gains::from(&config.limit),
+            limit,
             setpoint: config.setpoint,
-            min: config.min,
-            max: config.max,
+            min,
+            max,
         }
     }
 }
@@ -245,7 +367,7 @@ where
     Ba(BaConfig<T>),
     /// Raw, unscaled, possibly fixed-point machine-unit coefficients.
     Raw(
-        #[tree(with=miniconf::leaf, bounds(
+        #[tree(with=leaf, bounds(
             serialize="C: Serialize, Y: Serialize",
             deserialize="C: DeserializeOwned, Y: DeserializeOwned",
             any="C: Any, Y: Any"))]
@@ -306,20 +428,9 @@ where
     }
 }
 
-fn check_offset_limits<T: Float>(
-    name: &'static str,
-    offset: T,
-    min: T,
-    max: T,
-) -> Result<(), Error> {
+fn check_offset<T: Float>(offset: T) -> Result<(), Error> {
     if !offset.is_finite() {
         return Err(Error::NonFinite("offset"));
-    }
-    if min.is_nan() || max.is_nan() {
-        return Err(Error::NonFinite(name));
-    }
-    if min > max {
-        return Err(Error::InvertedRange(name));
     }
     Ok(())
 }
@@ -359,17 +470,19 @@ where
         let yx = units.x * yu;
         match self {
             Self::Ba(ba) => {
+                let [min, max] = ba.clamp.bounds();
                 let mut bba = ba.ba;
                 bba[0] = bba[0].map(|b| b * yx);
                 let mut b: BiquadClamp<C, Y> = bba.into();
                 b.u = (ba.offset * yu).as_();
-                b.min = (ba.min * yu).as_();
-                b.max = (ba.max * yu).as_();
+                b.min = (min * yu).as_();
+                b.max = (max * yu).as_();
                 b
             }
             Self::Raw(raw) => raw.clone(),
             Self::Pid(pid) => Pid::from(pid).build(units),
             Self::Filter(filter) => {
+                let [min, max] = filter.clamp.bounds();
                 let mut f = Filter::default();
                 f.gain_db(filter.gain_db);
                 f.critical_frequency(filter.frequency * units.t);
@@ -379,8 +492,8 @@ where
                 ba[0] = ba[0].map(|b| b * yx);
                 let mut b: BiquadClamp<C, Y> = ba.into();
                 b.u = (filter.offset * yu).as_();
-                b.min = (filter.min * yu).as_();
-                b.max = (filter.max * yu).as_();
+                b.min = (min * yu).as_();
+                b.max = (max * yu).as_();
                 b
             }
         }
@@ -391,7 +504,9 @@ where
         match self {
             Self::Ba(ba) => {
                 check_units(units, false)?;
-                check_offset_limits("output_limits", ba.offset, ba.min, ba.max)?;
+                check_offset(ba.offset)?;
+                ba.clamp.validate()?;
+                let [min, max] = ba.clamp.bounds();
                 let yu = units.y.recip();
                 let yx = units.x * yu;
                 for row in ba.ba {
@@ -405,15 +520,20 @@ where
                 bba[0] = bba[0].map(|b| b * yx);
                 let mut b: BiquadClamp<C, Y> = bba.into();
                 b.u = (ba.offset * yu).as_();
-                b.min = (ba.min * yu).as_();
-                b.max = (ba.max * yu).as_();
+                b.min = (min * yu).as_();
+                b.max = (max * yu).as_();
                 Ok(b)
             }
             Self::Raw(raw) => Ok(raw.clone()),
-            Self::Pid(pid) => Pid::from(pid).try_build(units),
+            Self::Pid(pid) => {
+                pid.clamp.validate()?;
+                Pid::from(pid).try_build(units)
+            }
             Self::Filter(filter) => {
                 check_units(units, true)?;
-                check_offset_limits("output_limits", filter.offset, filter.min, filter.max)?;
+                check_offset(filter.offset)?;
+                filter.clamp.validate()?;
+                let [min, max] = filter.clamp.bounds();
                 let yu = units.y.recip();
                 let yx = units.x * yu;
                 let mut f = Filter::default();
@@ -425,8 +545,8 @@ where
                 ba[0] = ba[0].map(|b| b * yx);
                 let mut b: BiquadClamp<C, Y> = ba.into();
                 b.u = (filter.offset * yu).as_();
-                b.min = (filter.min * yu).as_();
-                b.max = (filter.max * yu).as_();
+                b.min = (min * yu).as_();
+                b.max = (max * yu).as_();
                 Ok(b)
             }
         }

@@ -12,6 +12,11 @@ See also:
 
 ## [UNRELEASED](https://github.com/quartiq/idsp/compare/v0.22.1...HEAD) - DATE
 
+### Changed
+
+* `iir::{FilterConfig,BaConfig,PidConfig}` take `ClampConfig([T; 2])` to make
+  clamp changes atomic
+
 ## [0.22.1](https://github.com/quartiq/idsp/compare/v0.22.0...v0.22.1) - 2026-08-04
 
 ### Added
