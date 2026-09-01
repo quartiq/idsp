@@ -39,7 +39,10 @@ where
 /// ```
 /// # use dsp_fixedpoint::Q8;
 /// assert_eq!(format!("{:?}", Q8::<4>::from_bits(0x14)), "20");
-/// assert_eq!(format!("{:#b}", Q8::<3>::from_bits(0b01101001)), "0b1101.001");
+/// assert_eq!(
+///     format!("{:#b}", Q8::<3>::from_bits(0b01101001)),
+///     "0b1101.001"
+/// );
 /// assert_eq!(format!("{:x}", Q8::<-2>::from_bits(3)), "c.");
 /// assert_eq!(format!("{:x}", Q8::<4>::from_bits(-0x14)), "-1.4");
 /// ```

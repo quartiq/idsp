@@ -69,7 +69,7 @@ impl core::ops::AddAssign for Wrap {
 /// Returns:
 /// A tuple containg the (wrapped) difference `y - x` and the signum of the
 /// overflow.
-#[inline(always)]
+#[inline]
 pub fn overflowing_sub<T>(y: T, x: T) -> (T, Wrap)
 where
     T: WrappingSub + Zero + PartialOrd,

@@ -3,7 +3,6 @@ use dsp_fixedpoint::Q32;
 include!(concat!(env!("OUT_DIR"), "/atan2_divi_table.rs"));
 
 /// Fixed point unsigned multiplication without roudning bias
-#[inline(always)]
 fn mul_q31(x: u32, y: u32) -> u32 {
     ((x as u64 * y as u64) >> 31) as u32
 }

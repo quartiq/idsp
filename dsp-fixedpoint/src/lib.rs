@@ -118,7 +118,7 @@ pub trait Shift: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
     fn shs(self, f: i8) -> Self;
 
     /// Const signed shift
-    #[inline(always)]
+    #[inline]
     fn shsc<const F: i8>(self) -> Self {
         const { assert!(F > i8::MIN, "shift must not be i8::MIN") }
         self.shs(F)
@@ -126,7 +126,7 @@ pub trait Shift: Copy + Shl<usize, Output = Self> + Shr<usize, Output = Self> {
 }
 
 impl<T: Copy + Shl<usize, Output = T> + Shr<usize, Output = T>> Shift for T {
-    #[inline(always)]
+    #[inline]
     fn shs(self, f: i8) -> Self {
         debug_assert!(f > i8::MIN, "shift must not be i8::MIN");
         if f >= 0 {
@@ -472,11 +472,11 @@ macro_rules! impl_q {
     // Common
     ($alias:ident<$t:ty, $a:ty>, $inner:ty, $as:expr, $wrap:expr) => {
         impl Accu<$a> for $t {
-            #[inline(always)]
+            #[inline]
             fn up(self) -> $a {
                 $as(self)
             }
-            #[inline(always)]
+            #[inline]
             fn down(a: $a) -> Self {
                 $as(a)
             }
