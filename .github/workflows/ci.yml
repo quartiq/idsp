@@ -7,6 +7,7 @@ on:
     branches: [main]
 env:
   CARGO_TERM_COLOR: always
+  RUST_TEST_THREADS: 8
 
 jobs:
   style:
@@ -17,25 +18,64 @@ jobs:
         with:
           components: clippy, rustfmt
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets --all-features
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-  compile:
+  test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: [stable, beta, nightly]
-        features: ["std", "std,miniconf"]
+        args: ["", "--features std", "--features std,miniconf", "--all-features"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace ${{ matrix.args }}
+      - run: cargo test --workspace --examples ${{ matrix.args }}
+      - if: matrix.args == '--all-features'
+        run: cargo test --workspace --all-features --release
+
+  msrv:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - toolchain: "1.85.0"
+            packages: "-p dsp-fixedpoint"
+          - toolchain: "1.91.0"
+            packages: "--workspace"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - run: cargo check ${{ matrix.packages }} --lib
+      - run: cargo check ${{ matrix.packages }} --lib --all-features
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python -m pip install . pytest ruff
+      - run: ruff check tests/test_python.py
+      - run: ruff format --check tests/test_python.py
+      - run: python -m compileall -q py tests/test_python.py
+      - run: python -m pytest -q tests/test_python.py
+
+  toolchains:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain: [beta, nightly]
     continue-on-error: ${{ matrix.toolchain == 'nightly' }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-      - run: cargo check --workspace --features "${{ matrix.features }}"
-      - run: cargo test --workspace --features "${{ matrix.features }}"
-      - run: cargo test --workspace --examples --features "${{ matrix.features }}"
-      - run: cargo bench --workspace --features "${{ matrix.features }}"
-      - run: cargo build --workspace --release --features "${{ matrix.features }}"
+      - run: cargo check --workspace --all-targets --all-features
 
   doc:
     runs-on: ubuntu-latest
