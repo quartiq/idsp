@@ -47,8 +47,8 @@ let gain = Q32::<28>::from_ratio(1, 3);
 assert!((gain.as_f64() - 1.0 / 3.0).abs() < Q32::<28>::DELTA as f64);
 ```
 
-For positive `F`, `FromRatio` widens the numerator before scaling and division.
-The denominator must be nonzero and the result must fit `T`.
+`FromRatio` rounds toward zero. Use a nonzero denominator and values whose
+scaled operands fit `A` and whose result fits `T`.
 
 ## Operators
 
@@ -66,6 +66,10 @@ The denominator must be nonzero and the result must fit `T`.
 
 Use `.scale::<F1>()` when changing fractional bits. Numeric traits convert the
 represented value; `from_bits`/`into_bits` access the representation.
+
+Use `FromPrimitive` and `ToPrimitive` for checked conversions. Integer
+conversions round down; floating-point construction rounds to nearest with
+ties away from zero. Inherent `from_f32`/`from_f64` saturate at the type's limits.
 
 `Q::<_, _, -128>::DELTA` is invalid. `One` is available only when `1` is exactly
 representable by `T` and `F`.

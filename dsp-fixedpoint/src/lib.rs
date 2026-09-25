@@ -18,9 +18,9 @@ use core::{
 
 /// Construct a value from the ratio of two raw values.
 ///
-/// For positive `F`, `Q<T, A, F>` computes `(numerator << F) / denominator` in
-/// `A`, then narrows to `T`. The denominator must be nonzero and the result must
-/// fit `T`.
+/// Division rounds toward zero. For `Q<T, A, F>`, the denominator must be
+/// nonzero, the result must fit `T`, and the operand scaled by `2^|F|` must
+/// fit `A`: the numerator for positive `F`, the denominator for negative `F`.
 pub trait FromRatio<T> {
     /// Return `numerator / denominator` in `Self`'s representation.
     fn from_ratio(numerator: T, denominator: T) -> Self;
@@ -373,8 +373,10 @@ where
         const { assert!(F > i8::MIN, "fractional bits must not be i8::MIN") }
         let inner = if F > 0 {
             T::down(numerator.up().shs(F) / denominator.up())
+        } else if F == 0 {
+            numerator / denominator
         } else {
-            numerator.shs(F) / denominator
+            T::down(numerator.up() / denominator.up().shs(-F))
         };
         Self::new(inner)
     }
@@ -529,11 +531,7 @@ macro_rules! impl_q {
 
             #[inline]
             fn div(self, rhs: Q<$t, $a, F>) -> Self::Output {
-                if F > 0 {
-                    <$t>::down(self.up().shs(F) / rhs.inner.up())
-                } else {
-                    self.shsc::<F>() / rhs.inner
-                }
+                Q::<$t, $a, F>::from_ratio(self, rhs.inner).inner
             }
         }
     };

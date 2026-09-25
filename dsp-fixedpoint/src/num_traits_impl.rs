@@ -129,25 +129,34 @@ where
     }
 }
 
-impl<T: Shift + ToPrimitive + AsFloat, A, const F: i8> ToPrimitive for Q<T, A, F> {
+// Integer conversions use the same shifts as DSP arithmetic. Reversing a left
+// shift detects lost high bits; right shifts deliberately discard low bits.
+#[inline]
+fn checked_scale<T: Shift + PartialEq>(value: T, shift: i8) -> Option<T> {
+    assert!(shift > i8::MIN, "shift must not be i8::MIN");
+    let scaled = value.shs(shift);
+    (shift <= 0 || scaled.shs(-shift) == value).then_some(scaled)
+}
+
+impl<T: Copy + ToPrimitive + AsFloat, A, const F: i8> ToPrimitive for Q<T, A, F> {
     #[inline]
     fn to_i64(&self) -> Option<i64> {
-        self.trunc().to_i64()
+        self.to_i128()?.to_i64()
     }
 
     #[inline]
     fn to_i128(&self) -> Option<i128> {
-        self.trunc().to_i128()
+        checked_scale(self.inner.to_i128()?, const { -F })
     }
 
     #[inline]
     fn to_u64(&self) -> Option<u64> {
-        self.trunc().to_u64()
+        self.to_u128()?.to_u64()
     }
 
     #[inline]
     fn to_u128(&self) -> Option<u128> {
-        self.trunc().to_u128()
+        checked_scale(self.inner.to_u128()?, const { -F })
     }
 
     #[inline]
@@ -163,40 +172,36 @@ impl<T: Shift + ToPrimitive + AsFloat, A, const F: i8> ToPrimitive for Q<T, A, F
 
 impl<T, A, const F: i8> FromPrimitive for Q<T, A, F>
 where
-    T: 'static + Copy + FromPrimitive + Shift,
-    A: 'static,
-    f32: AsPrimitive<Q<T, A, F>>,
-    f64: AsPrimitive<Q<T, A, F>>,
-    Self: Copy + 'static,
+    T: FromPrimitive,
 {
     #[inline]
     fn from_i64(n: i64) -> Option<Self> {
-        T::from_i64(n).map(Self::from_int)
+        Self::from_i128(n as i128)
     }
 
     #[inline]
     fn from_i128(n: i128) -> Option<Self> {
-        T::from_i128(n).map(Self::from_int)
+        T::from_i128(checked_scale(n, F)?).map(Self::new)
     }
 
     #[inline]
     fn from_u64(n: u64) -> Option<Self> {
-        T::from_u64(n).map(Self::from_int)
+        Self::from_u128(n as u128)
     }
 
     #[inline]
     fn from_u128(n: u128) -> Option<Self> {
-        T::from_u128(n).map(Self::from_int)
+        T::from_u128(checked_scale(n, F)?).map(Self::new)
     }
 
     #[inline]
     fn from_f32(n: f32) -> Option<Self> {
-        Some(Self::from_f32(n))
+        T::from_f32((n * const { 1.0 / Self::DELTA }).round()).map(Self::new)
     }
 
     #[inline]
     fn from_f64(n: f64) -> Option<Self> {
-        Some(Self::from_f64(n))
+        T::from_f64((n * const { 1.0 / Self::DELTA as f64 }).round()).map(Self::new)
     }
 }
 

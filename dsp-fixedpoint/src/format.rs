@@ -145,24 +145,13 @@ struct Radix {
 
 impl Radix {
     #[inline]
-    const fn mask(self) -> u8 {
-        (1u8 << self.bits) - 1
-    }
-
-    #[inline]
     const fn ceil_digits(self, bits: usize) -> usize {
         bits.div_ceil(self.bits as _)
     }
 
     #[inline]
-    const fn div_mod(self, bits: i8) -> (usize, u8) {
-        let bits = bits.unsigned_abs();
-        ((bits / self.bits) as usize, bits % self.bits)
-    }
-
-    #[inline]
     const fn shifted_digit(self, magnitude: u64, shift: u8, index: usize) -> char {
-        let mask = self.mask();
+        let mask = (1u8 << self.bits) - 1;
         let offset = index * self.bits as usize;
         let value = if let Some(right) = offset.checked_sub(shift as usize) {
             if right >= u64::BITS as usize {
@@ -184,22 +173,28 @@ impl Radix {
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
         let magnitude_bits = (u64::BITS - magnitude.leading_zeros()) as usize;
-        let body_len = if frac_bits > 0 {
-            let frac_bits = frac_bits as usize;
-            let frac_digits = self.ceil_digits(frac_bits);
-            let effective_digits = if magnitude == 0 {
-                0
-            } else {
-                self.ceil_digits(magnitude_bits + frac_digits * (self.bits - 1) as usize)
-            };
-            effective_digits.saturating_sub(frac_digits).max(1) + 1 + frac_digits
+        let (frac_digits, zero_digits, shift) = if frac_bits > 0 {
+            let digits = self.ceil_digits(frac_bits as usize);
+            (
+                digits,
+                0,
+                (digits * self.bits as usize - frac_bits as usize) as u8,
+            )
         } else {
-            let (zero_digits, shift) = self.div_mod(frac_bits);
-            if magnitude == 0 {
-                2
-            } else {
-                self.ceil_digits(magnitude_bits + shift as usize) + zero_digits + 1
-            }
+            let bits = frac_bits.unsigned_abs();
+            (0, (bits / self.bits) as usize, bits % self.bits)
+        };
+        let digits = if magnitude == 0 {
+            0
+        } else {
+            self.ceil_digits(magnitude_bits + shift as usize)
+        };
+        let body_len = if frac_digits > 0 {
+            digits.saturating_sub(frac_digits).max(1) + 1 + frac_digits
+        } else if magnitude == 0 {
+            2
+        } else {
+            digits + zero_digits + 1
         };
         let sign = if negative {
             "-"
@@ -236,19 +231,11 @@ impl Radix {
             f.write_char('0')?;
         }
 
-        if frac_bits > 0 {
-            let frac_bits = frac_bits as usize;
-            let frac_digits = self.ceil_digits(frac_bits);
-            let shift = (frac_digits * self.bits as usize - frac_bits) as u8;
-            let effective_digits = if magnitude == 0 {
-                0
-            } else {
-                self.ceil_digits(magnitude_bits + shift as usize)
-            };
-            if effective_digits <= frac_digits {
+        if frac_digits > 0 {
+            if digits <= frac_digits {
                 f.write_char('0')?;
             } else {
-                for index in (frac_digits..effective_digits).rev() {
+                for index in (frac_digits..digits).rev() {
                     f.write_char(self.shifted_digit(magnitude, shift, index))?;
                 }
             }
@@ -257,11 +244,9 @@ impl Radix {
                 f.write_char(self.shifted_digit(magnitude, shift, index))?;
             }
         } else {
-            let (zero_digits, shift) = self.div_mod(frac_bits);
             if magnitude == 0 {
                 f.write_char('0')?;
             } else {
-                let digits = self.ceil_digits(magnitude_bits + shift as usize);
                 for index in (0..digits).rev() {
                     f.write_char(self.shifted_digit(magnitude, shift, index))?;
                 }
@@ -436,9 +421,15 @@ mod test {
     #[cfg(feature = "std")]
     #[test]
     fn radix_dot_respects_width_alignment_and_zero_fill() {
-        use crate::Q8;
+        use crate::{Q8, Q32};
         use std::format;
 
+        assert_eq!(format!("{:10x}", Q32::<12>::from_bits(4096)), "     1.000");
+        assert_eq!(format!("{:10o}", Q32::<12>::from_bits(4096)), "    1.0000");
+        assert_eq!(
+            format!("{:#010X}", Q32::<11>::from_bits(-2048)),
+            "-0X001.000"
+        );
         assert_eq!(format!("{:>10x}", Q8::<4>::new(0x14)), "       1.4");
         assert_eq!(format!("{:#010x}", Q8::<4>::new(0x14)), "0x000001.4");
         assert_eq!(format!("{:#010x}", Q8::<4>::new(-0x14)), "-0x00001.4");

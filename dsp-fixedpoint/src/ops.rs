@@ -5,7 +5,7 @@ use core::{
     ops::{Neg, Not, Shl, ShlAssign, Shr, ShrAssign},
 };
 
-use crate::{Accu, Q, Shift};
+use crate::{Accu, FromRatio, Q, Shift};
 
 macro_rules! forward_unop {
     ($tr:ident::$m:ident) => {
@@ -169,11 +169,7 @@ impl<
 {
     #[inline]
     fn div_assign(&mut self, rhs: Q<T, A, F1>) {
-        self.inner = if F1 > 0 {
-            T::down(self.inner.up().shs(F1) / rhs.inner.up())
-        } else {
-            self.inner.shs(F1) / rhs.inner
-        };
+        self.inner = Q::<T, A, F1>::from_ratio(self.inner, rhs.inner).inner;
     }
 }
 

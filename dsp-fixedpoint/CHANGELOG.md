@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED](https://github.com/quartiq/idsp/compare/dsp-fixedpoint-v0.2.1...HEAD) - DATE
 
+### Fixed
+
+* Correct primitive conversion ranges and negative-scale division.
+
 ## [0.2.1](https://github.com/quartiq/idsp/compare/dsp-fixedpoint-v0.2.0...dsp-fixedpoint-v0.2.1) - 2026-08-04
 
 ## [0.2.0](https://github.com/quartiq/idsp/compare/dsp-fixedpoint-v0.1.1...dsp-fixedpoint-v0.2.0) - 2026-06-11
