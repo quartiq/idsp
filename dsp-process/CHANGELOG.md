@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED](https://github.com/quartiq/idsp/compare/dsp-process-v0.3.1...HEAD) - DATE
 
+### Changed
+
+* Require Rust 1.91.
+
+### Fixed
+
+* Preserve stream history across partial blocks and decimator tick errors.
+
 ## [0.3.1](https://github.com/quartiq/idsp/compare/dsp-process-v0.3.0...dsp-process-v0.3.1) - 2026-08-04
 
 ## [0.3.0](https://github.com/quartiq/idsp/compare/dsp-process-v0.2.0...dsp-process-v0.3.0) - 2026-06-11

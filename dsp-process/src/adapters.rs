@@ -119,9 +119,6 @@ impl<T: Copy> crate::Process<Option<T>, T> for Hold<T> {
 
 /// Adapt a scalar optional-output stage to chunk input mode.
 ///
-/// Synchronizes to the inner tick by discarding samples after tick.
-/// Panics if tick does not match `N`.
-///
 /// This is the chunked counterpart to [`Interpolator`].
 ///
 /// The inner processor must tick exactly once per input chunk. `Decimator`
@@ -178,8 +175,7 @@ pub enum DecimatorError {
 
 /// Checked variant of [`Decimator`].
 ///
-/// This preserves the same chunked interface but reports contract violations
-/// instead of panicking.
+/// Returns a tick error after processing the full chunk, preserving stream position.
 ///
 /// # Examples
 ///
@@ -210,14 +206,19 @@ impl<X: Copy, Y, C: SplitProcess<X, Option<Y>, S>, S, const N: usize>
     fn process(&self, state: &mut S, x: [X; N]) -> Result<Y, DecimatorError> {
         const { assert!(N > 0) }
         let mut y = None;
+        let mut extra = false;
         for x in x {
             if let Some(next) = self.0.process(state, x)
                 && y.replace(next).is_some()
             {
-                return Err(DecimatorError::ExtraTick);
+                extra = true;
             }
         }
-        y.ok_or(DecimatorError::NoTick)
+        if extra {
+            Err(DecimatorError::ExtraTick)
+        } else {
+            y.ok_or(DecimatorError::NoTick)
+        }
     }
 }
 

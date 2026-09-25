@@ -262,6 +262,9 @@ impl<X: Copy, const N: usize> Process<X> for Buffer<[X; N]> {
             yh.copy_from_slice(&self.buffer[self.idx..self.idx + n]);
             self.buffer[self.idx..self.idx + n].copy_from_slice(xh);
             self.idx = (self.idx + n) % N;
+            if self.idx != 0 {
+                return;
+            }
             x = xr;
             y = yr;
         }
@@ -294,6 +297,9 @@ impl<X: Copy, const N: usize> Inplace<X> for Buffer<[X; N]> {
                 core::mem::swap(xy, buf);
             }
             self.idx = (self.idx + n) % N;
+            if self.idx != 0 {
+                return;
+            }
             xy = rest;
         }
 
@@ -349,6 +355,8 @@ impl<X: Copy, const N: usize> Process<X, Option<[X; N]>> for Buffer<[X; N]> {
             if self.idx == N {
                 self.idx = 0;
                 yh[n - 1] = Some(self.buffer);
+            } else {
+                return;
             }
             x = xr;
             y = yr;
@@ -424,12 +432,17 @@ impl<X: Copy + core::ops::Add<X, Output = Y>, Y, const N: usize> Process<X, Y> f
     }
 
     fn block(&mut self, x: &[X], y: &mut [Y]) {
+        const { assert!(N > 0) }
         debug_assert_eq!(x.len(), y.len());
         let n = x.len().min(N);
         let (xh, xt) = x.split_at(n);
         let (yh, yt) = y.split_at_mut(n);
 
-        for ((xi, yi), s) in xh.iter().zip(yh.iter_mut()).zip(self.0[..n].iter().rev()) {
+        for ((xi, yi), s) in xh
+            .iter()
+            .zip(yh.iter_mut())
+            .zip(self.0[N - n..].iter().rev())
+        {
             *yi = *xi + *s;
         }
         for ((xi, yi), xp) in xt.iter().zip(yt.iter_mut()).zip(x.iter()) {
@@ -486,12 +499,17 @@ impl<X: Copy + core::ops::Sub<X, Output = Y>, Y, const N: usize> Process<X, Y> f
     }
 
     fn block(&mut self, x: &[X], y: &mut [Y]) {
+        const { assert!(N > 0) }
         debug_assert_eq!(x.len(), y.len());
         let n = x.len().min(N);
         let (xh, xt) = x.split_at(n);
         let (yh, yt) = y.split_at_mut(n);
 
-        for ((xi, yi), s) in xh.iter().zip(yh.iter_mut()).zip(self.0[..n].iter().rev()) {
+        for ((xi, yi), s) in xh
+            .iter()
+            .zip(yh.iter_mut())
+            .zip(self.0[N - n..].iter().rev())
+        {
             *yi = *xi - *s;
         }
         for ((xi, yi), xp) in xt.iter().zip(yt.iter_mut()).zip(x.iter()) {

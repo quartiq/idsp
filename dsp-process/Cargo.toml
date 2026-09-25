@@ -2,6 +2,7 @@
 name = "dsp-process"
 description = "Composable no_std DSP processing traits and adapters for split config/state pipelines"
 version = "0.3.1"
+rust-version = "1.91"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
