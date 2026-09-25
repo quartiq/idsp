@@ -90,6 +90,10 @@ where
 pub fn saturating_scale(lo: i32, hi: i32, shift: u32) -> i32 {
     debug_assert!(shift > 0);
     debug_assert!(shift <= 32);
+    if shift == 32 {
+        // The low limb is signed: its remaining contribution is its sign bit.
+        return hi.saturating_add(lo >> 31);
+    }
     let hi_range = -1 << (shift - 1);
     if hi <= hi_range {
         i32::MIN - hi_range
@@ -266,6 +270,31 @@ mod tests {
                 "{:#x} != {:#x} = saturating_scale({:#x}, {:#x}, {:#x})",
                 *res, s, *lo, *hi, shift
             );
+        }
+    }
+
+    #[test]
+    fn scaling_endpoints() {
+        let limbs = [i32::MIN, i32::MIN + 1, -256, -1, 0, 1, 255, i32::MAX];
+        for shift in 1..=32 {
+            for hi in limbs {
+                for lo in limbs {
+                    let wide = ((hi as i128) << 32) + lo as i128;
+                    let expected = if shift == 32 {
+                        (wide >> shift).clamp(i32::MIN as i128, i32::MAX as i128)
+                    } else {
+                        let range = 1i128 << (shift - 1);
+                        if hi as i128 <= -range {
+                            i32::MIN as i128 + range
+                        } else if hi as i128 >= range {
+                            i32::MAX as i128 + 1 - range
+                        } else {
+                            wide >> shift
+                        }
+                    };
+                    assert_eq!(saturating_scale(lo, hi, shift) as i128, expected);
+                }
+            }
         }
     }
 }

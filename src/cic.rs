@@ -33,10 +33,9 @@ where
     u32: AsPrimitive<T>,
     usize: AsPrimitive<T>,
 {
-    const _M: () = assert!(M > 0, "Comb delay must be non-zero");
-
     /// Create a new zero-initialized filter with the given rate change.
     pub fn new(rate: u32) -> Self {
+        const { assert!(M > 0, "Comb delay must be non-zero") }
         Self {
             rate,
             index: 0,
@@ -113,9 +112,12 @@ where
         (u32::BITS - (M as u32 * self.rate + (M - 1) as u32).leading_zeros()) * N as u32
     }
 
-    /// Impulse response length
+    /// High-rate settling steps: equivalent FIR tap count minus one.
+    ///
+    /// Equals `N * ((rate + 1) * M - 1)`. An interpolated held step settles
+    /// at this sample index.
     pub const fn response_length(&self) -> usize {
-        self.rate as usize * N
+        (self.rate as usize * M + (M - 1)) * N
     }
 
     /// Establish a settled filter state
@@ -204,8 +206,45 @@ mod test {
     use core::cmp::Ordering;
 
     use super::*;
-
     use quickcheck_macros::quickcheck;
+
+    fn response<const N: usize, const M: usize>() {
+        for rate in 0..4 {
+            let mut filter = Cic::<i64, N, M>::new(rate);
+            let mut taps = vec![1i64];
+            for _ in 0..N {
+                let width = (rate as usize + 1) * M;
+                let mut next = vec![0; taps.len() + width - 1];
+                for (i, tap) in taps.into_iter().enumerate() {
+                    for value in &mut next[i..i + width] {
+                        *value += tap;
+                    }
+                }
+                taps = next;
+            }
+            assert_eq!(filter.response_length(), taps.len() - 1);
+            for i in 0..taps.len() + 10 {
+                let y: Option<i64> = filter.process(i64::from(i == 0));
+                if let Some(y) = y {
+                    assert_eq!(y, taps.get(i).copied().unwrap_or(0));
+                }
+            }
+            filter.clear();
+            for i in 0..taps.len() + 10 {
+                let input = filter.tick().then_some(1);
+                let y = filter.process(input);
+                assert_eq!(y, taps.iter().take(i + 1).sum::<i64>());
+            }
+        }
+    }
+
+    #[test]
+    fn comb_delay_response() {
+        response::<0, 1>();
+        response::<1, 1>();
+        response::<1, 3>();
+        response::<3, 2>();
+    }
 
     #[quickcheck]
     fn new(rate: u32) {

@@ -29,6 +29,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "DSP algorithms for embedded, mostly integer math"
+rust-version = "1.91"
 homepage = "https://github.com/quartiq/idsp"
 documentation = "https://docs.rs/idsp"
 

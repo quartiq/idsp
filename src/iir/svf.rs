@@ -5,6 +5,7 @@ use num_traits::{Float, FloatConst};
 use dsp_process::SplitProcess;
 
 /// Second order state variable filter state
+#[derive(Clone, Copy, Debug, Default)]
 pub struct State<T> {
     /// Lowpass output
     pub lp: T,
@@ -31,6 +32,23 @@ pub struct Svf<T> {
 }
 
 impl<T: Float + FloatConst> Svf<T> {
+    /// Create a filter with frequency in units of the sample rate and quality factor `q`.
+    ///
+    /// ```
+    /// use dsp_process::SplitProcess;
+    /// use idsp::iir::svf::{State, Svf};
+    /// let filter = Svf::new(0.01_f32, 0.707);
+    /// let mut state = State::default();
+    /// filter.process(&mut state, 1.0);
+    /// assert!(state.bp > 0.0);
+    /// ```
+    pub fn new(f0: T, q: T) -> Self {
+        Self {
+            f: (T::one() + T::one()) * (T::PI() * f0).sin(),
+            q: T::one() / q,
+        }
+    }
+
     /// Set the critical frequency
     ///
     /// In units of the sample frequency.

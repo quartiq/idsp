@@ -16,6 +16,14 @@ See also:
 
 * `iir::{FilterConfig,BaConfig,PidConfig}` take `ClampConfig([T; 2])` to make
   clamp changes atomic
+* Require Rust 1.91 and Python 3.8+.
+* Correct `Normal` transfer function; rebuild coefficients and reset state.
+
+### Fixed
+
+* Validate generated filter coefficients and Python `atan2` inputs.
+* Correct complex phase and iterator products.
+* Preserve fractional sweep cycles and handle sweep overflow.
 
 ## [0.22.1](https://github.com/quartiq/idsp/compare/v0.22.0...v0.22.1) - 2026-08-04
 

@@ -4,8 +4,12 @@ mod _idsp {
     use dsp_process::SplitInplace;
     use numpy::{
         PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1,
+        PyUntypedArrayMethods,
     };
-    use pyo3::{exceptions::PyTypeError, prelude::*};
+    use pyo3::{
+        exceptions::{PyTypeError, PyValueError},
+        prelude::*,
+    };
 
     /// Cosine and sine of a phase
     #[pyfunction]
@@ -27,12 +31,18 @@ mod _idsp {
         Ok(xy)
     }
 
-    /// atan2(y, x) of a [[x, y]] array
+    /// atan2(y, x) of a C-contiguous (N, 2) array of [x, y] coordinates.
     #[pyfunction]
     fn atan2<'py>(
         py: Python<'py>,
         xy: PyReadonlyArray2<'py, i32>,
     ) -> PyResult<Bound<'py, PyArray1<i32>>> {
+        if xy.shape()[1] != 2 {
+            return Err(PyValueError::new_err("expected shape (N, 2)"));
+        }
+        if !xy.is_c_contiguous() {
+            return Err(PyValueError::new_err("expected C-contiguous coordinates"));
+        }
         let xy = xy.as_slice().or(Err(PyTypeError::new_err("order")))?;
         let p = PyArray1::zeros(py, [xy.len() / 2], false);
         for (xy, p) in xy.as_chunks::<2>().0.iter().zip(

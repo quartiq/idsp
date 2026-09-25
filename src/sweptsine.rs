@@ -24,9 +24,11 @@ impl Iterator for Sweep {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        const BIAS: i64 = 1 << 31;
         let s = self.state;
-        self.state = s.checked_add(self.rate as i64 * ((s + BIAS) >> 32))?;
+        // Round the high word without overflowing on the bias addition.
+        // The rounded value is in -2^31..=2^31, so the i32 product fits i64.
+        let rounded = (s >> 32) + ((s as u32 >> 31) as i64);
+        self.state = s.checked_add(self.rate as i64 * rounded)?;
         Some(s)
     }
 }
@@ -110,11 +112,11 @@ impl Sweep {
             return Err(SweepError::Stop);
         }
         let rate = Real::round(Q * Real::exp_m1(stop / (cycles * harmonics))) as i32;
-        let state = (rate as i64 * cycles as i64) << 32;
-        if state <= 0 {
+        let state = rate as f64 * cycles as f64 * Q as f64;
+        if cycles < 1.0 || !(1.0..(1_u64 << 63) as f64).contains(&state) {
             return Err(SweepError::Start);
         }
-        Ok(Self::new(rate, state))
+        Ok(Self::new(rate, state as i64))
     }
 }
 
@@ -193,6 +195,45 @@ impl<T: FusedIterator + Iterator<Item = i64>> FusedIterator for AccuOsc<T> {}
 mod test {
     use super::*;
     use crate::testing::*;
+
+    #[test]
+    fn fractional_cycles() {
+        for cycles in [1.0, 1.5, 3.25, 100.5] {
+            let sweep = Sweep::fit(0.25, 100.0, cycles).unwrap();
+            assert!(isclose(sweep.cycles(), cycles as f64, 0.0, 1e-10));
+            let end = sweep.continuous(sweep.delay(100.0));
+            assert!(isclose(end, 100.0 * cycles as f64, 0.0, 1e-8));
+        }
+    }
+
+    #[test]
+    fn invalid_fit() {
+        for cycles in [0.0, 0.5, f32::NAN, f32::INFINITY] {
+            assert_eq!(Sweep::fit(0.25, 100.0, cycles), Err(SweepError::Start));
+        }
+        assert_eq!(Sweep::fit(0.5, 0.5, 2.0), Err(SweepError::Start));
+    }
+
+    #[test]
+    fn termination() {
+        for rate in [i32::MIN, -1, 0, 1, i32::MAX] {
+            for state in [i64::MIN, i64::MIN + 1, -1, 0, i64::MAX - 1, i64::MAX] {
+                let next = state as i128 + rate as i128 * ((state as i128 + (1 << 31)) >> 32);
+                let mut sweep = Sweep::new(rate, state);
+                match i64::try_from(next) {
+                    Ok(next) => {
+                        assert_eq!(sweep.next(), Some(state));
+                        assert_eq!(sweep.state, next);
+                    }
+                    Err(_) => {
+                        assert_eq!(sweep.next(), None);
+                        assert_eq!(sweep.next(), None);
+                        assert_eq!(sweep.state, state);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn test() {

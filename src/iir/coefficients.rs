@@ -487,10 +487,14 @@ where
         }
     }
 
-    /// Build the requested filter coefficients after validation.
+    /// Build finite filter coefficients from validated parameters.
     pub fn try_build(&self, typ: Type) -> Result<[[T; 3]; 2], Error> {
         self.validate()?;
-        Ok(self.build(typ))
+        let ba = self.build(typ);
+        if ba.iter().flatten().any(|c| !c.is_finite()) {
+            return Err(Error::NonFinite("coefficients"));
+        }
+        Ok(ba)
     }
 
     /// Build the requested filter as a normalized [`Biquad`].
@@ -630,6 +634,30 @@ mod test {
     use dsp_fixedpoint::Q32;
     use dsp_process::SplitProcess;
     use rustfft::num_complex::Complex64;
+
+    #[test]
+    fn checked_build_rejects_nonfinite_coefficients() {
+        let mut filter = Filter::<f64>::default();
+        filter.critical_frequency(0.0).bandwidth(1.0);
+        assert_eq!(
+            filter.try_build(Type::Lowpass),
+            Err(Error::NonFinite("coefficients"))
+        );
+        assert!(filter.try_build_biquad::<f64>(Type::Lowpass).is_err());
+
+        // Finite parameters can also overflow during coefficient calculation.
+        filter.critical_frequency(0.1).bandwidth(f64::MAX);
+        assert_eq!(
+            filter.try_build(Type::Lowpass),
+            Err(Error::NonFinite("coefficients"))
+        );
+
+        // Zero frequency is still representable with the Q parametrization.
+        filter.critical_frequency(0.0).set_shape(Shape::Q(1.0));
+        assert_eq!(filter.try_build(Type::Lowpass), Ok(filter.lowpass()));
+        filter.critical_frequency(0.1).bandwidth(1.0);
+        assert_eq!(filter.try_build(Type::Lowpass), Ok(filter.lowpass()));
+    }
 
     #[test]
     #[ignore]

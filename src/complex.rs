@@ -2,7 +2,7 @@ use super::{atan2, cossin};
 use core::num::Wrapping;
 use core::ops::{Add, Deref, DerefMut, Div, Mul, Sub};
 use dsp_fixedpoint::{Accu, Q, Shift};
-use num_traits::AsPrimitive;
+use num_traits::{AsPrimitive, One, Zero};
 
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
@@ -163,10 +163,11 @@ where
 
 impl<T> core::iter::Product for Complex<T>
 where
-    Self: Default + Mul<Output = Self>,
+    T: One + Zero,
+    Self: Mul<Output = Self>,
 {
     fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Default::default(), |c, i| c * i)
+        iter.fold(Self([T::one(), T::zero()]), |c, i| c * i)
     }
 }
 
@@ -181,7 +182,7 @@ macro_rules! impl_float {
 
             /// Return the angle.
             pub fn arg(&self) -> $t {
-                self.re().atan2(self.im())
+                self.im().atan2(self.re())
             }
 
             /// Return the squared norm.
@@ -279,6 +280,38 @@ impl<T: Copy, A, const F: i8> Complex<Q<T, A, F>> {
 mod test {
     use super::*;
     use dsp_fixedpoint::Q32;
+
+    #[test]
+    fn products() {
+        let one = Complex::new(1i32, 0);
+        assert_eq!(core::iter::empty().product::<Complex<i32>>(), one);
+        let a = Complex::new(2, 3);
+        let b = Complex::new(-4, 5);
+        assert_eq!([a].into_iter().product::<Complex<i32>>(), a);
+        assert_eq!(
+            [a, b].into_iter().product::<Complex<i32>>(),
+            Complex::new(-23, -2)
+        );
+        let q = Complex::new(Q32::<28>::from_f32(0.5), Q32::from_int(0));
+        assert_eq!(
+            [q, q].into_iter().product::<Complex<Q32<28>>>(),
+            Complex::new(Q32::from_f32(0.25), Q32::from_int(0))
+        );
+    }
+
+    #[test]
+    fn float_angles() {
+        for i in -8..=8 {
+            let angle = i as f64 * core::f64::consts::PI / 8.0;
+            assert!((Complex::<f64>::from_angle(angle).arg() - angle).abs() < 1e-15);
+            let angle = angle as f32;
+            let error = Complex::<f32>::from_angle(angle).arg() - angle;
+            assert!(error.sin().abs() < 1e-6);
+        }
+        assert_eq!(Complex::new(1.0f64, 0.0).arg(), 0.0);
+        assert!(Complex::new(1.0f64, -0.0).arg().is_sign_negative());
+        assert_eq!(Complex::new(-1.0f32, -0.0).arg(), -core::f32::consts::PI);
+    }
 
     #[test]
     fn fixedpoint_into_bits_exposes_raw_representation() {
