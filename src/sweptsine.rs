@@ -90,8 +90,9 @@ impl Sweep {
     ///
     /// `f` is in cycles/sample and sample zero is the first emitted sample.
     /// Uses the initial sweep state and includes its initial-phase and
-    /// one-sample advance corrections. Finite windowing and recurrence/trig
-    /// quantization are not modeled.
+    /// one-sample advance corrections. Requires positive rate, state, and `f`.
+    /// Finite windowing and recurrence/trig quantization are not modeled;
+    /// long sweeps can lose precision in the analytical f32 phase.
     ///
     /// * Stimulus `x(t)` (`AccuOsc::new(Sweep::fit(...)).collect()` plus windowing)
     /// * Response `y(t)`
@@ -103,11 +104,15 @@ impl Sweep {
     /// * Order responses `H_n(f)`
     pub fn inverse_filter(&self, mut f: f32) -> Complex<f32> {
         let rate = Real::ln_1p(self.rate as f32 / Q);
-        let phase = self.cycles() as f32 - f;
+        // S/R is C in Q32 turns: narrow before converting to preserve frac(C).
+        let phase = (self.state / i64::from(self.rate)) as i32;
+        let phase = phase as f32 / Q - f + 0.125;
         f /= rate;
         let amp = 2.0 * rate * f.sqrt();
         let inv_cycles = Q * self.rate as f32 / self.state as f32;
-        let turns = phase + 0.125 - f * (1.0 - Real::ln(f * inv_cycles));
+        // Reduce before adding bounded offsets and converting turns to radians.
+        // This preserves the offsets, not bits already lost in the chirp phase.
+        let turns = Real::fract(-f * (1.0 - Real::ln(f * inv_cycles))) + phase;
         let (im, re) = Real::sin_cos(f32::TAU() * turns);
         Complex::new(amp * re, amp * im)
     }
@@ -117,6 +122,10 @@ impl Sweep {
     /// * stop: maximum stop frequency in units of sample rate (e.g. Nyquist, 0.5)
     /// * harmonics: number of harmonics to sweep
     /// * cycles: number of cycles (phase wraps) per harmonic (>= 1)
+    ///
+    /// Integer cycles remove the constant phase offset modulo one turn.
+    /// Rates with nearly integer `octave()` also align octave boundaries to
+    /// samples; neither choice eliminates recurrence rounding.
     pub fn fit(stop: f32, harmonics: f32, cycles: f32) -> Result<Self, SweepError> {
         if !(0.0..=0.5).contains(&stop) {
             return Err(SweepError::Stop);
@@ -239,6 +248,23 @@ mod test {
                 assert!(allclose(&inverse, &[re, im], 0.0, 2e-3));
             }
         }
+    }
+
+    #[test]
+    fn inverse_large_cycle_offset() {
+        // These states round to the same f32, but differ by a quarter cycle.
+        let sweep = Sweep::new(1, 1 << 60);
+        let shifted = Sweep::new(1, sweep.state + (1 << 30));
+        let f = 1.0 / (1u32 << 30) as f32;
+        let a = sweep.inverse_filter(f);
+        let b = shifted.inverse_filter(f);
+        let scale = a.norm_sqr().sqrt();
+        assert!(allclose(
+            &b.0.map(|v| v / scale),
+            &[-a.im() / scale, a.re() / scale],
+            0.0,
+            1e-6,
+        ));
     }
 
     #[test]
