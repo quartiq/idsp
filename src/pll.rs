@@ -75,6 +75,16 @@ pub struct PLLState {
 }
 
 impl PLLState {
+    /// Advance one update period at the current frequency and return phase.
+    ///
+    /// Leaves the detector, loop filter, and frequency states unchanged.
+    /// Use for an update without an observation; [`PLL::process`] already
+    /// performs this advance when an observation is supplied.
+    pub fn predict(&mut self) -> W<i32> {
+        self.y += self.frequency();
+        self.y
+    }
+
     /// Return the current phase estimate
     pub fn phase(&self) -> W<i32> {
         self.y
@@ -88,8 +98,7 @@ impl PLLState {
 
 impl SplitProcess<W<i32>, W<i32>, PLLState> for PLL {
     fn process(&self, state: &mut PLLState, x: W<i32>) -> W<i32> {
-        // advance output phase, oscillator DC pole
-        state.y += state.frequency();
+        state.predict();
         // phase error
         let z0 = state.clamp.process(x + state.y).0 >> 1;
         // nyquist zero
@@ -113,6 +122,27 @@ mod tests {
 
     use super::*;
     use core::num::Wrapping as W;
+
+    #[test]
+    fn prediction_wraps_without_correcting() {
+        let mut state = PLLState {
+            y: W(i32::MAX - 7),
+            f: W((16i64 << 32) + 123),
+            f0: 999,
+            z0: 7,
+            y0: 9,
+            ..Default::default()
+        };
+        let unchanged = |s: &PLLState| (s.clamp.x0, s.clamp.clamp, s.z0, s.y0, s.f0, s.f);
+        let before = unchanged(&state);
+        let mut expected = state.y;
+        for _ in 0..4 {
+            expected += W(16);
+            assert_eq!(state.predict(), expected);
+            assert_eq!(state.phase(), expected);
+            assert_eq!(unchanged(&state), before);
+        }
+    }
 
     #[test]
     fn converge_pll() {
