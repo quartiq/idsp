@@ -1,6 +1,6 @@
 //! PID controller IIR filters
 
-use core::ops::{Add, AddAssign, Div, Mul, SubAssign};
+use core::ops::{Add, Div, Mul, Sub};
 
 use num_traits::{AsPrimitive, Float};
 
@@ -234,7 +234,7 @@ impl<T: Float> Builder<T> {
 
 impl<T, C> Build<[C; 5]> for Builder<T>
 where
-    C: 'static + Copy + SubAssign + AddAssign,
+    C: 'static + Copy + Add<Output = C> + Sub<Output = C>,
     T: Float + AsPrimitive<C>,
 {
     type Context = T;
@@ -285,7 +285,7 @@ where
         let mut proportional = (-T::one()).as_();
         for (i, [_, limit]) in gl.iter().enumerate() {
             if i != p {
-                proportional -= *limit;
+                proportional = proportional - *limit;
             }
         }
         // Complete normalization in coefficient arithmetic without perturbing
@@ -295,17 +295,14 @@ where
         // Expand the quantized kernels 1, (1-z^-1), (1-z^-1)^2.
         // Subtract twice rather than doubling: the doubled term may not fit.
         let [[g0, _], [g1, l1], [g2, l2]] = gl;
-        let [mut b0, mut b1, mut a1] = [T::zero().as_(); 3];
-        b0 += g0;
-        b0 += g1;
-        b0 += g2;
-        b1 -= g1;
-        b1 -= g2;
-        b1 -= g2;
-        a1 -= l1;
-        a1 -= l2;
-        a1 -= l2;
-        [b0, b1, g2, a1, l2]
+        let zero = T::zero().as_();
+        [
+            g0 + g1 + g2,
+            zero - g1 - g2 - g2,
+            g2,
+            zero - l1 - l2 - l2,
+            l2,
+        ]
     }
 }
 
