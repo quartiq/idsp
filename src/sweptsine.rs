@@ -76,28 +76,43 @@ impl Sweep {
         self.state as f64 / (Q as f64 * self.rate as f64)
     }
 
-    /// Evaluate integrated sweep at a given time
+    /// Analytical exponential phase in turns at time `t` in samples.
+    ///
+    /// Ignoring recurrence quantization, sample `n` from [`AccuOsc::new`]
+    /// has phase `continuous(n + 1) - cycles()`: accumulation starts at zero
+    /// and each increment is added before emitting a sample.
     #[inline]
     pub fn continuous(&self, t: f64) -> f64 {
         self.cycles() * Real::exp(self.rate() * t)
     }
 
-    /// Inverse filter
+    /// Analytical positive-frequency inverse for the sine from [`AccuOsc::new`].
+    ///
+    /// `f` is in cycles/sample and sample zero is the first emitted sample.
+    /// Uses the initial sweep state and includes its initial-phase and
+    /// one-sample advance corrections. Requires positive rate, state, and `f`.
+    /// Finite windowing and recurrence/trig quantization are not modeled;
+    /// long sweeps can lose precision in the analytical f32 phase.
     ///
     /// * Stimulus `x(t)` (`AccuOsc::new(Sweep::fit(...)).collect()` plus windowing)
     /// * Response `y(t)`
     /// * Response FFT `Y(f)`
     /// * Stimulus inverse filter `X'(f)`
-    /// * Transfer function `H(f) = X'(f) Y(f)'
+    /// * Transfer function `H(f) = X'(f) Y(f)`
     /// * Impulse response `h(t)`
     /// * Windowing each response using `delay()`
     /// * Order responses `H_n(f)`
     pub fn inverse_filter(&self, mut f: f32) -> Complex<f32> {
         let rate = Real::ln_1p(self.rate as f32 / Q);
+        // S/R is C in Q32 turns: narrow before converting to preserve frac(C).
+        let phase = (self.state / i64::from(self.rate)) as i32;
+        let phase = phase as f32 / Q - f + 0.125;
         f /= rate;
         let amp = 2.0 * rate * f.sqrt();
         let inv_cycles = Q * self.rate as f32 / self.state as f32;
-        let turns = 0.125 - f * (1.0 - Real::ln(f * inv_cycles));
+        // Reduce before adding bounded offsets and converting turns to radians.
+        // This preserves the offsets, not bits already lost in the chirp phase.
+        let turns = Real::fract(-f * (1.0 - Real::ln(f * inv_cycles))) + phase;
         let (im, re) = Real::sin_cos(f32::TAU() * turns);
         Complex::new(amp * re, amp * im)
     }
@@ -107,6 +122,10 @@ impl Sweep {
     /// * stop: maximum stop frequency in units of sample rate (e.g. Nyquist, 0.5)
     /// * harmonics: number of harmonics to sweep
     /// * cycles: number of cycles (phase wraps) per harmonic (>= 1)
+    ///
+    /// Integer cycles remove the constant phase offset modulo one turn.
+    /// Rates with nearly integer `octave()` also align octave boundaries to
+    /// samples; neither choice eliminates recurrence rounding.
     pub fn fit(stop: f32, harmonics: f32, cycles: f32) -> Result<Self, SweepError> {
         if !(0.0..=0.5).contains(&stop) {
             return Err(SweepError::Stop);
@@ -204,6 +223,48 @@ mod test {
             let end = sweep.continuous(sweep.delay(100.0));
             assert!(isclose(end, 100.0 * cycles as f64, 0.0, 1e-8));
         }
+    }
+
+    #[test]
+    fn emitted_phase_and_inverse() {
+        for cycles in [3.0, 3.25] {
+            let sweep = Sweep::fit(0.25, 100.0, cycles).unwrap();
+            let phase = |t: f64| sweep.continuous(t + 1.0) - sweep.cycles();
+            let mut osc = AccuOsc::new(sweep.clone());
+            for n in 0..512 {
+                osc.next().unwrap();
+                let error = osc.state().0 as f64 / (1u128 << 64) as f64 - phase(n as f64);
+                assert!((error - error.round()).abs() < 1e-8);
+            }
+            for f in [0.01_f32, 0.05, 0.2] {
+                // Stationary phase: phi'(t) = f. The positive-frequency
+                // sine spectrum has phase 2*pi*(phi(t) - f*t) - pi/4.
+                let frequency = f as f64;
+                let t = (frequency / sweep.state()).ln() / sweep.rate() - 1.0;
+                let angle = f64::TAU() * (frequency * t - phase(t)) + f64::FRAC_PI_4();
+                let (im, re) = angle.sin_cos();
+                let amplitude = 2.0 * (sweep.rate() * frequency).sqrt();
+                let inverse = sweep.inverse_filter(f).0.map(|v| v as f64 / amplitude);
+                assert!(allclose(&inverse, &[re, im], 0.0, 2e-3));
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_large_cycle_offset() {
+        // These states round to the same f32, but differ by a quarter cycle.
+        let sweep = Sweep::new(1, 1 << 60);
+        let shifted = Sweep::new(1, sweep.state + (1 << 30));
+        let f = 1.0 / (1u32 << 30) as f32;
+        let a = sweep.inverse_filter(f);
+        let b = shifted.inverse_filter(f);
+        let scale = a.norm_sqr().sqrt();
+        assert!(allclose(
+            &b.0.map(|v| v / scale),
+            &[-a.im() / scale, a.re() / scale],
+            0.0,
+            1e-6,
+        ));
     }
 
     #[test]

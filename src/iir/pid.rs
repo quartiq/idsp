@@ -1,6 +1,6 @@
 //! PID controller IIR filters
 
-use core::ops::{Add, AddAssign, Div, Mul, SubAssign};
+use core::ops::{Add, Div, Mul, Sub};
 
 use num_traits::{AsPrimitive, Float};
 
@@ -234,7 +234,7 @@ impl<T: Float> Builder<T> {
 
 impl<T, C> Build<[C; 5]> for Builder<T>
 where
-    C: 'static + Copy + SubAssign + AddAssign,
+    C: 'static + Copy + Add<Output = C> + Sub<Output = C>,
     T: Float + AsPrimitive<C>,
 {
     type Context = T;
@@ -265,53 +265,44 @@ where
         // Choose relevant gains and limits and scale
         let mut z = period.powi(-(self.order as i32));
         let mut gl = [[T::zero(); 2]; 3];
-        for (gl, (i, (gain, limit))) in gl
-            .iter_mut()
-            .zip(
-                self.gain
-                    .iter()
-                    .zip(self.limit.iter())
-                    .enumerate()
-                    .skip(self.order as usize),
-            )
-            .rev()
-        {
-            gl[0] = *gain * z;
+        for (j, gl) in gl.iter_mut().enumerate().rev() {
+            let i = self.order as usize + j;
+            gl[0] = self.gain[i] * z;
             gl[1] = if i == Action::P as usize {
                 T::one()
             } else {
-                gl[0] / *limit
+                gl[0] / self.limit[i]
             };
             z = z * *period;
         }
 
         // Normalization
         let a0i = (gl[0][1] + gl[1][1] + gl[2][1]).recip();
-
-        // Derivative/integration kernels
-        let kernels = [[1, 0, 0], [1, -1, 0], [1, -2, 1]];
-
-        // Coefficients
-        let mut ba = [[T::zero().as_(); 2]; 3];
-        for (gli, ki) in gl.into_iter().zip(kernels) {
-            // Quantize the gains and not the coefficients
-            let gli = gli.map(|c| (c * a0i).as_());
-            for (baj, kij) in ba.iter_mut().zip(ki) {
-                if kij > 0 {
-                    for _ in 0..kij {
-                        baj[0] += gli[0];
-                        baj[1] -= gli[1];
-                    }
-                } else {
-                    for _ in 0..-kij {
-                        baj[0] -= gli[0];
-                        baj[1] += gli[1];
-                    }
-                }
+        // Quantize kernels before combining them. Negative denominator weights
+        // use the feedback sign and allow formats that represent -1 but not +1.
+        let mut gl = gl.map(|[g, l]| [(g * a0i).as_(), (-l * a0i).as_()]);
+        let p = Action::P as usize - self.order as usize;
+        let mut proportional = (-T::one()).as_();
+        for (i, [_, limit]) in gl.iter().enumerate() {
+            if i != p {
+                proportional = proportional - *limit;
             }
         }
+        // Complete normalization in coefficient arithmetic without perturbing
+        // zero (unlimited) or finite integral-limit kernels.
+        gl[p][1] = proportional;
 
-        [ba[0][0], ba[1][0], ba[2][0], ba[1][1], ba[2][1]]
+        // Expand the quantized kernels 1, (1-z^-1), (1-z^-1)^2.
+        // Subtract twice rather than doubling: the doubled term may not fit.
+        let [[g0, _], [g1, l1], [g2, l2]] = gl;
+        let zero = T::zero().as_();
+        [
+            g0 + g1 + g2,
+            zero - g1 - g2 - g2,
+            g2,
+            zero - l1 - l2 - l2,
+            l2,
+        ]
     }
 }
 
@@ -583,16 +574,75 @@ mod test {
     }
 
     #[test]
-    fn pid_i32() {
+    fn unlimited_integrator_with_derivative_limit() {
         use dsp_fixedpoint::Q32;
-        let b: Biquad<Q32<29>> = pid::Builder::<f32>::default()
-            .gain(pid::Action::I, 1e-5)
-            .gain(pid::Action::P, 1e-2)
-            .gain(pid::Action::D, 1e0)
-            .limit(pid::Action::I, 1e1)
-            .limit(pid::Action::D, 1e-1)
-            .build(&1.0);
-        println!("{b:?}");
+        for sign in [-1.0f32, 1.0] {
+            for period in [0.1, 1e-5] {
+                for d in [0.0, 1.0] {
+                    let ba: [Q32<29>; 5] = pid::Builder::default()
+                        .gain(pid::Action::I, sign)
+                        .gain(pid::Action::P, sign)
+                        .gain(pid::Action::D, sign * d)
+                        .limit_d(sign)
+                        .build(&period);
+                    let ba = ba.map(|c| i64::from(c.into_bits()));
+                    // D(z)=(1-z^-1)(1-r*z^-1): exact integrator,
+                    // derivative pole r rounded to coefficient precision.
+                    assert_eq!(ba[3] + ba[4], 1 << 29);
+                    let r = -ba[4] as f64 / (1u64 << 29) as f64;
+                    let want = f64::from(d) / f64::from(period + d);
+                    assert!((r - want).abs() < 1e-7);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn integral_limits_preserve_finite_dc_gain() {
+        use dsp_fixedpoint::Q32;
+        for (order, want) in [
+            (pid::Order::P, 0.125),
+            (pid::Order::I, 0.25),
+            (pid::Order::I2, 0.5),
+        ] {
+            let ba: [Q32<29>; 5] = pid::Builder::default()
+                .order(order)
+                .gain(pid::Action::I2, 0.125f32)
+                .gain(pid::Action::I, 0.125)
+                .gain(pid::Action::P, 0.125)
+                .gain(pid::Action::D, 0.125)
+                .gain(pid::Action::D2, 0.125)
+                .limit_i2(0.5)
+                .limit_i(0.25)
+                .limit_d(0.5)
+                .limit_d2(0.5)
+                .build(&0.5);
+            let ba = ba.map(|c| f64::from(c.into_bits()) / (1u64 << 29) as f64);
+            let dc = (ba[0] + ba[1] + ba[2]) / (1.0 - ba[3] - ba[4]);
+            assert!((dc - want).abs() < 1e-7);
+        }
+        // A stable limited integrator can fit Q31, which cannot encode +1.
+        let ba: [Q32<31>; 5] = pid::Builder::default()
+            .gain(pid::Action::I, 0.125f32)
+            .gain(pid::Action::P, 0.125)
+            .limit_i(0.25)
+            .build(&2.0);
+        let ba = ba.map(|c| f64::from(c.into_bits()) / (1u64 << 31) as f64);
+        assert_eq!((ba[0] + ba[1]) / (1.0 - ba[3]), 0.25);
+    }
+
+    #[test]
+    fn unlimited_double_integrator() {
+        use dsp_fixedpoint::Q32;
+        let ba: [Q32<29>; 5] = pid::Builder::default()
+            .order(pid::Order::I2)
+            .gain(pid::Action::I2, 1.0f32)
+            .gain(pid::Action::I, 1.0)
+            .gain(pid::Action::P, 1.0)
+            .build(&0.1);
+        let ba = ba.map(|c| c.into_bits());
+        // D(z)=(1-z^-1)^2 preserves both poles at unity.
+        assert_eq!([ba[3], ba[4]], [2 << 29, -(1 << 29)]);
     }
 
     #[test]

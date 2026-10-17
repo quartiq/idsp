@@ -12,6 +12,10 @@ See also:
 
 ## [UNRELEASED](https://github.com/quartiq/idsp/compare/v0.23.0...HEAD) - DATE
 
+### Fixed
+
+* Preserve fixed-point PID integrator poles when derivative gain is limited.
+
 ## [0.23.0](https://github.com/quartiq/idsp/compare/v0.22.1...v0.23.0) - 2026-09-25
 
 ### Changed
