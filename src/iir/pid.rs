@@ -265,22 +265,13 @@ where
         // Choose relevant gains and limits and scale
         let mut z = period.powi(-(self.order as i32));
         let mut gl = [[T::zero(); 2]; 3];
-        for (gl, (i, (gain, limit))) in gl
-            .iter_mut()
-            .zip(
-                self.gain
-                    .iter()
-                    .zip(self.limit.iter())
-                    .enumerate()
-                    .skip(self.order as usize),
-            )
-            .rev()
-        {
-            gl[0] = *gain * z;
+        for (j, gl) in gl.iter_mut().enumerate().rev() {
+            let i = self.order as usize + j;
+            gl[0] = self.gain[i] * z;
             gl[1] = if i == Action::P as usize {
                 T::one()
             } else {
-                gl[0] / *limit
+                gl[0] / self.limit[i]
             };
             z = z * *period;
         }
@@ -301,28 +292,20 @@ where
         // zero (unlimited) or finite integral-limit kernels.
         gl[p][1] = proportional;
 
-        // Derivative/integration kernels
-        let kernels = [[1, 0, 0], [1, -1, 0], [1, -2, 1]];
-
-        // Coefficients
-        let mut ba = [[T::zero().as_(); 2]; 3];
-        for (gli, ki) in gl.into_iter().zip(kernels) {
-            for (baj, kij) in ba.iter_mut().zip(ki) {
-                if kij > 0 {
-                    for _ in 0..kij {
-                        baj[0] += gli[0];
-                        baj[1] += gli[1];
-                    }
-                } else {
-                    for _ in 0..-kij {
-                        baj[0] -= gli[0];
-                        baj[1] -= gli[1];
-                    }
-                }
-            }
-        }
-
-        [ba[0][0], ba[1][0], ba[2][0], ba[1][1], ba[2][1]]
+        // Expand the quantized kernels 1, (1-z^-1), (1-z^-1)^2.
+        // Subtract twice rather than doubling: the doubled term may not fit.
+        let [[g0, _], [g1, l1], [g2, l2]] = gl;
+        let [mut b0, mut b1, mut a1] = [T::zero().as_(); 3];
+        b0 += g0;
+        b0 += g1;
+        b0 += g2;
+        b1 -= g1;
+        b1 -= g2;
+        b1 -= g2;
+        a1 -= l1;
+        a1 -= l2;
+        a1 -= l2;
+        [b0, b1, g2, a1, l2]
     }
 }
 
