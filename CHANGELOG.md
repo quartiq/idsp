@@ -10,7 +10,9 @@ See also:
 * [`dsp-process`](dsp-process/CHANGELOG.md)
 * [`dsp-fixedpoint`](dsp-fixedpoint/CHANGELOG.md)
 
-## [UNRELEASED](https://github.com/quartiq/idsp/compare/v0.23.0...HEAD) - DATE
+## [UNRELEASED](https://github.com/quartiq/idsp/compare/v0.23.1...HEAD) - DATE
+
+## [0.23.1](https://github.com/quartiq/idsp/compare/v0.23.0...v0.23.1) - 2026-10-17
 
 ### Fixed
 
